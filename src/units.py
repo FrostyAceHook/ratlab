@@ -63,8 +63,7 @@ class Unit:
                     power = -power
                     parts.append("/")
                 else:
-                    if parts[-1][-1].isdigit():
-                        parts.append(" ")
+                    parts.append("∙")
 
             exp = f"^{power}" * (power != 1)
             parts.append(f"{name}{exp}")
@@ -113,42 +112,6 @@ class Unit:
 
 Unit.none = Unit([])
 
-Unit.m = Unit([("m", 1)])
-Unit.m2 = Unit.m * Unit.m
-Unit.m3 = Unit.m2 * Unit.m
-
-Unit.g = Unit([("g", 1)])
-Unit.g2 = Unit.g * Unit.g
-Unit.g3 = Unit.g2 * Unit.g
-
-Unit.s = Unit([("s", 1)])
-Unit.s2 = Unit.s * Unit.s
-Unit.s3 = Unit.s2 * Unit.s
-
-Unit.A = Unit([("A", 1)])
-Unit.A2 = Unit.A * Unit.A
-Unit.A3 = Unit.A2 * Unit.A
-
-Unit.K = Unit([("K", 1)])
-Unit.K2 = Unit.K * Unit.K
-Unit.K3 = Unit.K2 * Unit.K
-
-Unit.m_s = Unit.m / Unit.s
-Unit.m_s2 = Unit.m_s / Unit.s
-
-Unit.N = Unit.g * Unit.m_s2
-Unit.Pa = Unit.N / Unit.m2
-
-Unit.J = Unit.N * Unit.m
-Unit.W = Unit.J / Unit.s
-
-Unit.C = Unit.A * Unit.s
-Unit.V = Unit.g * Unit.m2 / Unit.s3 / Unit.A
-Unit.Ohm = Unit.g * Unit.m2 / Unit.s3 / Unit.A2
-
-Unit.COMPOUNDS = {Unit.N: "N", Unit.Pa: "Pa", Unit.J: "J", Unit.W: "W",
-    Unit.C: "C", Unit.V: "V", Unit.Ohm: "Ω"}
-
 
 
 @immutable
@@ -187,7 +150,7 @@ class Quantity(Field):
             return f"{value} {unit}"
 
 
-    def __init__(self, value, unit, *, isbare=False):
+    def __init__(self, value=0.0, unit=Unit.none, *, isbare=False):
         if isinstance(value, int):
             value = float(value)
         if not isinstance(value, float):
@@ -257,58 +220,6 @@ class Quantity(Field):
     def __repr__(a):
         return a.display_scaled(a.ideal_scale())
 
-m = Quantity(1, Unit.m)
-cm = Quantity(1e-2, Unit.m)
-mm = Quantity(1e-3, Unit.m)
-um = Quantity(1e-6, Unit.m)
-nm = Quantity(1e-9, Unit.m)
-km = Quantity(1e3, Unit.m)
-
-kg = Quantity(1e3, Unit.g)
-g = Quantity(1, Unit.g)
-mg = Quantity(1e3, Unit.g)
-ug = Quantity(1e-6, Unit.g)
-ng = Quantity(1e-9, Unit.g)
-
-s = Quantity(1, Unit.s)
-ms = Quantity(1e-3, Unit.s)
-min = Quantity(60, Unit.s)
-hr = Quantity(60*60, Unit.s)
-
-A = Quantity(1, Unit.A)
-
-K = Quantity(1, Unit.K)
-
-
-N = Quantity(1, Unit.N)
-kN = Quantity(1e3, Unit.N)
-
-Pa = Quantity(1, Unit.Pa)
-kPa = Quantity(1e3, Unit.Pa)
-MPa = Quantity(1e6, Unit.Pa)
-GPa = Quantity(1e9, Unit.Pa)
-
-J = Quantity(1, Unit.J)
-mJ = Quantity(1e-3, Unit.J)
-kJ = Quantity(1e3, Unit.J)
-MJ = Quantity(1e6, Unit.J)
-
-W = Quantity(1, Unit.W)
-mW = Quantity(1e-3, Unit.W)
-kW = Quantity(1e3, Unit.W)
-MW = Quantity(1e6, Unit.W)
-
-V = Quantity(1, Unit.V)
-mV = Quantity(1e-3, Unit.V)
-kV = Quantity(1e3, Unit.V)
-MV = Quantity(1e6, Unit.V)
-
-Ohm = Quantity(1, Unit.Ohm)
-mOhm = Quantity(1e-3, Unit.Ohm)
-kOhm = Quantity(1e3, Unit.Ohm)
-MOhm = Quantity(1e6, Unit.Ohm)
-
-
 
 class Toleranced:
     @property
@@ -329,3 +240,77 @@ class Toleranced:
         l = "+"*(l >= 0) + l.display_scaled(scale)
         u = "+"*(u >= 0) + u.display_scaled(scale)
         return f"{self.nominal.display_scaled(scale)} ({l}) ({u})"
+
+
+m = Quantity(1, Unit([("m", 1)]))
+cm = 1e-2 * m
+mm = 1e-3 * m
+um = 1e-6 * m
+nm = 1e-9 * m
+km = 1e3 * m
+
+m2 = m ** 2
+cm2 = cm ** 2
+mm2 = mm ** 2
+um2 = um ** 2
+nm2 = nm ** 2
+km2 = km ** 2
+
+m3 = m ** 3
+cm3 = cm ** 3
+mm3 = mm ** 3
+um3 = um ** 3
+nm3 = nm ** 3
+km3 = km ** 3
+
+kg = Quantity(1e3, Unit([("g", 1)]))
+g = 1e-3 * kg
+mg = 1e-6 * kg
+ug = 1e-9 * kg
+ng = 1e-12 * kg
+
+s = Quantity(1, Unit([("s", 1)]))
+ms = 1e-3 * s
+min = 60 * s
+hr = 60*60 * s
+
+s2 = s ** 2
+ms2 = ms ** 2
+
+A = Quantity(1, Unit([("A", 1)]))
+
+K = Quantity(1, Unit([("K", 1)]))
+
+N = kg * m / s2
+kN = 1e3 * N
+
+Pa = N / m2
+kPa = 1e3 * Pa
+MPa = 1e6 * Pa
+GPa = 1e9 * Pa
+
+J = N * m
+mJ = 1e-3 * J
+kJ = 1e3 * J
+MJ = 1e6 * J
+
+W = J / s
+mW = 1e-3 * W
+kW = 1e3 * W
+MW = 1e6 * W
+
+V = W / A
+mV = 1e-3 * V
+kV = 1e3 * V
+MV = 1e6 * V
+
+Ohm = V / A
+mOhm = 1e-3 * Ohm
+kOhm = 1e3 * Ohm
+MOhm = 1e6 * Ohm
+
+
+Unit.COMPOUNDS = {
+    N.unit: "N", Pa.unit: "Pa", J.unit: "J", W.unit: "W", V.unit: "V",
+    Ohm.unit: "Ω"
+}

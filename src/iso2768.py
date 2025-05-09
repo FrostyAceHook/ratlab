@@ -30,7 +30,7 @@ class iso2768:
         if isinstance(length, int):
             length = float(length)
         if isinstance(length, u.Quantity):
-            if length.unit != u.Unit.m and not length.isbare:
+            if length.unit != u.m.unit and not length.isbare:
                 raise ValueError(f"{name} must be a length")
             length = length.value
         if not isinstance(length, float):
