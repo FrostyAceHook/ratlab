@@ -1,50 +1,36 @@
 import units as u
 
 
-class Toleranced:
-    def __init__(self, nominal, lsl, usl):
-        if usl < lsl:
-            raise ValueError("usl cannot be greater than lsl")
-        self.nominal = nominal
-        self.lsl = lsl
-        self.usl = usl
-
-    def __repr__(self):
-        scale = self.nominal.ideal_scale()
-        l = self.lsl - self.nominal
-        u = self.usl - self.nominal
-        l = "+"*(l >= 0) + l.display_scaled(scale)
-        u = "+"*(u >= 0) + u.display_scaled(scale)
-        return f"{self.nominal.display_scaled(scale)} ({l}) ({u})"
-
-    @property
-    def bounds(self):
-        return (self.lsl, self.usl)
-
-
-
 class iso2768:
+    GEOMETRIC = ("",) + tuple("fmcv")
+    FEATURE = ("",) + tuple("HKL")
+
     def __init__(self, geometric = "", feature = ""):
         if not isinstance(geometric, str):
             raise TypeError("non-string geometric tolerance class")
         if not isinstance(feature, str):
             raise TypeError("non-string feature tolerance class")
-        if len(geometric) > 1 or geometric not in "fmcv":
+        if geometric not in iso2768.GEOMETRIC:
             raise ValueError("invalid geometric tolerance class "
                     f"{repr(geometric)}")
-        if len(feature) > 1 or feature not in "HKL":
+        if feature not in iso2768.FEATURE:
             raise ValueError(f"invalid feature tolerance class {repr(feature)}")
         if not geometric and not feature:
             raise ValueError("specify either geometric or feature tolerance "
                     "class")
-        self._geometric = "fmcv".index(geometric) if geometric else None
-        self._feature = "HKL".index(feature) if feature else None
+        self._geometric = iso2768.GEOMETRIC.index(geometric) - 1
+        self._feature = iso2768.FEATURE.index(feature) - 1
+
+    def __repr__(self):
+        g = iso2768.GEOMETRIC[self._geometric + 1]
+        f = iso2768.FEATURE[self._feature + 1]
+        return f"ISO 2768-{g}{f}"
 
     def _check_length(self, name, length):
         if isinstance(length, int):
             length = float(length)
         if isinstance(length, u.Quantity):
-            if length.unit != u.Unit.m:
+            if length.unit != u.Unit.m and not length.isbare:
                 raise ValueError(f"{name} must be a length")
             length = length.value
         if not isinstance(length, float):
@@ -60,16 +46,11 @@ class iso2768:
                 break
         lsl = nominal - tol
         usl = nominal + tol
-        return Toleranced(nominal, lsl, usl)
-
-    def __repr__(self):
-        g = "" if self._geometric is None else "fmcv"[self._geometric]
-        f = "" if self._feature is None else "HKL"[self._feature]
-        return f"ISO 2768-{g}{f}"
+        return u.Toleranced(nominal, lsl, usl)
 
 
     def linear(self, nominal):
-        if self._geometric is None:
+        if self._geometric == -1:
             raise ValueError("must specify a geometric tolerance class")
 
         nominal = self._check_length("nominal", nominal)
@@ -81,10 +62,10 @@ class iso2768:
         if nominal > 4000*u.mm:
             raise ValueError("must explicitly specify tolerances for lengths "
                     "this large")
-        if "fmcv"[self._geometric] == "f" and nominal > 2000*u.mm:
+        if self._geometric == 0 and nominal > 2000*u.mm:
             raise ValueError("under 'f' class, must explicitly specify "
                     "tolerances for lengths this large")
-        if "fmcv"[self._geometric] == "v" and nominal <= 3*u.mm:
+        if self._geometric == 3 and nominal <= 3*u.mm:
             raise ValueError("under 'v' class, must explicitly specify "
                     "tolerances for lengths this small")
 
@@ -99,7 +80,7 @@ class iso2768:
         return self._lookup(self._geometric, cutoffs, table, nominal)
 
     def flatness(self, nominal_A, nominal_B = 0*u.m):
-        if self._feature is None:
+        if self._feature == -1:
             raise ValueError("must specify a feature tolerance class")
 
         nominal_A = self._check_length("nominal_A", nominal_A)
@@ -120,7 +101,7 @@ class iso2768:
         return self._lookup(self._feature, cutoffs, table, nominal)
 
     def perpendicularity(self, nominal_A, nominal_B = 0*u.m):
-        if self._feature is None:
+        if self._feature == -1:
             raise ValueError("must specify a feature tolerance class")
 
         nominal_A = self._check_length("nominal_A", nominal_A)

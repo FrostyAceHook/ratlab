@@ -3,6 +3,8 @@ from field import Field
 from immutable import immutable
 import maths
 
+
+
 class Scale(Enum):
     NANO = (1e-9, "n")
     MICRO = (1e-6, "μ")
@@ -305,3 +307,25 @@ Ohm = Quantity(1, Unit.Ohm)
 mOhm = Quantity(1e-3, Unit.Ohm)
 kOhm = Quantity(1e3, Unit.Ohm)
 MOhm = Quantity(1e6, Unit.Ohm)
+
+
+
+class Toleranced:
+    @property
+    def bounds(self):
+        return (self.lsl, self.usl)
+
+    def __init__(self, nominal, lsl, usl):
+        if usl < lsl:
+            raise ValueError("usl cannot be greater than lsl")
+        self.nominal = nominal
+        self.lsl = lsl
+        self.usl = usl
+
+    def __repr__(self):
+        scale = self.nominal.ideal_scale()
+        l = self.lsl - self.nominal
+        u = self.usl - self.nominal
+        l = "+"*(l >= 0) + l.display_scaled(scale)
+        u = "+"*(u >= 0) + u.display_scaled(scale)
+        return f"{self.nominal.display_scaled(scale)} ({l}) ({u})"
