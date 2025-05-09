@@ -100,8 +100,7 @@ class Field:
 
     def _apply(a, b, func):
         if isinstance(b, (tuple, list, set, GeneratorType)):
-            xs = [a._cast(x) for x in b]
-            return [func(a, x) for x in xs]
+            return [a._apply(c, func) for c in b]
         else:
             b = a._cast(b)
             return func(a, b)

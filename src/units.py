@@ -153,10 +153,10 @@ Unit.COMPOUNDS = {Unit.N: "N", Unit.Pa: "Pa", Unit.J: "J", Unit.W: "W",
 class Quantity(Field):
     @property
     def bare(self):
-        return Quantity(self.value, self.unit, True)
+        return Quantity(self.value, self.unit, isbare=True)
     @property
     def united(self):
-        return Quantity(self.value, self.unit, False)
+        return Quantity(self.value, self.unit, isbare=False)
 
     @property
     def unitless(self):
@@ -194,8 +194,6 @@ class Quantity(Field):
             raise TypeError("unit must be a Unit")
         if not isinstance(isbare, bool):
             raise TypeError("isbare must be a bool")
-        if maths.isnan(value):
-            raise ValueError("nan quantity")
         self.value = value
         self.unit = unit
         self.isbare = isbare
@@ -214,9 +212,9 @@ class Quantity(Field):
 
     def add(a, b):
         # ignore units if value is 0.
-        if b.value == 0 and b.unit == Unit.none and not b.bare:
+        if b.value == 0 and b.unit == Unit.none and not b.isbare:
             return a
-        if a.value == 0 and a.unit == Unit.none and not a.bare:
+        if a.value == 0 and a.unit == Unit.none and not a.isbare:
             return b
         if a.isbare + b.isbare == 1:
             raise ValueError("both quantites must be bare or united")
