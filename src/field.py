@@ -25,14 +25,19 @@ class Field:
         raise NotImplementedError()
     def log(a): # ln(a)
         raise NotImplementedError()
+
     def eq_zero(a): # a == 0
         raise NotImplementedError()
     def lt_zero(a): # a < 0
+        raise NotImplementedError()
+
+    def intof(a): # int(a)
         raise NotImplementedError()
     def floatof(a): # float(a)
         raise NotImplementedError()
     def complexof(a): # complex(a)
         raise NotImplementedError()
+
     def hashof(a): # hash(a)
         raise NotImplementedError()
 
@@ -182,6 +187,10 @@ class Field:
     def __ge__(self, other):
         return self._apply(other, lambda a, b: (b < a) or (a == b))
 
+    def __bool__(self):
+        return not self.eq_zero()
+    def __int__(self):
+        return self.intof()
     def __float__(self):
         return self.floatof()
     def __complex__(self):

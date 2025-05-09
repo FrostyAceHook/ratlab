@@ -160,28 +160,31 @@ cli.command(_okie_we_leave, "return")
 cli.command(lambda: _os.system("cls"), "cls")
 
 
-class LiteralsToNum(ast.NodeTransformer):
+
+
+def _literal_wrapper(literal):
+    if _literal_wrapper.field is None:
+        return literal
+    return _literal_wrapper.field.zero().cast(literal)
+_literal_wrapper.field = None
+
+def set_field(field):
+    _literal_wrapper.field = field
+
+class LiteralsWrapped(ast.NodeTransformer):
     def visit_Constant(self, node):
         if isinstance(node.value, (int, float, complex)):
             return ast.Call(
-                func=ast.Attribute(
-                    value=ast.Name(id="Num", ctx=ast.Load()),
-                    attr="cast",
-                    ctx=ast.Load(),
-                ),
-                args=[ast.Name(id="Num", ctx=ast.Load()), node],
+                func=ast.Name(id="_literal_wrapper", ctx=ast.Load()),
+                args=[node],
                 keywords=[],
             )
         return node
 
     def visit_Num(self, node): # support python <3.8.
         return ast.Call(
-            func=ast.Attribute(
-                value=ast.Name(id="Num", ctx=ast.Load()),
-                attr="cast",
-                ctx=ast.Load(),
-            ),
-            args=[ast.Name(id="Num", ctx=ast.Load()), node],
+            func=ast.Name(id="_literal_wrapper", ctx=ast.Load()),
+            args=[node],
             keywords=[],
         )
 
@@ -189,7 +192,7 @@ def code_to_tree(code):
     try:
         # Try parsing in eval mode first to see if it's a single expression.
         expr_tree = ast.parse(code, mode="eval")
-        expr_tree = LiteralsToNum().visit(expr_tree)
+        expr_tree = LiteralsWrapped().visit(expr_tree)
         print_expr = ast.Expr(
             value=ast.Call(
                 func=ast.Name(id='print', ctx=ast.Load()),
@@ -209,7 +212,7 @@ def code_to_tree(code):
     except SyntaxError:
         # Otherwise treat as a statement.
         tree = ast.parse(code, mode="exec")
-        tree = LiteralsToNum().visit(tree)
+        tree = LiteralsWrapped().visit(tree)
         ast.fix_missing_locations(tree)
         return tree
 
@@ -220,4 +223,5 @@ if __name__ == "__main__":
         "|    RATLAB® Stuart Inc.   |\n"
         "'--------------------------'\n"
         "  multiline code : end line with a backslash\n"
+        "  set_field(field_cls) : changes number literal types\n"
     )

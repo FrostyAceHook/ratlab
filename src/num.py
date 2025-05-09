@@ -1,44 +1,6 @@
-import math
 from field import Field
 from immutable import immutable
-
-
-def mul(a, b):
-    if a != a or b != b:
-        return float("nan")
-    if a == 0.0 or b == 0.0: # avoid 0*inf = nan
-        return 0.0
-    return a * b
-
-def log(x):
-    if x != x:
-        return float("nan")
-    if x == 0.0:
-        return -float("inf")
-    return math.log(x)
-
-def exp(x):
-    if x != x:
-        return float("nan")
-    return math.exp(x)
-
-def cos(x):
-    if x != x:
-        return float("nan")
-    if math.isinf(x):
-        return float("nan")
-    pi = math.pi
-    lookup = {pi/2: 0.0, -pi/2: 0.0, pi: -1.0, -pi: -1.0, 2*pi: 1.0}
-    return lookup.get(x, math.cos(x))
-
-def sin(x):
-    assert x == x
-    if math.isinf(x):
-        return float("nan")
-    pi = math.pi
-    lookup = {pi/2: 1.0, -pi/2: -1.0, pi: 0.0, -pi: 0.0, 2*pi: 0.0}
-    return lookup.get(x, math.sin(x))
-
+import maths
 
 
 @immutable
@@ -53,8 +15,8 @@ class Num(Field):
         if not isinstance(im, float):
             raise TypeError("imaginary value must be a float")
         if not isinstance(isnan, bool):
-            raise TypeError("isnan must be true false")
-        if math.isnan(re) or math.isnan(im):
+            raise TypeError("isnan must be a bool")
+        if maths.isnan(re) or maths.isnan(im):
             isnan = True
         if re == 0.0:
             re = 0.0
@@ -82,7 +44,7 @@ class Num(Field):
         if isinstance(obj, (int, float)):
             return Num(obj)
         if isinstance(obj, complex):
-            isnan = math.isnan(obj.real) or math.isnan(obj.imag)
+            isnan = maths.isnan(obj.real) or maths.isnan(obj.imag)
             return Num(obj.real, obj.imag, isnan=isnan)
         raise NotImplementedError()
 
@@ -99,8 +61,8 @@ class Num(Field):
             return Num.nan()
         # (a.re + i a.im)(b.re + i b.im)
         # = a.re b.re - a.im b.im + i(a.im b.re + a.re b.im)
-        re = mul(a.re, b.re) - mul(a.im, b.im)
-        im = mul(a.im, b.re) - mul(a.re, b.im)
+        re = maths.mul(a.re, b.re) - maths.mul(a.im, b.im)
+        im = maths.mul(a.im, b.re) - maths.mul(a.re, b.im)
         return Num(re, im)
     def rec(a):
         if a.isnan:
@@ -109,7 +71,7 @@ class Num(Field):
             raise ZeroDivisionError("1/0")
         # 1/(a.re + i a.im)
         # = (a.re - i a.im)/(a.re^2 + a.im^2)
-        d = mul(a.re, a.re) + mul(a.im, a.im)
+        d = maths.mul(a.re, a.re) + maths.mul(a.im, a.im)
         return Num(a.re / d, -a.im / d)
     def exp(a):
         if a.isnan:
@@ -117,16 +79,17 @@ class Num(Field):
         # e^(a.re + i a.im)
         # = e^a.re * e^(i a.im)
         # = e^a.re * (cos(a.im) + i sin(a.im))
-        re = mul(exp(a.re), cos(a.im))
-        im = mul(exp(a.re), sin(a.im))
+        re = maths.mul(maths.exp(a.re), maths.cos(a.im))
+        im = maths.mul(maths.exp(a.re), maths.sin(a.im))
         return Num(re, im)
     def log(a):
         if a.isnan:
             return Num.nan()
         # log(a)
         # = log(|a|) + i arg(a)  [principal branch]
-        re = mul(0.5, log(mul(a.re, a.re) + mul(a.im, a.im)))
-        im = math.atan2(a.im, a.re)
+        absa = maths.mul(a.re, a.re) + maths.mul(a.im, a.im)
+        re = maths.mul(0.5, maths.log(absa))
+        im = maths.atan2(a.im, a.re)
         return Num(re, im)
 
     def eq_zero(a):
