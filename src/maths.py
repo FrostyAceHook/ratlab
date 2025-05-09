@@ -1,5 +1,7 @@
 import math
 
+pi = math.pi
+
 def isnan(x):
     return x != x
 

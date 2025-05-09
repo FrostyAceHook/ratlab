@@ -31,7 +31,7 @@ class iso2768:
             length = float(length)
         if isinstance(length, u.Quantity):
             if length.unit != u.m.unit and not length.isbare:
-                raise ValueError(f"{name} must be a length")
+                raise TypeError(f"{name} must be a length")
             length = length.value
         if not isinstance(length, float):
             raise TypeError(f"{name} must be a number")
@@ -51,7 +51,7 @@ class iso2768:
 
     def linear(self, nominal):
         if self._geometric == -1:
-            raise ValueError("must specify a geometric tolerance class")
+            raise AttributeError("must specify a geometric tolerance class")
 
         nominal = self._check_length("nominal", nominal)
 
@@ -81,7 +81,7 @@ class iso2768:
 
     def flatness(self, nominal_A, nominal_B = 0*u.m):
         if self._feature == -1:
-            raise ValueError("must specify a feature tolerance class")
+            raise AttributeError("must specify a feature tolerance class")
 
         nominal_A = self._check_length("nominal_A", nominal_A)
         nominal_B = self._check_length("nominal_B", nominal_B)
@@ -102,7 +102,7 @@ class iso2768:
 
     def perpendicularity(self, nominal_A, nominal_B = 0*u.m):
         if self._feature == -1:
-            raise ValueError("must specify a feature tolerance class")
+            raise AttributeError("must specify a feature tolerance class")
 
         nominal_A = self._check_length("nominal_A", nominal_A)
         nominal_B = self._check_length("nominal_B", nominal_B)
