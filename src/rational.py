@@ -43,7 +43,7 @@ class Rational(Field):
     def rec(a):
         return Rational(a.de, a.nu)
 
-    def eq_zero(a, b):
+    def eq_zero(a):
         return a.nu == 0
     def lt_zero(a):
         return a.nu < 0
@@ -56,3 +56,27 @@ class Rational(Field):
 
     def __repr__(self):
         return str(self.nu) + (self.de != 1) * f"/{self.de}"
+
+    def exp_as_string(self):
+        if self.de == 1:
+            if self.nu == 1:
+                return ""
+            superscripts = {
+                "-": "⁻", "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴",
+                "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹",
+            }
+            return "".join(superscripts[c] for c in str(self.nu))
+        lookup = {
+            Rational(1, 2): "½", Rational(1, 3): "⅓", Rational(2, 3): "⅔",
+            Rational(1, 4): "¼", Rational(3, 4): "¾", Rational(1, 5): "⅕",
+            Rational(2, 5): "⅖", Rational(3, 5): "⅗", Rational(4, 5): "⅘",
+            Rational(1, 6): "⅙", Rational(5, 6): "⅚", Rational(1, 8): "⅛",
+            Rational(3, 8): "⅜", Rational(5, 8): "⅝", Rational(7, 8): "⅞",
+        }
+        if self in lookup:
+            s = lookup[self]
+        elif (-self) in lookup:
+            s = "-" + lookup[-self]
+        else:
+            s = f"({repr(self)})"
+        return "^" + s

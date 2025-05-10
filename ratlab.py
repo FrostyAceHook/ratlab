@@ -131,10 +131,8 @@ class cli:
             if not code:
                 continue
             try:
-                if code in {"quit", "exit", "return"}:
-                    self._leave = True
-                elif code == "cls":
-                    _os.system("cls")
+                if code in self._commands:
+                    self._commands[code]()
                 else:
                     tree = code_to_tree(code)
                     compiled = compile(tree, "<ast>", "exec")
@@ -157,7 +155,12 @@ def _okie_we_leave():
 cli.command(_okie_we_leave, "quit")
 cli.command(_okie_we_leave, "exit")
 cli.command(_okie_we_leave, "return")
-cli.command(lambda: _os.system("cls"), "cls")
+cli.command(lambda: os.system("cls"), "cls")
+def _char_check():
+    for i in range(256*4 * 16):
+        print("\n"*((i%24) == 0) + " "+chr(i)+" ", end="")
+    print()
+cli.command(_char_check, "charcheck")
 
 
 
@@ -215,6 +218,7 @@ def code_to_tree(code):
         tree = LiteralsWrapped().visit(tree)
         ast.fix_missing_locations(tree)
         return tree
+
 
 
 if __name__ == "__main__":
