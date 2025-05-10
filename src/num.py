@@ -27,6 +27,14 @@ class Num(Field):
             self.re = re
             self.im = im
 
+    def cast(self, obj):
+        if isinstance(obj, (int, float)):
+            return Num(obj)
+        if isinstance(obj, complex):
+            isnan = maths.isnan(obj.real) or maths.isnan(obj.imag)
+            return Num(obj.real, obj.imag, isnan=isnan)
+        raise NotImplementedError()
+
     @classmethod
     def zero(cls):
         return Num(0)
@@ -39,14 +47,6 @@ class Num(Field):
     @classmethod
     def nan(cls):
         return Num(isnan=True)
-
-    def cast(self, obj):
-        if isinstance(obj, (int, float)):
-            return Num(obj)
-        if isinstance(obj, complex):
-            isnan = maths.isnan(obj.real) or maths.isnan(obj.imag)
-            return Num(obj.real, obj.imag, isnan=isnan)
-        raise NotImplementedError()
 
     def add(a, b):
         if a.isnan or b.isnan:
