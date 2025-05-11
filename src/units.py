@@ -25,7 +25,7 @@ class Scale(Enum):
 
 @immutable
 class Unit(Field):
-    BASE = ("m", "g", "s", "A", "K")
+    BASE = ("m", "kg", "s", "A", "K")
 
     def __init__(self, bases=()):
         had = set()
@@ -81,10 +81,12 @@ class Unit(Field):
 class Quantity(Field):
     @property
     def bare(self):
-        return Quantity(self._value, self._unit, self._logged, isbare=True)
+        return Quantity(self._value, self._unit, logged=self._logged,
+                isbare=True)
     @property
     def united(self):
-        return Quantity(self._value, self._unit, self._logged, isbare=False)
+        return Quantity(self._value, self._unit, logged=self._logged,
+                isbare=False)
 
     @property
     def unitless(self):
@@ -93,6 +95,8 @@ class Quantity(Field):
         return self._value
 
     def can_scale(self):
+        if self._logged:
+            return False
         return self._unit in [x._unit for x, _ in Quantity.SCALEABLE]
 
     def ideal_scale(self):
@@ -104,11 +108,6 @@ class Quantity(Field):
         # Scale down by the offset of the displayed unit.
         base = [x for x, _ in Quantity.SCALEABLE if x._unit == self._unit][0]
         scales = [[x, x.magnitude] for x in Scale]
-        # Handle the fact that "mm^2" is consider "(mm)^2" and not "m (m^2)".
-        if len(self._unit._bases) == 1:
-            power = self._unit._bases[0][1]
-            if power.de == 1:
-                scales = [[x, x.magnitude ** power.nu] for x in Scale]
         scales = sorted(scales, key=lambda x: x[1])
         # Find the best scale.
         for scale, mag in reversed(scales):
@@ -118,23 +117,17 @@ class Quantity(Field):
 
     def display_scaled(self, scale, prec=5):
         value = self._value
-        if scale != Scale.NONE:
-            if not self.can_scale():
-                raise NotImplementedError("unit cannot be scaled")
-            mag = scale.magnitude
+        value /= scale.magnitude
+        if self.can_scale():
             # Scale down by the offset of the displayed unit.
             base = [x for x, _ in Quantity.SCALEABLE if x._unit == self._unit][0]
-            # Handle the fact that "mm^2" is consider "(mm)^2" and not "m (m^2)".
-            if len(self._unit._bases) == 1:
-                power = self._unit._bases[0][1]
-                if power.de == 1:
-                    mag **= power.nu
             value /= base._value
-            value /= mag
+        elif scale != Scale.NONE:
+            raise NotImplementedError("unit cannot be scaled")
         value = f"{value:.{prec}g}"
         unit = scale.letter + Quantity._unit_repr(self._unit)
         if self._logged:
-            unit = f"log({unit})"
+            unit = f"+ log({unit})"
         if self._isbare:
             return f"{value} ¿{unit}?"
         else:
@@ -183,15 +176,18 @@ class Quantity(Field):
         if a._value == 0 and not a._unit and not a._isbare:
             return b
         # handle bare.
-        if a._isbare + b._isbare == 1:
-            raise NotImplementedError()
-        if a._isbare + b._isbare == 2:
-            return Quantity(a._value + b._value, a._unit, isbare=True)
+        if a._isbare + b._isbare:
+            if (a._isbare or not a._unit) + (b._isbare or not b._unit) == 1:
+                raise NotImplementedError()
+            if not a._isbare and b._isbare:
+                a, b = b, a
+            return Quantity(a._value + b._value, a._unit, logged=a._logged,
+                    isbare=True)
         # handle logged.
         if a._logged + b._logged:
             if (a._logged or not a._unit) + (b._logged or not b._unit) == 1:
                 raise NotImplementedError()
-            return Quantity(a._value * b._value, a._unit * b._unit, logged=True)
+            return Quantity(a._value + b._value, a._unit * b._unit, logged=True)
         # normal.
         if a._unit != b._unit:
             raise NotImplementedError("units do not agree "
@@ -206,10 +202,13 @@ class Quantity(Field):
         return Quantity(-a._value, a._unit)
     def mul(a, b):
         # handle bare.
-        if a._isbare + b._isbare == 1:
-            raise NotImplementedError()
-        if a._isbare + b._isbare == 2:
-            return Quantity(a._value * b._value, a._unit, isbare=True)
+        if a._isbare + b._isbare:
+            if (a._isbare or not a._unit) + (b._isbare or not b._unit) == 1:
+                raise NotImplementedError()
+            if not a._isbare and b._isbare:
+                a, b = b, a
+            return Quantity(a._value * b._value, a._unit, logged=a._logged,
+                    isbare=True)
         # handle logged.
         if a._logged + b._logged == 2:
             raise NotImplementedError()
@@ -218,10 +217,7 @@ class Quantity(Field):
                 a, b = b, a
             if b._unit:
                 raise NotImplementedError("cannot raise a unit to a unit")
-            x = a._value ** b._value
-            if isinstance(x, complex):
-                raise NotImplementedError("imaginary")
-            return Quantity(x, a._unit ** b._value, logged=True)
+            return Quantity(a._value*b._value, a._unit**b._value, logged=True)
         return Quantity(a._value * b._value, a._unit * b._unit)
     def rec(a):
         if a._isbare:
@@ -232,17 +228,15 @@ class Quantity(Field):
     def exp(a):
         if a._isbare:
             return Quantity(maths.exp(a._value), a._unit, isbare=True)
-        if a._logged:
-            # leave log space without changing quantity.
-            return Quantity(a._value, a._unit, logged=False)
+        if a._logged or not a._unit:
+            return Quantity(maths.exp(a._value), a._unit, logged=False)
         raise NotImplementedError()
     def log(a):
         if a._isbare:
             return Quantity(maths.log(a._value), a._unit, isbare=True)
         if a._logged:
             raise NotImplementedError()
-        # go to log space without changing quantity.
-        return Quantity(a._value, a._unit, logged=True)
+        return Quantity(maths.log(a._value), a._unit, logged=True)
 
     def eq_zero(a):
         return a._value == 0.0
@@ -351,11 +345,15 @@ um3 = um ** 3
 nm3 = nm ** 3
 km3 = km ** 3
 
-kg = Quantity(1e3, Unit([("g", 1)]))
+mL = cm3
+L = 1e3 * mL
+
+kg = Quantity(1, Unit([("kg", 1)]))
 g = 1e-3 * kg
 mg = 1e-6 * kg
 ug = 1e-9 * kg
 ng = 1e-12 * kg
+tonne = 1e3 * kg
 
 s = Quantity(1, Unit([("s", 1)]))
 ms = 1e-3 * s
@@ -376,6 +374,8 @@ Pa = N / m2
 kPa = 1e3 * Pa
 MPa = 1e6 * Pa
 GPa = 1e9 * Pa
+
+Nm = N * m
 
 J = N * m
 mJ = 1e-3 * J
