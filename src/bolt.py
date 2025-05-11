@@ -1,5 +1,4 @@
 import units as u
-from immutable import immutable
 from maths import pi
 
 
@@ -61,7 +60,7 @@ class Bolt:
         """
         if not isinstance(axial_force, u.Quantity):
             raise TypeError("axial force must be a united quantity")
-        if axial_force.unit != u.N.unit:
+        if not axial_force.unitsof(u.N):
             raise TypeError("axial force must be a force")
         axial_stress = axial_force / self.stress_area
         return (self.yield_strength / axial_stress).unitless
@@ -75,7 +74,7 @@ class Bolt:
         """
         if not isinstance(shear_force, u.Quantity):
             raise TypeError("shear force must be a united quantity")
-        if shear_force.unit != u.N.unit:
+        if not shear_force.unitsof(u.N):
             raise TypeError("shear force must be a force")
         # Use the diameter of the metal which is being sheared.
         d = self.major_diameter if on_shank else self.minor_diameter
@@ -112,17 +111,17 @@ class Bolt:
             raise TypeError("yeild strength must be a united quantity")
         if not isinstance(shear_strength, u.Quantity):
             raise TypeError("shear strength must be a united quantity")
-        if major_diameter.unit != u.m.unit:
+        if not major_diameter.unitsof(u.m):
             raise ValueError("major diameter must be a length")
-        if minor_diameter.unit != u.m.unit:
+        if not minor_diameter.unitsof(u.m):
             raise ValueError("minor diameter must be a length")
-        if stress_area.unit != u.m2.unit:
+        if not stress_area.unitsof(u.m2):
             raise ValueError("stress area must be an area")
-        if tensile_strength.unit != u.Pa.unit:
+        if not tensile_strength.unitsof(u.Pa):
             raise ValueError("tensile strength must be a pressure")
-        if yield_strength.unit != u.Pa.unit:
+        if not yield_strength.unitsof(u.Pa):
             raise ValueError("yeild strength must be a pressure")
-        if shear_strength.unit != u.Pa.unit:
+        if not shear_strength.unitsof(u.Pa):
             raise ValueError("shear strength must be a pressure")
         self.code = code
         self.grade = grade

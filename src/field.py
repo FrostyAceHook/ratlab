@@ -214,7 +214,11 @@ class Field:
         return self._apply(other, lambda a, b: (b < a) or (a == b))
 
     def __bool__(self):
-        return self != type(self).zero()
+        try:
+            x = type(self).zero()
+        except NotImplementedError:
+            x = type(self).one()
+        return self != x
     def __int__(self):
         return self.intof()
     def __float__(self):

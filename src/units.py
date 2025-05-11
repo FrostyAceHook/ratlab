@@ -27,15 +27,7 @@ class Scale(Enum):
 class Unit(Field):
     BASE = ("m", "g", "s", "A", "K")
 
-    def can_scale(self):
-        if self in Unit.COMPOUNDS:
-            return True
-        return len(self.bases) == 1 and self.bases[0][1].de == 1
-
-
-    def __init__(self, bases=(), *, logged=False, const=None):
-        # field behaves as multiplicative only, however .
-
+    def __init__(self, bases=()):
         had = set()
         cache = []
         for k, v in bases:
@@ -53,139 +45,35 @@ class Unit(Field):
             if v:
                 cache.append((k, v))
         cache = sorted(cache, key=lambda x: Unit.BASE.index(x[0]))
+        self._bases = tuple(cache)
 
-        if isinstance(const, (int, float)):
-            const = Rational.zero().cast(const)
-        if const is not None and not isinstance(const, Rational):
-            raise TypeError("const must be none or a rational")
-        self.const = const
-        if const is not None and (cache or logged):
-            raise ValueError("cannot specify units if const")
-
-        self.bases = tuple(cache)
-        self.logged = logged
-
-    def cast(self, obj):
-        if isinstance(obj, (int, float, Rational)):
-            return Unit(const=obj)
-        raise NotImplementedError()
-
-    @classmethod
-    def zero(cls):
-        return Unit(logged=True)
     @classmethod
     def one(cls):
         return Unit()
 
-    def add(a, b):
-        isints = (a.const is not None) + (b.const is not None)
-        if isints == 1:
-            raise NotImplementedError("cannot add const and units")
-        if isints == 2:
-            return Unit(const=a.const + b.const)
-
-        if not a.logged or not b.logged:
-            raise NotImplementedError("cannot add non-logged units")
-        bases = {k: v for k, v in a.bases}
-        for name, power in b.bases:
-            if name in bases:
-                bases[name] += power
-            else:
-                bases[name] = power
-        return Unit(bases.items(), logged=True)
-
-    def neg(a):
-        if a.const is not None:
-            return Unit(const=-a.const)
-        if not a.logged:
-            raise NotImplementedError("cannot neg non-logged units")
-        return Unit([(k, -v) for k, v in a.bases], logged=True)
-
     def mul(a, b):
-        isints = (a.const is not None) + (b.const is not None)
-        if isints == 1:
-            if b.logged:
-                a, b = b, a
-            if not a.logged:
-                raise NotImplementedError("cannot mul const and non-logged "
-                        "units")
-            return Unit([(k, v*b.const) for k, v in a.bases], logged=True)
-        if isints == 2:
-            return Unit(const=a.const * b.const)
-
-        if a.logged or b.logged:
-            raise NotImplementedError("cannot mul logged units")
-        bases = {k: v for k, v in a.bases}
-        for name, power in b.bases:
+        bases = {k: v for k, v in a._bases}
+        for name, power in b._bases:
             if name in bases:
                 bases[name] += power
             else:
                 bases[name] = power
         return Unit(bases.items())
-
     def rec(a):
-        if a.const is not None:
-            return Unit(const=~a.const)
-        if a.logged:
-            raise NotImplementedError("cannot rec logged units")
-        return Unit([(k, -v) for k, v in a.bases])
+        return Unit([(k, -v) for k, v in a._bases])
 
-    def exp(a):
-        if a.const is not None:
-            raise NotImplementedError("cannot exp const")
-        if not a.logged:
-            raise NotImplementedError("cannot exp non-logged units")
-        return Unit(a.bases, logged=False)
-    def log(a):
-        if a.const is not None:
-            raise NotImplementedError("cannot log const")
-        if a.logged:
-            raise NotImplementedError("cannot double-log units")
-        return Unit(a.bases, logged=True)
+    def __pow__(a, exp):
+        if isinstance(exp, (int, float)):
+            exp = Rational.zero().cast(exp)
+        if not isinstance(exp, Rational):
+            raise NotImplementedError()
+        return Unit([(k, v * exp) for k, v in a._bases])
 
-    def eq_zero(a):
-        if a.const is not None:
-            return a.const == 0
-        if not a.logged:
-            raise NotImplementedError("cannot compare non-logged units with "
-                    "zero")
-        return not a.bases
     def eq_one(a):
-        if a.const is not None:
-            return a.const == 1
-        if a.logged:
-            raise NotImplementedError("cannot compare logged units with one")
-        return not a.bases
+        return not a._bases
 
     def hashof(a):
-        return hash((a.bases, a.logged))
-
-    def __repr__(self):
-        if self.const is not None:
-            return f"units({self.const})"
-
-        wrap = lambda s: f"log({s})" if self.logged else s
-
-        if not self.bases:
-            return wrap("unitless")
-
-        # Alias common units.
-        if self in Unit.COMPOUNDS:
-            return wrap(Unit.COMPOUNDS[self])
-
-        parts = []
-        for name, power in self.bases:
-            if parts:
-                if power < 0:
-                    power = -power
-                    parts.append("/")
-                else:
-                    parts.append("∙")
-            parts.append(f"{name}{power.exp_as_string()}")
-
-        return wrap("".join(parts))
-
-Unit.none = Unit([])
+        return hash(a._bases)
 
 
 
@@ -193,147 +81,202 @@ Unit.none = Unit([])
 class Quantity(Field):
     @property
     def bare(self):
-        return Quantity(self.value, self.unit, isbare=True)
+        return Quantity(self._value, self._unit, self._logged, isbare=True)
     @property
     def united(self):
-        return Quantity(self.value, self.unit, isbare=False)
+        return Quantity(self._value, self._unit, self._logged, isbare=False)
 
     @property
     def unitless(self):
-        if self.unit != Unit.none:
+        if self._unit:
             raise ValueError("value has units")
-        return self.value
+        return self._value
+
+    def can_scale(self):
+        return self._unit in [x._unit for x, _ in Quantity.SCALEABLE]
 
     def ideal_scale(self):
-        if not self.unit.can_scale():
+        if not self.can_scale():
             return Scale.NONE
-        value = abs(self.value)
+        value = abs(self._value)
         if value == 0.0:
             return Scale.NONE
-        scales = sorted(Scale, key=lambda x: x.magnitude)
-        mags = [x.magnitude for x in scales]
+        # Scale down by the offset of the displayed unit.
+        base = [x for x, _ in Quantity.SCALEABLE if x._unit == self._unit][0]
+        scales = [[x, x.magnitude] for x in Scale]
         # Handle the fact that "mm^2" is consider "(mm)^2" and not "m (m^2)".
-        if len(self.unit.bases) == 1:
-            power = self.unit.bases[0][1]
+        if len(self._unit._bases) == 1:
+            power = self._unit._bases[0][1]
             if power.de == 1:
-                mags = [x ** power.nu for x in mags]
+                scales = [[x, x.magnitude ** power.nu] for x in Scale]
+        scales = sorted(scales, key=lambda x: x[1])
         # Find the best scale.
-        for scale, mag in zip(reversed(scales), reversed(mags)):
-            if 1.0 <= value / mag:
+        for scale, mag in reversed(scales):
+            if 1.0 <= value / base._value / mag:
                 return scale
         return scales[0]
 
     def display_scaled(self, scale, prec=5):
-        if scale != Scale.NONE and not self.unit.can_scale():
-            raise ValueError("unit cannot be scaled")
-        mag = scale.magnitude
-        # Handle the fact that "mm^2" is consider "(mm)^2" and not "m (m^2)".
-        if len(self.unit.bases) == 1:
-            power = self.unit.bases[0][1]
-            if power.de == 1:
-                mag **= power.nu
-        # Display the thing.
-        value = f"{self.value / mag:.{prec}g}"
-        unit = scale.letter + repr(self.unit)
-        if self.isbare:
+        value = self._value
+        if scale != Scale.NONE:
+            if not self.can_scale():
+                raise NotImplementedError("unit cannot be scaled")
+            mag = scale.magnitude
+            # Scale down by the offset of the displayed unit.
+            base = [x for x, _ in Quantity.SCALEABLE if x._unit == self._unit][0]
+            # Handle the fact that "mm^2" is consider "(mm)^2" and not "m (m^2)".
+            if len(self._unit._bases) == 1:
+                power = self._unit._bases[0][1]
+                if power.de == 1:
+                    mag **= power.nu
+            value /= base._value
+            value /= mag
+        value = f"{value:.{prec}g}"
+        unit = scale.letter + Quantity._unit_repr(self._unit)
+        if self._logged:
+            unit = f"log({unit})"
+        if self._isbare:
             return f"{value} ¿{unit}?"
         else:
             return f"{value} {unit}"
 
+    def unitsof(a, b):
+        if a.bare or b.bare:
+            return False
+        return a._unit == b._unit and a._logged == b._logged
 
-    def __init__(self, value=0.0, unit=Unit.none, *, loggedunits=False,
-            isbare=False):
+    def __init__(self, value=0.0, unit=Unit(), *, logged=False, isbare=False):
         if isinstance(value, int):
             value = float(value)
         if not isinstance(value, float):
             raise TypeError("value must be a float")
         if not isinstance(unit, Unit):
             raise TypeError("unit must be a Unit")
-        if not isinstance(loggedunits, bool):
-            raise TypeError("loggedunits must be a bool")
+        if not isinstance(logged, bool):
+            raise TypeError("logged must be a bool")
         if not isinstance(isbare, bool):
             raise TypeError("isbare must be a bool")
-        self.value = value
-        self.unit = unit
-        self.loggedunits = loggedunits
-        self.isbare = isbare
+        if not unit:
+            logged = False
+            # log(unitless) == unitless
+        self._value = value
+        self._unit = unit
+        self._logged = logged
+        self._isbare = isbare
 
     @classmethod
     def zero(cls):
-        return Quantity(0, Unit.none)
+        return Quantity(0)
     @classmethod
     def one(cls):
-        return Quantity(1, Unit.none)
+        return Quantity(1)
 
     def cast(self, obj):
         if isinstance(obj, (int, float)):
-            return Quantity(obj, Unit.none)
+            return Quantity(obj)
         raise NotImplementedError()
 
     def add(a, b):
         # ignore units if value is 0.
-        if b.value == 0 and b.unit == Unit.none and not b.isbare:
+        if b._value == 0 and not b._unit and not b._isbare:
             return a
-        if a.value == 0 and a.unit == Unit.none and not a.isbare:
+        if a._value == 0 and not a._unit and not a._isbare:
             return b
-        # handle logged units (which only work when adding unitless).
-        if b.loggedunits: # make a logged units.
-            c = a
-            a = b
-            b = c
-        if a.loggedunits:
-            if (b.unit != Unit.none and not b.bare) or b.loggedunits:
-                raise ValueError("can only add unitless with logged units")
-            return Quantity(a.value + b.value, a.unit, loggedunits=True,
-                    isbare=a.isbare)
         # handle bare.
-        if a.isbare + b.isbare == 1:
-            raise ValueError("quantites must be both bare or both united")
-        unit = a.unit if a.isbare else a.unit
-        if not a.isbare and a.unit != b.unit:
-            raise ValueError(f"units do not agree ('{a.unit}' vs '{b.unit}')")
-        return Quantity(a.value + b.value, unit, isbare=a.isbare)
+        if a._isbare + b._isbare == 1:
+            raise NotImplementedError()
+        if a._isbare + b._isbare == 2:
+            return Quantity(a._value + b._value, a._unit, isbare=True)
+        # handle logged.
+        if a._logged + b._logged:
+            if (a._logged or not a._unit) + (b._logged or not b._unit) == 1:
+                raise NotImplementedError()
+            return Quantity(a._value * b._value, a._unit * b._unit, logged=True)
+        # normal.
+        if a._unit != b._unit:
+            raise NotImplementedError("units do not agree "
+                    f"('{Quantity._unit_repr(a._unit)}' vs "
+                    f"'{Quantity._unit_repr(b._unit)}')")
+        return Quantity(a._value + b._value, a._unit)
     def neg(a):
-        if a.isbare:
-            return Quantity(-a.value, a.unit, isbare=True)
-        if a.loggedunits:
-            return Quantity(-a.value, a.unit, loggedunits=True)
-        return Quantity(-a.value, a.unit)
+        if a._isbare:
+            return Quantity(-a._value, a._unit, isbare=True)
+        if a._logged:
+            return Quantity(-a._value, ~a._unit, logged=True)
+        return Quantity(-a._value, a._unit)
     def mul(a, b):
-        if a.isbare + b.isbare == 1:
-            raise ValueError("quantites must be both bare or both united")
-        if a.isbare:
-            return Quantity(a.value * b.value, a.unit, isbare=True)
-        if a.loggedunits or b.loggedunits:
-            raise ValueError("cannot multiply logged units")
-        return Quantity(a.value * b.value, a.unit * b.unit)
+        # handle bare.
+        if a._isbare + b._isbare == 1:
+            raise NotImplementedError()
+        if a._isbare + b._isbare == 2:
+            return Quantity(a._value * b._value, a._unit, isbare=True)
+        # handle logged.
+        if a._logged + b._logged == 2:
+            raise NotImplementedError()
+        if a._logged + b._logged == 1:
+            if b._logged:
+                a, b = b, a
+            if b._unit:
+                raise NotImplementedError("cannot raise a unit to a unit")
+            x = a._value ** b._value
+            if isinstance(x, complex):
+                raise NotImplementedError("imaginary")
+            return Quantity(x, a._unit ** b._value, logged=True)
+        return Quantity(a._value * b._value, a._unit * b._unit)
     def rec(a):
-        if a.isbare:
-            return Quantity(1.0 / a.value, a.unit, isbare=True)
-        if a.loggedunits:
-            raise ValueError("cannot reciprocate logged units")
-        return Quantity(1.0 / a.value, Unit.none / a.unit)
+        if a._isbare:
+            return Quantity(1.0 / a._value, a._unit, isbare=True)
+        if a._logged:
+            raise NotImplementedError()
+        return Quantity(1.0 / a._value, Unit() / a._unit)
     def exp(a):
-        if a.isbare:
-            return Quantity(maths.exp(a.value), a.unit, isbare=True)
+        if a._isbare:
+            return Quantity(maths.exp(a._value), a._unit, isbare=True)
+        if a._logged:
+            # leave log space without changing quantity.
+            return Quantity(a._value, a._unit, logged=False)
+        raise NotImplementedError()
     def log(a):
-        if not a.isbare:
-            raise ValueError("cannot logarithm united value (use bare)")
-        return Quantity(maths.log(a.value), a.unit, isbare=True)
+        if a._isbare:
+            return Quantity(maths.log(a._value), a._unit, isbare=True)
+        if a._logged:
+            raise NotImplementedError()
+        # go to log space without changing quantity.
+        return Quantity(a._value, a._unit, logged=True)
 
     def eq_zero(a):
-        return a.value == 0.0
+        return a._value == 0.0
     def lt_zero(a):
-        return a.value < 0.0
+        return a._value < 0.0
 
     def floatof(a):
-        return a.value
+        return a._value
 
     def hashof(a):
-        return hash((a.value, a.unit))
+        return hash((a._value, a._unit))
 
     def __repr__(a):
         return a.display_scaled(a.ideal_scale())
+
+    @classmethod
+    def _unit_repr(cls, unit):
+        if not unit._bases:
+            return "unitless"
+
+        for disp in [l for x, l in Quantity.SCALEABLE if x._unit == unit]:
+            return disp
+
+        parts = []
+        for name, power in unit._bases:
+            if parts:
+                if power < 0:
+                    power = -power
+                    parts.append("/")
+                else:
+                    parts.append("∙")
+            parts.append(f"{name}{power.exp_as_string()}")
+        return "".join(parts)
+
 
 
 class Toleranced:
@@ -355,6 +298,36 @@ class Toleranced:
         l = "+"*(l >= 0) + l.display_scaled(scale)
         u = "+"*(u >= 0) + u.display_scaled(scale)
         return f"{self.nominal.display_scaled(scale)} ({l}) ({u})"
+
+    """
+
+x = 2 * metre
+log(x) = log(2 * metre)
+log(x) = log(2) + log(metre)
+
+y = 3 * metre
+log(x) + log(y) = log(2) + log(metre) + log(3) + log(metre)
+log(x) + log(y) = log(2*3) + log(metre*metre)
+log(x * y) = log(2*3 * metre*metre)
+x * y = 6 * metre^2
+
+notice how this is correct. now, what would it mean to multiple logged units?
+`log(x) * log(y)` represents what in terms of plain x and y?
+
+log(x) * y
+= (log(x) + log(xU)) (y * yU)
+= y yU log(x) + y yU log(xU)
+= log(x ^ (y yU)) + log(xU ^ (y yU))
+this is nonsensical, unless yU is 1:
+= log(x ^ y) + log(xU ^ y)
+= log(x^y * xU^y)
+
+log(x) * log(y)
+= (log(x) + log(xU) (log(y) + log(yU))
+= log(x) log(y) + log(x) log(yU) + log(y) log(xU) + log(xU) log(yU)
+again nonsensical, requires xU or yU to be 1:
+
+    """
 
 
 m = Quantity(1, Unit([("m", 1)]))
@@ -425,7 +398,7 @@ kOhm = 1e3 * Ohm
 MOhm = 1e6 * Ohm
 
 
-Unit.COMPOUNDS = {
-    N.unit: "N", Pa.unit: "Pa", J.unit: "J", W.unit: "W", V.unit: "V",
-    Ohm.unit: "Ω"
-}
+Quantity.SCALEABLE = [
+    (m, "m"), (g, "g"), (s, "s"), (A, "A"), (K, "K"), (N, "N"), (Pa, "Pa"),
+    (J, "J"), (W, "W"), (V, "V"), (Ohm, "Ω"),
+]
