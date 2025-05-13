@@ -164,6 +164,12 @@ class Quantity(Field):
     def one(cls):
         return Quantity(1)
 
+    @classmethod
+    def mapping(cls):
+        return {
+            int: (lambda x: Quantity.zero().cast(x)),
+            float: (lambda x: Quantity.zero().cast(x)),
+        }
     def cast(self, obj):
         if isinstance(obj, (int, float)):
             return Quantity(obj)

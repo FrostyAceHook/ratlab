@@ -27,6 +27,13 @@ class Num(Field):
             self.re = re
             self.im = im
 
+    @classmethod
+    def mapping(cls):
+        return {
+            int: (lambda x: Num.zero().cast(x)),
+            float: (lambda x: Num.zero().cast(x)),
+            complex: (lambda x: Num.zero().cast(x)),
+        }
     def cast(self, obj):
         if isinstance(obj, (int, float)):
             return Num(obj)

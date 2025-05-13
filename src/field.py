@@ -10,6 +10,9 @@ class Field:
     def one(cls): # multiplicative identity.
         raise NotImplementedError()
 
+    @classmethod
+    def mapping(cls): # returns a {class: f(class())}
+        return {}
     def cast(self, obj): # returns a type(self)
         raise NotImplementedError()
 

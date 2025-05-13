@@ -20,6 +20,12 @@ class Rational(Field):
         self.nu = numerator // gcd
         self.de = denominator // gcd
 
+    @classmethod
+    def mapping(cls):
+        return {
+            int: (lambda x: Rational.zero().cast(x)),
+            float: (lambda x: Rational.zero().cast(x)),
+        }
     def cast(self, obj):
         if isinstance(obj, int):
             return Rational(obj, 1)
