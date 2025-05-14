@@ -27,16 +27,12 @@ class Num(Field):
             self.re = re
             self.im = im
 
-    @classmethod
-    def mapping(cls):
-        return {
-            int: (lambda x: Num.zero().cast(x)),
-            float: (lambda x: Num.zero().cast(x)),
-            complex: (lambda x: Num.zero().cast(x)),
-        }
     def cast(self, obj):
-        if isinstance(obj, (int, float)):
-            return Num(obj)
+        if not isinstance(obj, complex):
+            try:
+                obj = complex(obj)
+            except Exception:
+                pass
         if isinstance(obj, complex):
             isnan = maths.isnan(obj.real) or maths.isnan(obj.imag)
             return Num(obj.real, obj.imag, isnan=isnan)

@@ -1,6 +1,8 @@
 import math
 
 pi = math.pi
+nan = float("nan")
+inf = float("inf")
 
 def isnan(x):
     if not isinstance(x, float):

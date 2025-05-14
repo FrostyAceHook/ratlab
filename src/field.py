@@ -10,9 +10,6 @@ class Field:
     def one(cls): # multiplicative identity.
         raise NotImplementedError()
 
-    @classmethod
-    def mapping(cls): # returns a {class: f(class())}
-        return {}
     def cast(self, obj): # returns a type(self)
         raise NotImplementedError()
 
@@ -41,9 +38,9 @@ class Field:
     def intof(a): # int(a)
         raise NotImplementedError()
     def floatof(a): # float(a)
-        raise NotImplementedError()
+        return float(a.intof())
     def complexof(a): # complex(a)
-        raise NotImplementedError()
+        return complex(a.floatof())
 
     def hashof(a): # hash(a)
         raise NotImplementedError()

@@ -133,34 +133,28 @@ _cli.command(_char_check, "charcheck")
 
 
 def literals(field):
-    literals.mapping = field.mapping()
-literals.mapping = None
+    if isinstance(field, type):
+        try:
+            literals.field = field.zero()
+        except NotImplementedError:
+            literals.field = field.one()
+    else:
+        literals.field = field
+literals.field = None
 
 
-def _literal_int(x):
-    if literals.mapping is None or int not in literals.mapping:
-        return x
-    return literals.mapping[int](x)
-def _literal_float(x):
-    if literals.mapping is None or float not in literals.mapping:
-        return x
-    return literals.mapping[float](x)
-def _literal_complex(x):
-    if literals.mapping is None or complex not in literals.mapping:
-        return x
-    return literals.mapping[complex](x)
-def _literal_str(x):
-    if literals.mapping is None or str not in literals.mapping:
-        return x
-    return literals.mapping[str](x)
+def _literal_wrap(x):
+    if literals.field is not None:
+        try:
+            return literals.field.cast(x)
+        except NotImplementedError:
+            pass
+    return x
 
 class _Wrapped(_ast.NodeTransformer):
     def visit_Constant(self, node):
-        if not isinstance(node.value, (int, float, complex, str)):
-            return node
-        func_name = f"_literal_{type(node.value).__name__}"
         return _ast.Call(
-            func=_ast.Name(id=func_name, ctx=_ast.Load()),
+            func=_ast.Name(id="_literal_wrap", ctx=_ast.Load()),
             args=[node],
             keywords=[],
         )
