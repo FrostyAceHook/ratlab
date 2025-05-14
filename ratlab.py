@@ -1,4 +1,5 @@
 import ast as _ast
+import codeop as _codeop
 import os as _os
 import sys as _sys
 import traceback as _traceback
@@ -34,87 +35,89 @@ class _cli:
         self._queue.append(code)
 
 
-    def cli(self, glbls, code_to_tree, msg="", once=False):
+    def cli(self, glbls, parse=None, msg=""):
         """
         Starts a command-line interface which is basically just an embedded
         python interpreter. `glbls` should be the `globals()` of the caller,
-        `code_to_tree` should take a string and return an ast tree, `msg` is
-        displayed upon entering the input loop and if `once` is true it will
-        break from the input loop after a single (non-exceptional) input.
+        `parse` should take a string and return an ast tree, `msg` is displayed
+        upon entering the input loop.
         """
         if getattr(self, "_in_cli", False):
             raise TypeError("cannot enter cli while in cli")
 
+        if parse is None:
+            def _parse(s):
+                module = _ast.parse(s)
+                _ast.fix_missing_locations(module)
+                return module
+            parse = _parse
+
         self._leave = False
         self._in_cli = True
         try:
-            self._cli_loop(glbls, code_to_tree, msg, once)
+            self._cli_loop(glbls, parse, msg)
         finally:
             self._leave = False
             self._in_cli = False
 
-    def _cli_loop(self, glbls, code_to_tree, msg, once):
-        sent_input = False
+    def _cli_loop(self, glbls, parse, msg):
         def get_input():
-            nonlocal sent_input
             if self._queue:
-                code = self._queue.pop(0).lstrip()
-                lines = code.split("\n")
-                print(f">> {lines[0]}")
+                source = self._queue.pop(0)
+                lines = source.split("\n")
+                print(">>", lines[0])
                 for line in lines[1:]:
-                    print(f".. {line}")
-                return code
+                    print("..", line)
+                return source
 
-            lines = []
+            source = ""
             while True:
                 try:
-                    line = input(">> " if not lines else ".. ")
+                    line = input(">> " if not source else ".. ")
                 except EOFError:
                     break
-
-                if line.lstrip().startswith("#"):
-                    # add a blank line if in a multiline block to align the line
-                    # numbers.
-                    if lines:
-                        lines.append("")
-                    continue
-
-                escaped = line.endswith('\\')
-                line = line[:-1] if escaped else line
-
-                lines.append(line)
-                if not escaped:
+                source += "\n"*(not not source) + line
+                if not line:
                     break
+                try:
+                    command = _codeop.compile_command(source)
+                except Exception as e:
+                    break
+                if command is not None:
+                    break
+            return source
 
-            sent_input = True
-            return "\n".join(lines).strip()
-
-        # log starting message.
-        msg = str(msg)
-        if msg:
+        if (msg := str(msg)):
             print(msg)
 
         while not self._leave:
-            code = get_input()
-            if not code:
+            source = get_input()
+            stripped = source.strip()
+            if not stripped:
+                continue
+            if stripped in self._commands:
+                try:
+                    self._commands[stripped]()
+                except Exception as e:
+                    print("## ERROR:")
+                    _traceback.print_exception(type(e), e, e.__traceback__)
+                    continue
                 continue
             try:
-                if code in self._commands:
-                    self._commands[code]()
-                else:
-                    tree = code_to_tree(code)
-                    compiled = compile(tree, "<ast>", "exec")
-                    exec(compiled, glbls, glbls)
-            except Exception:
-                sent_input = False
+                parsed = parse(source)
+                compiled = compile(parsed, "<cli>", "exec")
+            except Exception as e:
+                print("## TYPO:")
+                _traceback.print_exception(type(e), e, None)
+                continue
+            try:
+                exec(compiled, glbls, glbls)
+            except Exception as e:
                 print("## ERROR:")
-                print(_traceback.format_exc())
-
-            # Only allow one input if requested.
-            if once and sent_input:
-                break
-            if self._leave:
-                print("-- okie leaving.")
+                _traceback.print_exception(type(e), e, e.__traceback__)
+                continue
+        if self._leave:
+            print("-- okie leaving.")
 
 _cli = _cli()
 
@@ -143,7 +146,7 @@ def literals(field):
 literals.field = None
 
 
-def _literal_wrap(x):
+def _wrapped_literal(x):
     if literals.field is not None:
         try:
             return literals.field.cast(x)
@@ -151,10 +154,10 @@ def _literal_wrap(x):
             pass
     return x
 
-class _Wrapped(_ast.NodeTransformer):
+class _WrappedTransformer(_ast.NodeTransformer):
     def visit_Constant(self, node):
         return _ast.Call(
-            func=_ast.Name(id="_literal_wrap", ctx=_ast.Load()),
+            func=_ast.Name(id="_wrapped_literal", ctx=_ast.Load()),
             args=[node],
             keywords=[],
         )
@@ -170,23 +173,23 @@ class _Wrapped(_ast.NodeTransformer):
     #         keywords=[]
     #     )
 
-def _print_if_nonnone(x):
+def _wrapped_print(x):
     if x is not None:
         print(repr(x))
 
-def _code_to_tree(code):
+def _wrapped_parse(source):
     # Parse the code.
-    module = _ast.parse(code)
-    module = _Wrapped().visit(module)
+    module = _ast.parse(source, "<cli>")
+    module = _WrappedTransformer().visit(module)
 
     # If the entire thing is an expression, add a print if non-none.
     if len(module.body) == 1 and isinstance(module.body[0], _ast.Expr):
         # However, this can be circumvented by appending a semicolon.
-        if not code.lstrip().endswith(";"):
+        if not source.lstrip().endswith(";"):
             expr_node = module.body[0]
             tree = _ast.Expr(
                 value=_ast.Call(
-                    func=_ast.Name(id="_print_if_nonnone", ctx=_ast.Load()),
+                    func=_ast.Name(id="_wrapped_print", ctx=_ast.Load()),
                     args=[expr_node.value],
                     keywords=[],
                 )
@@ -198,10 +201,9 @@ def _code_to_tree(code):
 
 
 if __name__ == "__main__":
-    _cli.cli(globals(), _code_to_tree,
+    _cli.cli(globals(), _wrapped_parse,
         ",--------------------------,\n"
         "|    RATLAB® Stuart Inc.   |\n"
         "'--------------------------'\n"
-        "  multiline code : end line with a backslash\n"
         "  literals(field_cls) : changes literal types\n"
     )
