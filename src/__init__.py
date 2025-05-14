@@ -1,8 +1,7 @@
 import maths
 from maths import pi
 
-from ranges import linspace, logspace
-from rungekutta import rk4
+from numerical_methods import linspace, logspace, rk4, rootnr, rootbi
 
 from plot import plt, figure, plot
 
