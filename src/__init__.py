@@ -1,7 +1,7 @@
 import maths
-from maths import pi
+from maths import pi, nan, inf
 
-from numerical_methods import linspace, logspace, rk4, rootnr, rootbi
+from numerical_methods import linspace, logspace, interp, rk4, rootnr, rootbi
 
 from plot import plt, figure, plot
 
