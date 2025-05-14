@@ -219,15 +219,17 @@ def _code_to_tree(code):
 
     # If the entire thing is an expression, add a print if non-none.
     if len(module.body) == 1 and isinstance(module.body[0], _ast.Expr):
-        expr_node = module.body[0]
-        tree = _ast.Expr(
-            value=_ast.Call(
-                func=_ast.Name(id="_print_if_nonnone", ctx=_ast.Load()),
-                args=[expr_node.value],
-                keywords=[],
+        # However, this can be circumvented by appending a semicolon.
+        if not code.lstrip().endswith(";"):
+            expr_node = module.body[0]
+            tree = _ast.Expr(
+                value=_ast.Call(
+                    func=_ast.Name(id="_print_if_nonnone", ctx=_ast.Load()),
+                    args=[expr_node.value],
+                    keywords=[],
+                )
             )
-        )
-        module = _ast.Module(body=[tree], type_ignores=[])
+            module = _ast.Module(body=[tree], type_ignores=[])
 
     _ast.fix_missing_locations(module)
     return module
