@@ -54,52 +54,20 @@ class _cli:
             self._in_cli = False
 
     def _cli_loop(self, glbls, code_to_tree, msg, once):
-        last_len = 0
-        def log_raw(line, ending):
-            nonlocal last_len
-
-            if not isinstance(line, str):
-                line = str(line)
-
-            # Break multi-line logs into just one.
-            if "\n" in line:
-                # Handle everything but the last.
-                for l in line.split("\n")[:-1]:
-                    log_raw(l, "\n")
-                # Now do the last one with the expected ending.
-                line = line.rsplit("\n", 1)[1]
-
-            this_len = len(line)
-            if last_len > this_len:
-                line += " "*(last_len - this_len)
-
-            if ending == "\r":
-                last_len = this_len
-            else:
-                last_len = 0
-
-            print(line + ending, end="")
-
-        def log_tmp(line):
-            log_raw(line, "\r")
-        def log(line):
-            log_raw(line, "\n")
-
         sent_input = False
         def get_input():
             nonlocal sent_input
             if self._queue:
                 code = self._queue.pop(0).lstrip()
                 lines = code.split("\n")
-                log(f">> {lines[0]}")
+                print(f">> {lines[0]}")
                 for line in lines[1:]:
-                    log(f".. {line}")
+                    print(f".. {line}")
                 return code
 
             lines = []
             while True:
                 try:
-                    log_tmp("")
                     line = input(">> " if not lines else ".. ")
                 except EOFError:
                     break
@@ -124,7 +92,7 @@ class _cli:
         # log starting message.
         msg = str(msg)
         if msg:
-            log(msg)
+            print(msg)
 
         while not self._leave:
             code = get_input()
@@ -137,16 +105,16 @@ class _cli:
                     tree = code_to_tree(code)
                     compiled = compile(tree, "<ast>", "exec")
                     exec(compiled, glbls, glbls)
-            except Exception as ex:
+            except Exception:
                 sent_input = False
-                log("## ERROR:")
-                log(_traceback.format_exc())
+                print("## ERROR:")
+                print(_traceback.format_exc())
 
             # Only allow one input if requested.
             if once and sent_input:
                 break
             if self._leave:
-                log("-- okie leaving.")
+                print("-- okie leaving.")
 
 _cli = _cli()
 
