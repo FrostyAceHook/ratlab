@@ -1,5 +1,5 @@
 import maths
-from maths import pi, nan, inf
+from maths import pi, nan, inf, prod
 
 from numerical_methods import linspace, logspace, interp, rk4, rootnr, rootbi
 

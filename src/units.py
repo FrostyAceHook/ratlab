@@ -81,11 +81,11 @@ class Unit(Field):
 class Quantity(Field):
     @property
     def bare(self):
-        return Quantity(self._value, self._unit, logged=self._logged,
+        return type(self)(self._value, self._unit, logged=self._logged,
                 isbare=True)
     @property
     def united(self):
-        return Quantity(self._value, self._unit, logged=self._logged,
+        return type(self)(self._value, self._unit, logged=self._logged,
                 isbare=False)
 
     @property
@@ -97,7 +97,7 @@ class Quantity(Field):
     def can_scale(self):
         if self._logged:
             return False
-        return self._unit in [x._unit for x, _ in Quantity.SCALEABLE]
+        return self._unit in [x._unit for x, _ in type(self).SCALEABLE]
 
     def ideal_scale(self):
         if not self.can_scale():
@@ -106,7 +106,8 @@ class Quantity(Field):
         if value == 0.0:
             return Scale.NONE
         # Scale down by the offset of the displayed unit.
-        base = [x for x, _ in Quantity.SCALEABLE if x._unit == self._unit][0]
+        base = [x for x, _ in type(self).SCALEABLE if x._unit == self._unit]
+        base = base[0]
         scales = [[x, x.magnitude] for x in Scale]
         scales = sorted(scales, key=lambda x: x[1])
         # Find the best scale.
@@ -120,12 +121,13 @@ class Quantity(Field):
         value /= scale.magnitude
         if self.can_scale():
             # Scale down by the offset of the displayed unit.
-            base = [x for x, _ in Quantity.SCALEABLE if x._unit == self._unit][0]
+            base = [x for x, _ in type(self).SCALEABLE if x._unit == self._unit]
+            base = base[0]
             value /= base._value
         elif scale != Scale.NONE:
             raise NotImplementedError("unit cannot be scaled")
         value = f"{value:.{prec}g}"
-        unit = scale.letter + Quantity._unit_repr(self._unit)
+        unit = scale.letter + type(self)._unit_repr(self._unit)
         if self._logged:
             unit = f"+ log({unit})"
         if self._isbare:
@@ -159,22 +161,24 @@ class Quantity(Field):
 
     @classmethod
     def zero(cls):
-        return Quantity(0)
+        return cls(0)
     @classmethod
     def one(cls):
-        return Quantity(1)
+        return cls(1)
 
-    def cast(self, obj):
+    @classmethod
+    def cast(cls, obj, for_obj=None):
         if not isinstance(obj, float):
             try:
                 obj = float(obj)
             except Exception:
                 pass
         if isinstance(obj, float):
-            return Quantity(obj)
+            return cls(obj)
         raise NotImplementedError()
 
-    def add(a, b):
+    @classmethod
+    def add(cls, a, b):
         # ignore units if value is 0.
         if b._value == 0 and not b._unit and not b._isbare:
             return a
@@ -186,33 +190,35 @@ class Quantity(Field):
                 raise NotImplementedError()
             if not a._isbare and b._isbare:
                 a, b = b, a
-            return Quantity(a._value + b._value, a._unit, logged=a._logged,
+            return cls(a._value + b._value, a._unit, logged=a._logged,
                     isbare=True)
         # handle logged.
         if a._logged + b._logged:
             if (a._logged or not a._unit) + (b._logged or not b._unit) == 1:
                 raise NotImplementedError()
-            return Quantity(a._value + b._value, a._unit * b._unit, logged=True)
+            return cls(a._value + b._value, a._unit * b._unit, logged=True)
         # normal.
         if a._unit != b._unit:
             raise NotImplementedError("units do not agree "
-                    f"('{Quantity._unit_repr(a._unit)}' vs "
-                    f"'{Quantity._unit_repr(b._unit)}')")
-        return Quantity(a._value + b._value, a._unit)
-    def neg(a):
+                    f"('{cls._unit_repr(a._unit)}' vs "
+                    f"'{cls._unit_repr(b._unit)}')")
+        return cls(a._value + b._value, a._unit)
+    @classmethod
+    def neg(cls, a):
         if a._isbare:
-            return Quantity(-a._value, a._unit, isbare=True)
+            return cls(-a._value, a._unit, isbare=True)
         if a._logged:
-            return Quantity(-a._value, ~a._unit, logged=True)
-        return Quantity(-a._value, a._unit)
-    def mul(a, b):
+            return cls(-a._value, ~a._unit, logged=True)
+        return cls(-a._value, a._unit)
+    @classmethod
+    def mul(cls, a, b):
         # handle bare.
         if a._isbare + b._isbare:
             if (a._isbare or not a._unit) + (b._isbare or not b._unit) == 1:
                 raise NotImplementedError()
             if not a._isbare and b._isbare:
                 a, b = b, a
-            return Quantity(a._value * b._value, a._unit, logged=a._logged,
+            return cls(a._value * b._value, a._unit, logged=a._logged,
                     isbare=True)
         # handle logged.
         if a._logged + b._logged == 2:
@@ -222,30 +228,35 @@ class Quantity(Field):
                 a, b = b, a
             if b._unit:
                 raise NotImplementedError("cannot raise a unit to a unit")
-            return Quantity(a._value*b._value, a._unit**b._value, logged=True)
-        return Quantity(a._value * b._value, a._unit * b._unit)
-    def rec(a):
+            return cls(a._value*b._value, a._unit**b._value, logged=True)
+        return cls(a._value * b._value, a._unit * b._unit)
+    @classmethod
+    def rec(cls, a):
         if a._isbare:
-            return Quantity(1.0 / a._value, a._unit, isbare=True)
+            return cls(1.0 / a._value, a._unit, isbare=True)
         if a._logged:
             raise NotImplementedError()
-        return Quantity(1.0 / a._value, Unit() / a._unit)
-    def exp(a):
+        return cls(1.0 / a._value, Unit() / a._unit)
+    @classmethod
+    def exp(cls, a):
         if a._isbare:
-            return Quantity(maths.exp(a._value), a._unit, isbare=True)
+            return cls(maths.exp(a._value), a._unit, isbare=True)
         if a._logged or not a._unit:
-            return Quantity(maths.exp(a._value), a._unit, logged=False)
+            return cls(maths.exp(a._value), a._unit, logged=False)
         raise NotImplementedError()
-    def log(a):
+    @classmethod
+    def log(cls, a):
         if a._isbare:
-            return Quantity(maths.log(a._value), a._unit, isbare=True)
+            return cls(maths.log(a._value), a._unit, isbare=True)
         if a._logged:
             raise NotImplementedError()
-        return Quantity(maths.log(a._value), a._unit, logged=True)
+        return cls(maths.log(a._value), a._unit, logged=True)
 
-    def eq_zero(a):
+    @classmethod
+    def eq_zero(cls, a):
         return a._value == 0.0
-    def lt_zero(a):
+    @classmethod
+    def lt_zero(cls, a):
         return a._value < 0.0
 
     def floatof(a):
@@ -262,7 +273,7 @@ class Quantity(Field):
         if not unit._bases:
             return "unitless"
 
-        for disp in [l for x, l in Quantity.SCALEABLE if x._unit == unit]:
+        for disp in [l for x, l in cls.SCALEABLE if x._unit == unit]:
             return disp
 
         parts = []

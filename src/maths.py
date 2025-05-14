@@ -1,8 +1,10 @@
 import math
 
+# should be builtins already tbh.
 pi = math.pi
 nan = float("nan")
 inf = float("inf")
+prod = math.prod
 
 def isnan(x):
     if not isinstance(x, float):

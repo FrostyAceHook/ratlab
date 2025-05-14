@@ -20,35 +20,42 @@ class Rational(Field):
         self.nu = numerator // gcd
         self.de = denominator // gcd
 
-    def cast(self, obj):
+    @classmethod
+    def cast(cls, obj, for_obj=None):
         if not isinstance(obj, float):
             try:
                 obj = float(obj)
             except Exception:
                 pass
         if isinstance(obj, float):
-            return Rational(*maths.simplest_ratio(obj))
+            return cls(*maths.simplest_ratio(obj))
         raise NotImplementedError()
 
     @classmethod
     def zero(cls):
-        return Rational(0, 1)
+        return cls(0, 1)
     @classmethod
     def one(cls):
-        return Rational(1, 1)
+        return cls(1, 1)
 
-    def add(a, b):
-        return Rational(a.nu * b.de + b.nu * a.de, a.de * b.de)
-    def neg(a):
-        return Rational(-a.nu, a.de)
-    def mul(a, b):
-        return Rational(a.nu * b.nu, a.de * b.de)
-    def rec(a):
-        return Rational(a.de, a.nu)
+    @classmethod
+    def add(cls, a, b):
+        return cls(a.nu * b.de + b.nu * a.de, a.de * b.de)
+    @classmethod
+    def neg(cls, a):
+        return cls(-a.nu, a.de)
+    @classmethod
+    def mul(cls, a, b):
+        return cls(a.nu * b.nu, a.de * b.de)
+    @classmethod
+    def rec(cls, a):
+        return cls(a.de, a.nu)
 
-    def eq_zero(a):
+    @classmethod
+    def eq_zero(cls, a):
         return a.nu == 0
-    def lt_zero(a):
+    @classmethod
+    def lt_zero(cls, a):
         return a.nu < 0
 
     def floatof(a):

@@ -27,7 +27,8 @@ class Num(Field):
             self.re = re
             self.im = im
 
-    def cast(self, obj):
+    @classmethod
+    def cast(cls, obj, for_obj=None):
         if not isinstance(obj, complex):
             try:
                 obj = complex(obj)
@@ -35,71 +36,79 @@ class Num(Field):
                 pass
         if isinstance(obj, complex):
             isnan = maths.isnan(obj.real) or maths.isnan(obj.imag)
-            return Num(obj.real, obj.imag, isnan=isnan)
+            return cls(obj.real, obj.imag, isnan=isnan)
         raise NotImplementedError()
 
     @classmethod
     def zero(cls):
-        return Num(0)
+        return cls(0)
     @classmethod
     def one(cls):
-        return Num(1)
+        return cls(1)
     @classmethod
     def inf(cls):
-        return Num(float("inf"))
+        return cls(float("inf"))
     @classmethod
     def nan(cls):
-        return Num(isnan=True)
+        return cls(isnan=True)
 
-    def add(a, b):
+    @classmethod
+    def add(cls, a, b):
         if a.isnan or b.isnan:
-            return Num.nan()
-        return Num(a.re + b.re, a.im + b.im)
-    def neg(a):
+            return cls.nan()
+        return cls(a.re + b.re, a.im + b.im)
+    @classmethod
+    def neg(cls, a):
         if a.isnan:
-            return Num.nan()
-        return Num(-a.re, -a.im)
-    def mul(a, b):
+            return cls.nan()
+        return cls(-a.re, -a.im)
+    @classmethod
+    def mul(cls, a, b):
         if a.isnan or b.isnan:
-            return Num.nan()
+            return cls.nan()
         # (a.re + i a.im)(b.re + i b.im)
         # = a.re b.re - a.im b.im + i(a.im b.re + a.re b.im)
         re = maths.mul(a.re, b.re) - maths.mul(a.im, b.im)
         im = maths.mul(a.im, b.re) - maths.mul(a.re, b.im)
-        return Num(re, im)
-    def rec(a):
+        return cls(re, im)
+    @classmethod
+    def rec(cls, a):
         if a.isnan:
-            return Num.nan()
+            return cls.nan()
         if a.re == 0.0 and a.im == 0.0:
             raise ZeroDivisionError("1/0")
         # 1/(a.re + i a.im)
         # = (a.re - i a.im)/(a.re^2 + a.im^2)
         d = maths.mul(a.re, a.re) + maths.mul(a.im, a.im)
-        return Num(a.re / d, -a.im / d)
-    def exp(a):
+        return cls(a.re / d, -a.im / d)
+    @classmethod
+    def exp(cls, a):
         if a.isnan:
-            return Num.nan()
+            return cls.nan()
         # e^(a.re + i a.im)
         # = e^a.re * e^(i a.im)
         # = e^a.re * (cos(a.im) + i sin(a.im))
         re = maths.mul(maths.exp(a.re), maths.cos(a.im))
         im = maths.mul(maths.exp(a.re), maths.sin(a.im))
-        return Num(re, im)
-    def log(a):
+        return cls(re, im)
+    @classmethod
+    def log(cls, a):
         if a.isnan:
-            return Num.nan()
+            return cls.nan()
         # log(a)
         # = log(|a|) + i arg(a)  [principal branch]
         absa = maths.mul(a.re, a.re) + maths.mul(a.im, a.im)
         re = maths.mul(0.5, maths.log(absa))
         im = maths.atan2(a.im, a.re)
-        return Num(re, im)
+        return cls(re, im)
 
-    def eq_zero(a):
+    @classmethod
+    def eq_zero(cls, a):
         if a.isnan:
             return False
         return a.re == 0.0 and a.im == 0.0
-    def lt_zero(a):
+    @classmethod
+    def lt_zero(cls, a):
         if a.isnan: # nan is unorderable.
             raise NotImplementedError()
         if a.im: # complex is unorderable.

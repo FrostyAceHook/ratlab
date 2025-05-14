@@ -46,11 +46,10 @@ class _cli:
             raise TypeError("cannot enter cli while in cli")
 
         if parse is None:
-            def _parse(s):
+            def parse(s):
                 module = _ast.parse(s)
                 _ast.fix_missing_locations(module)
                 return module
-            parse = _parse
 
         self._leave = False
         self._in_cli = True
@@ -136,13 +135,7 @@ _cli.command(_char_check, "charcheck")
 
 
 def literals(field):
-    if isinstance(field, type):
-        try:
-            literals.field = field.zero()
-        except NotImplementedError:
-            literals.field = field.one()
-    else:
-        literals.field = field
+    literals.field = field
 literals.field = None
 
 
