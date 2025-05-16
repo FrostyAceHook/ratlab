@@ -213,10 +213,9 @@ class Field:
 
     def __bool__(s):
         try:
-            x = type(s).zero()
+            return not type(s).eq_zero(s)
         except NotImplementedError:
-            x = type(s).one()
-        return s != x
+            return not type(s).eq_one(s)
     def __int__(s):
         return s.intof()
     def __float__(s):
