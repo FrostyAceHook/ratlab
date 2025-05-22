@@ -1,8 +1,8 @@
 import math
+from math import pi
 from types import GeneratorType
 
-from maths import pi, nan, inf
-from util import *
+from util import classproperty
 
 
 class Field:
@@ -20,12 +20,6 @@ class Field:
     @classproperty
     def one(cls): # multiplicative identity.
         return cls._one()
-    @classproperty
-    def inf(cls): # infinity.
-        return cls._inf()
-    @classproperty
-    def nan(cls): # not a number.
-        return cls._nan()
 
     @property
     def neg(a): # -a
@@ -103,12 +97,6 @@ class Field:
         raise NotImplementedError()
     @classmethod
     def _one(cls): # multiplicative identity.
-        raise NotImplementedError()
-    @classmethod
-    def _inf(cls): # infinity.
-        raise NotImplementedError()
-    @classmethod
-    def _nan(cls): # not a number.
         raise NotImplementedError()
 
     @classmethod
@@ -281,7 +269,7 @@ def sqrt(x):
         return x.sqrt
     x = float(x)
     if x != x:
-        return nan
+        return x
     return math.sqrt(x)
 
 def cbrt(x):
@@ -289,7 +277,7 @@ def cbrt(x):
         return x.cbrt
     x = float(x)
     if x != x:
-        return nan
+        return x
     return math.cbrt(x)
 
 def log(x):
@@ -297,9 +285,9 @@ def log(x):
         return x.log
     x = float(x)
     if x != x:
-        return nan
+        return x
     if x == 0.0:
-        return -inf
+        return -float("inf")
     return math.log(x)
 
 def exp(x):
@@ -307,15 +295,15 @@ def exp(x):
         return x.exp
     x = float(x)
     if x != x:
-        return nan
+        return x
     return math.exp(x)
 
 def cos(x):
     y = float(x)
     if y != y:
-        y = nan
+        pass
     elif math.isinf(y):
-        y = nan
+        y = float("nan")
     else:
         lookup = {pi/2: 0.0, -pi/2: 0.0, pi: -1.0, -pi: -1.0, 2*pi: 1.0}
         y = lookup.get(y, math.cos(y))
@@ -326,9 +314,9 @@ def cos(x):
 def sin(x):
     y = float(x)
     if y != y:
-        y = nan
+        pass
     elif math.isinf(y):
-        y = nan
+        y = float("nan")
     else:
         lookup = {pi/2: 1.0, -pi/2: -1.0, pi: 0.0, -pi: 0.0, 2*pi: 0.0}
         y = lookup.get(y, math.sin(y))

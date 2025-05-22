@@ -1,16 +1,14 @@
 from math import atan2
 
 import field
-import maths
-from field import Field
-from util import *
+from util import immutable
 
 
 def _fp_mul(a, b):
     assert isinstance(a, float)
     assert isinstance(b, float)
     if a != a or b != b:
-        return nan
+        return float("nan")
     if a == 0.0 or b == 0.0: # avoid 0*inf = nan
         return 0.0
     return a * b
@@ -21,7 +19,7 @@ def _fp_isnan(x):
 
 
 @immutable
-class Num(Field):
+class Num(field.Field):
     def __init__(self, re=0.0, im=0.0, *, isnan=False):
         if isinstance(re, int):
             re = float(re)
@@ -63,36 +61,30 @@ class Num(Field):
     @classmethod
     def _one(cls):
         return cls(1)
-    @classmethod
-    def _inf(cls):
-        return cls(maths.inf)
-    @classmethod
-    def _nan(cls):
-        return cls(isnan=True)
 
     @classmethod
     def _add(cls, a, b):
         if a.isnan or b.isnan:
-            return cls._nan()
+            return cls(isnan=True)
         return cls(a.re + b.re, a.im + b.im)
     @classmethod
     def _neg(cls, a):
         if a.isnan:
-            return cls._nan()
+            return cls(isnan=True)
         return cls(-a.re, -a.im)
     @classmethod
     def _mul(cls, a, b):
         if a.isnan or b.isnan:
-            return cls._nan()
+            return cls(isnan=True)
         # (a.re + i a.im)(b.re + i b.im)
         # = a.re b.re - a.im b.im + i(a.im b.re + a.re b.im)
         re = _fp_mul(a.re, b.re) - _fp_mul(a.im, b.im)
-        im = _fp_mul(a.im, b.re) - _fp_mul(a.re, b.im)
+        im = _fp_mul(a.im, b.re) + _fp_mul(a.re, b.im)
         return cls(re, im)
     @classmethod
     def _rec(cls, a):
         if a.isnan:
-            return cls._nan()
+            return cls(isnan=True)
         if a.re == 0.0 and a.im == 0.0:
             raise ZeroDivisionError("1/0")
         # 1/(a.re + i a.im)
@@ -102,7 +94,7 @@ class Num(Field):
     @classmethod
     def _exp(cls, a):
         if a.isnan:
-            return cls._nan()
+            return cls(isnan=True)
         # e^(a.re + i a.im)
         # = e^a.re * e^(i a.im)
         # = e^a.re * (cos(a.im) + i sin(a.im))
@@ -112,7 +104,7 @@ class Num(Field):
     @classmethod
     def _log(cls, a):
         if a.isnan:
-            return cls._nan()
+            return cls(isnan=True)
         # log(a)
         # = log(|a|) + i arg(a)  [principal branch]
         absa = _fp_mul(a.re, a.re) + _fp_mul(a.im, a.im)
@@ -136,14 +128,14 @@ class Num(Field):
     @classmethod
     def _floatof(cls, a):
         if a.isnan:
-            return maths.nan
+            return float("nan")
         if a.im:
             raise NotImplementedError()
         return float(a.re)
     @classmethod
     def _complexof(cls, a):
         if a.isnan:
-            return maths.cnan
+            return complex("nan+nanj")
         return complex(a.re, a.im)
 
     @classmethod

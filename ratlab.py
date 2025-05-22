@@ -148,14 +148,17 @@ def _wrapped_literal(x):
             pass
     return x
 
-def _wrapped_name(x):
-    if x == "field":
-        return lits.field
-    if x in {"zero", "one", "inf", "nan"}:
-        return getattr(lits.field, x)
-    if x == "pi":
-        return lits.field.cast(maths.pi)
-    return None
+_WRAPPED_CONSTANTS = {
+    "e": math.e,
+    "pi": math.pi,
+    "i": 1.0j,
+    "inf": float("inf"),
+    "cinf": complex("inf+infj"),
+    "nan": float("nan"),
+    "cnan": complex("nan+nanj")
+}
+def _wrapped_constant(x):
+    return lits.field.cast(_WRAPPED_CONSTANTS[x])
 
 class _WrappedTransformer(_ast.NodeTransformer):
     def __init__(self):
@@ -180,12 +183,8 @@ class _WrappedTransformer(_ast.NodeTransformer):
         if parent is not None and isinstance(parent, _ast.Attribute):
             return node
 
-        # See if its a constant.
-        try:
-            isconst = _wrapped_name(node.id) is not None
-        except Exception:
-            isconst = False
-        if not isconst:
+        # Might not be a recognised constant.
+        if node.id not in _WRAPPED_CONSTANTS:
             return node
 
         # Ensure that its in a load context.
@@ -194,7 +193,7 @@ class _WrappedTransformer(_ast.NodeTransformer):
 
         # Wrap it.
         return _ast.Call(
-            func=_ast.Name(id="_wrapped_name", ctx=_ast.Load()),
+            func=_ast.Name(id="_wrapped_constant", ctx=_ast.Load()),
             args=[_ast.Constant(value=node.id)],
             keywords=[]
         )

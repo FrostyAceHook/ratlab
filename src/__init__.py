@@ -1,10 +1,10 @@
+import math # just useful.
+
 from field import sqrt, cbrt, log, exp, cos, sin
 
-import maths
+from numerical_methods import *
 
-from numerical_methods import linspace, logspace, interp, rk4, rootnr, rootbi
-
-from plot import plt, figure, plot
+from plot import *
 
 import units as u
 

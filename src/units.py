@@ -1,10 +1,8 @@
 from enum import Enum
 
 import field
-import maths
-from field import Field
 from rational import Rational
-from util import *
+from util import immutable
 
 
 class Scale(Enum):
@@ -25,7 +23,7 @@ class Scale(Enum):
 
 
 @immutable
-class Unit(Field):
+class Unit(field.Field):
     BASE = ("m", "kg", "s", "A", "K")
 
     def __init__(self, bases=()):
@@ -83,7 +81,7 @@ class Unit(Field):
 
 
 @immutable
-class Quantity(Field):
+class Quantity(field.Field):
     @property
     def bare(self):
         return type(self)(self._value, self._unit, logged=self._logged,

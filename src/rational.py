@@ -1,10 +1,12 @@
-import maths
-from field import Field
-from util import *
+import math
+
+import field
+from numerical_methods import simplest_ratio
+from util import immutable
 
 
 @immutable
-class Rational(Field):
+class Rational(field.Field):
     def __init__(self, numerator, denominator):
         if not isinstance(numerator, int):
             raise TypeError("numerator must be an int")
@@ -15,7 +17,7 @@ class Rational(Field):
             denominator = -denominator
         if denominator == 0:
             raise ZeroDivisionError("x/0")
-        gcd = maths.gcd(numerator, denominator)
+        gcd = math.gcd(numerator, denominator)
         # note gcd(0,x)==x, therefore collapses 0/1
         self.nu = numerator // gcd
         self.de = denominator // gcd
@@ -28,7 +30,7 @@ class Rational(Field):
             except Exception:
                 pass
         if isinstance(obj, float):
-            return cls(*maths.simplest_ratio(obj))
+            return cls(*simplest_ratio(obj))
         raise NotImplementedError()
 
     @classmethod

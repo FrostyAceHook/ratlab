@@ -1,5 +1,6 @@
+from math import pi
+
 import units as u
-from maths import pi
 
 
 class Bolt:
