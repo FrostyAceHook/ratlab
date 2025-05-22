@@ -1,67 +1,70 @@
+import math
 from types import GeneratorType
 
+from maths import pi, nan, inf
+from util import *
+
+
 class Field:
-    # override me:
+    # PUBLIC:
 
     @classmethod
+    def cast(cls, obj, for_obj=None):
+        if isinstance(obj, cls):
+            return obj
+        return cls._cast(obj, for_obj=for_obj)
+
+    @classproperty
     def zero(cls): # additive identity.
-        raise NotImplementedError()
-    @classmethod
+        return cls._zero()
+    @classproperty
     def one(cls): # multiplicative identity.
-        raise NotImplementedError()
+        return cls._one()
+    @classproperty
+    def inf(cls): # infinity.
+        return cls._inf()
+    @classproperty
+    def nan(cls): # not a number.
+        return cls._nan()
 
-    @classmethod
-    def cast(cls, obj, for_obj=None): # returns a cls version of obj
-        raise NotImplementedError()
+    @property
+    def neg(a): # -a
+        return -a
+    @property
+    def rec(a): # 1/a
+        return ~a
+    @property
+    def abs(a): # |a|
+        return abs(a)
+    @property
+    def exp(a): # e^a
+        return type(a)._exp(a)
+    @property
+    def log(a): # ln(a)
+        return type(a)._log(a)
+    @property
+    def sqrt(a):
+        return a.root(2)
+    @property
+    def cbrt(a):
+        return a.root(3)
 
-    @classmethod
-    def add(cls, a, b): # a+b
-        raise NotImplementedError()
-    @classmethod
-    def neg(cls, a): # -a
-        raise NotImplementedError()
-    @classmethod
-    def mul(cls, a, b): # a*b
-        raise NotImplementedError()
-    @classmethod
-    def rec(cls, a): # 1/a
-        raise NotImplementedError()
-    @classmethod
-    def exp(cls, a): # e^a
-        raise NotImplementedError()
-    @classmethod
-    def log(cls, a): # ln(a)
-        raise NotImplementedError()
-
-    @classmethod
-    def eq_zero(cls, a): # a == 0
-        raise NotImplementedError()
-    @classmethod
-    def eq_one(cls, a): # a == 1, only needed if non-additive type
-        return (a - cls.one()).eq_zero()
-    @classmethod
-    def lt_zero(cls, a): # a < 0
-        raise NotImplementedError()
-    @classmethod
-    def lt_one(cls, a): # a < 1, only needed if non-additive type
-        return (a - cls.one()).lt_zero()
-
-    def intof(a): # int(a)
-        raise NotImplementedError()
-    def floatof(a): # float(a)
-        return float(a.intof())
-    def complexof(a): # complex(a)
-        return complex(a.floatof())
-
-    def hashof(a): # hash(a)
-        raise NotImplementedError()
-
-
-    # helpers (don touch but can look):
+    def root(self, n):
+        if isinstance(n, float):
+            raise TypeError(".root is for integer roots, use `**` for "
+                    "exponentiation")
+        n = int(n)
+        if n == 0:
+            raise ZeroDivisionError("x^(1/0)")
+        if n < 0:
+            return ~self.root(-n)
+        one = type(self).one
+        nth = ~type(self).sumof(one for _ in range(n))
+        return self ** nth
 
     @classmethod
     def sumof(cls, *xs):
-        r = cls.zero()
+        r = cls.zero
         for x in xs:
             if isinstance(x, (tuple, list, set, GeneratorType)):
                 r += cls.sumof(*x)
@@ -71,10 +74,10 @@ class Field:
 
     @classmethod
     def prodof(cls, *xs):
-        r = cls.one()
+        r = cls.one
         for x in xs:
             if isinstance(x, (tuple, list, set, GeneratorType)):
-                r *= cls.sumof(*x)
+                r *= cls.prodof(*x)
             else:
                 r *= x
         return r
@@ -86,69 +89,114 @@ class Field:
                 return i
         return None
 
-    def root(self, n):
-        if not isinstance(n, int):
-            raise TypeError(".root is for integer roots, use `^` for "
-                    "exponentiation")
-        if n == 0:
-            raise ZeroDivisionError("x^(1/0)")
-        if n < 0:
-            return ~self.root(-n)
-        one = type(self).one()
-        nth = ~type(self).sumof(one for _ in range(n))
-        return self ^ nth
-    @property
-    def sqrt(self):
-        return self.root(2)
-    @property
-    def cbrt(self):
-        return self.root(3)
+
+
+
+    # OVERRIDE ME:
+
+    @classmethod
+    def _cast(cls, obj, for_obj=None): # returns a cls version of obj
+        raise NotImplementedError()
+
+    @classmethod
+    def _zero(cls): # additive identity.
+        raise NotImplementedError()
+    @classmethod
+    def _one(cls): # multiplicative identity.
+        raise NotImplementedError()
+    @classmethod
+    def _inf(cls): # infinity.
+        raise NotImplementedError()
+    @classmethod
+    def _nan(cls): # not a number.
+        raise NotImplementedError()
+
+    @classmethod
+    def _add(cls, a, b): # a+b
+        raise NotImplementedError()
+    @classmethod
+    def _neg(cls, a): # -a
+        raise NotImplementedError()
+    @classmethod
+    def _mul(cls, a, b): # a*b
+        raise NotImplementedError()
+    @classmethod
+    def _rec(cls, a): # 1/a
+        raise NotImplementedError()
+    @classmethod
+    def _exp(cls, a): # e^a
+        raise NotImplementedError()
+    @classmethod
+    def _log(cls, a): # ln(a)
+        raise NotImplementedError()
+
+    @classmethod
+    def _eq_zero(cls, a): # a == 0
+        raise NotImplementedError()
+    @classmethod
+    def _eq_one(cls, a): # a == 1, only needed if non-additive type
+        return cls._eq_zero(a - cls.one)
+    @classmethod
+    def _lt_zero(cls, a): # a < 0
+        raise NotImplementedError()
+    @classmethod
+    def _lt_one(cls, a): # a < 1, only needed if non-additive type
+        return cls._lt_zero(a - cls.one)
+
+    @classmethod
+    def _intof(cls, a): # int(a)
+        raise NotImplementedError()
+    @classmethod
+    def _floatof(cls, a): # float(a)
+        return float(cls._intof(a))
+    @classmethod
+    def _complexof(cls, a): # complex(a)
+        return complex(cls._floatof(a))
+
+    @classmethod
+    def _hashof(cls, a): # hash(a)
+        raise NotImplementedError()
+
 
 
 
     # don look:
 
     @classmethod
-    def _cast(cls, obj, for_obj=None):
-        if isinstance(obj, cls):
-            return obj
-        return cls.cast(obj, for_obj=for_obj)
-
-    @classmethod
-    def _apply(cls, a, b, func):
+    def _do(cls, a, b, func):
         if isinstance(b, (tuple, list, set, GeneratorType)):
-            return [cls._apply(a, c, func) for c in b]
+            return [cls._do(a, c, func) for c in b]
         else:
-            b = cls._cast(b, for_obj=a)
+            b = cls.cast(b, for_obj=a)
             return func(a, b)
 
     def __pos__(s):
         return s
     def __neg__(s):
-        return type(s).neg(s)
+        return type(s)._neg(s)
     def __invert__(s):
-        if type(s).eq_zero(s):
+        if type(s)._eq_zero(s):
             raise ZeroDivisionError("~0")
-        return type(s).rec(s)
+        return type(s)._rec(s)
     def __abs__(s):
-        return type(s).neg(s) if s < type(s).zero() else s
+        return type(s)._neg(s) if s < type(s)._zero() else s
 
     def __add__(s, o):
-        return type(s)._apply(s, o, lambda a, b: type(s).add(a, b))
+        return type(s)._do(s, o, lambda a, b: type(s)._add(a, b))
     def __radd__(s, o):
-        return type(s)._apply(s, o, lambda a, b: type(s).add(b, a))
+        return type(s)._do(s, o, lambda a, b: type(s)._add(b, a))
     def __sub__(s, o):
-        return type(s)._apply(s, o, lambda a, b: type(s).add(a, type(s).neg(b)))
+        return type(s)._do(s, o, lambda a, b: type(s)._add(a, type(s)._neg(b)))
     def __rsub__(s, o):
-        return type(s)._apply(s, o, lambda a, b: type(s).add(b, type(s).neg(a)))
+        return type(s)._do(s, o, lambda a, b: type(s)._add(b, type(s)._neg(a)))
     def __mul__(s, o):
-        return type(s)._apply(s, o, lambda a, b: type(s).mul(a, b))
+        return type(s)._do(s, o, lambda a, b: type(s)._mul(a, b))
     def __rmul__(s, o):
-        return type(s)._apply(s, o, lambda a, b: type(s).mul(b, a))
+        return type(s)._do(s, o, lambda a, b: type(s)._mul(b, a))
     def __truediv__(s, o):
-        return type(s)._apply(s, o, lambda a, b: type(s).mul(a, type(s).rec(b)))
+        return type(s)._do(s, o, lambda a, b: type(s)._mul(a, type(s)._rec(b)))
     def __rtruediv__(s, o):
-        return type(s)._apply(s, o, lambda a, b: type(s).mul(b, type(s).rec(a)))
+        return type(s)._do(s, o, lambda a, b: type(s)._mul(b, type(s)._rec(a)))
     def __pow__(s, o):
         # x^y == e^(ln(x) * y)
         # x == 0 case must be handled by class internals.
@@ -156,31 +204,31 @@ class Field:
         def xor(a, b):
             def eq_zero(x):
                 try:
-                    return x == type(x).zero()
+                    return cls._eq_zero(x)
                 except NotImplementedError:
                     return False
             if eq_zero(a) and eq_zero(b):
                 raise ZeroDivisionError("0^0")
-            ab = cls.exp(cls.log(a) * b)
+            ab = cls._exp(cls._log(a) * b)
             if eq_zero(a) and not eq_zero(ab):
                 raise ZeroDivisionError("0^non-positive")
             return ab
-        return type(s)._apply(s, o, xor)
+        return type(s)._do(s, o, xor)
     def __rpow__(s, o):
         cls = type(s)
         def rxor(a, b):
             def eq_zero(x):
                 try:
-                    return x == cls.zero()
+                    return cls._eq_zero(x)
                 except NotImplementedError:
                     return False
             if eq_zero(a) and eq_zero(b):
                 raise ZeroDivisionError("0^0")
-            ba = cls.exp(cls.log(b) * a)
+            ba = cls._exp(cls._log(b) * a)
             if eq_zero(b) and not eq_zero(ba):
                 raise ZeroDivisionError("0^non-positive")
             return ba
-        return type(s)._apply(s, o, rxor)
+        return type(s)._do(s, o, rxor)
 
     def __eq__(s, o):
         # (s == o) iff (s - o == 0)
@@ -188,40 +236,102 @@ class Field:
         cls = type(s)
         def eq_zero(a, b):
             try:
-                return cls.eq_zero(a - b)
+                return cls._eq_zero(a - b)
             except NotImplementedError:
                 try:
-                    if cls.eq_zero(b):
-                        return cls.eq_zero(a)
-                except:
+                    if cls._eq_zero(b):
+                        return cls._eq_zero(a)
+                except Exception:
                     # assume b is non-zero.
                     pass
-                return cls.eq_one(a / b)
-        return type(s)._apply(s, o, eq_zero)
+                return cls._eq_one(a / b)
+        return type(s)._do(s, o, eq_zero)
     def __lt__(s, o):
         # (s < o) iff (s - o < 0)
         # note cannot use (s / o < 0) since may be divving negative.
-        return type(s)._apply(s, o, lambda a, b: type(s).lt_zero(a - b))
+        return type(s)._do(s, o, lambda a, b: type(s)._lt_zero(a - b))
     def __ne__(s, o):
-        return type(s)._apply(s, o, lambda a, b: not (a == b))
+        return type(s)._do(s, o, lambda a, b: not (a == b))
     def __le__(s, o):
-        return type(s)._apply(s, o, lambda a, b: (a < b) or (a == b))
+        return type(s)._do(s, o, lambda a, b: (a < b) or (a == b))
     def __gt__(s, o):
-        return type(s)._apply(s, o, lambda a, b: (b < a))
+        return type(s)._do(s, o, lambda a, b: (b < a))
     def __ge__(s, o):
-        return type(s)._apply(s, o, lambda a, b: (b < a) or (a == b))
+        return type(s)._do(s, o, lambda a, b: (b < a) or (a == b))
 
     def __bool__(s):
         try:
-            return not type(s).eq_zero(s)
+            return not type(s)._eq_zero(s)
         except NotImplementedError:
-            return not type(s).eq_one(s)
+            return not type(s)._eq_one(s)
     def __int__(s):
-        return s.intof()
+        return type(s)._intof(s)
     def __float__(s):
-        return s.floatof()
+        return type(s)._floatof(s)
     def __complex__(s):
-        return s.complexof()
+        return type(s)._complexof(s)
 
     def __hash__(s):
-        return s.hashof()
+        return type(s)._hashof(s)
+
+
+
+def sqrt(x):
+    if isinstance(x, Field):
+        return x.sqrt
+    x = float(x)
+    if x != x:
+        return nan
+    return math.sqrt(x)
+
+def cbrt(x):
+    if isinstance(x, Field):
+        return x.cbrt
+    x = float(x)
+    if x != x:
+        return nan
+    return math.cbrt(x)
+
+def log(x):
+    if isinstance(x, Field):
+        return x.log
+    x = float(x)
+    if x != x:
+        return nan
+    if x == 0.0:
+        return -inf
+    return math.log(x)
+
+def exp(x):
+    if isinstance(x, Field):
+        return x.exp
+    x = float(x)
+    if x != x:
+        return nan
+    return math.exp(x)
+
+def cos(x):
+    y = float(x)
+    if y != y:
+        y = nan
+    elif math.isinf(y):
+        y = nan
+    else:
+        lookup = {pi/2: 0.0, -pi/2: 0.0, pi: -1.0, -pi: -1.0, 2*pi: 1.0}
+        y = lookup.get(y, math.cos(y))
+    if isinstance(x, Field):
+        return type(x).cast(y, for_obj=x)
+    return y
+
+def sin(x):
+    y = float(x)
+    if y != y:
+        y = nan
+    elif math.isinf(y):
+        y = nan
+    else:
+        lookup = {pi/2: 1.0, -pi/2: -1.0, pi: 0.0, -pi: 0.0, 2*pi: 0.0}
+        y = lookup.get(y, math.sin(y))
+    if isinstance(x, Field):
+        return type(x).cast(y, for_obj=x)
+    return y

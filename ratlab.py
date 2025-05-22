@@ -48,7 +48,7 @@ class _cli:
         if parse is None:
             def parse(s):
                 module = _ast.parse(s)
-                _ast.fix_missing_locations(module)
+                module = _ast.fix_missing_locations(module)
                 return module
 
         self._leave = False
@@ -134,25 +134,69 @@ _cli.command(_char_check, "charcheck")
 
 
 
-def literals(field):
-    literals.field = field
-literals.field = None
+
+def lits(field):
+    lits.field = field
+lits.field = None
 
 
 def _wrapped_literal(x):
-    if literals.field is not None:
+    if lits.field is not None:
         try:
-            return literals.field.cast(x)
+            return lits.field.cast(x)
         except NotImplementedError:
             pass
     return x
 
+def _wrapped_name(x):
+    if x == "field":
+        return lits.field
+    if x in {"zero", "one", "inf", "nan"}:
+        return getattr(lits.field, x)
+    if x == "pi":
+        return lits.field.cast(maths.pi)
+    return None
+
 class _WrappedTransformer(_ast.NodeTransformer):
+    def __init__(self):
+        super().__init__()
+        self.parents = []
+    def visit(self, node):
+        self.parents.append(node)
+        new_node = super().visit(node)
+        self.parents.pop()
+        return new_node
+
     def visit_Constant(self, node):
         return _ast.Call(
             func=_ast.Name(id="_wrapped_literal", ctx=_ast.Load()),
             args=[node],
             keywords=[],
+        )
+
+    def visit_Name(self, node):
+        # dont touch if its an attribute.
+        parent = self.parents[-2] if len(self.parents) >= 2 else None
+        if parent is not None and isinstance(parent, _ast.Attribute):
+            return node
+
+        # See if its a constant.
+        try:
+            isconst = _wrapped_name(node.id) is not None
+        except Exception:
+            isconst = False
+        if not isconst:
+            return node
+
+        # Ensure that its in a load context.
+        if not isinstance(node.ctx, _ast.Load):
+            raise SyntaxError("cannot modify constants")
+
+        # Wrap it.
+        return _ast.Call(
+            func=_ast.Name(id="_wrapped_name", ctx=_ast.Load()),
+            args=[_ast.Constant(value=node.id)],
+            keywords=[]
         )
 
     # def visit_List(self, node):
@@ -189,14 +233,15 @@ def _wrapped_parse(source):
             )
             module = _ast.Module(body=[tree], type_ignores=[])
 
-    _ast.fix_missing_locations(module)
+    module = _ast.fix_missing_locations(module)
     return module
 
 
 if __name__ == "__main__":
+    _cli.enqueue("lits(Num)")
     _cli.cli(globals(), _wrapped_parse,
         ",--------------------------,\n"
         "|    RATLAB® Stuart Inc.   |\n"
         "'--------------------------'\n"
-        "  literals(field_cls) : changes literal types\n"
+        "  lits(field_cls) : changes literal types\n"
     )

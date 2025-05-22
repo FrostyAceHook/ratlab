@@ -1,82 +1,15 @@
 import math
+from math import pi, gcd, atan2, prod
 
-# should be builtins already tbh.
-pi = math.pi
+# should be builtins already tbh (and pi and prod).
 nan = float("nan")
 inf = float("inf")
-prod = math.prod
+cnan = complex("nan+nanj")
 
-def isnan(x):
-    if not isinstance(x, float):
-        raise TypeError("'x' must be float")
-    return x != x
 
-def mul(a, b):
-    if not isinstance(a, float):
-        raise TypeError("'a' must be float")
-    if not isinstance(b, float):
-        raise TypeError("'b' must be float")
-    if a != a or b != b:
-        return float("nan")
-    if a == 0.0 or b == 0.0: # avoid 0*inf = nan
-        return 0.0
-    return a * b
-
-def log(x):
-    if not isinstance(x, float):
-        raise TypeError("'x' must be float")
-    if x != x:
-        return float("nan")
-    if x == 0.0:
-        return -float("inf")
-    return math.log(x)
-
-def exp(x):
-    if not isinstance(x, float):
-        raise TypeError("'x' must be float")
-    if x != x:
-        return float("nan")
-    return math.exp(x)
-
-def cos(x):
-    if not isinstance(x, float):
-        raise TypeError("'x' must be float")
-    if x != x:
-        return float("nan")
-    if math.isinf(x):
-        return float("nan")
-    pi = math.pi
-    lookup = {pi/2: 0.0, -pi/2: 0.0, pi: -1.0, -pi: -1.0, 2*pi: 1.0}
-    return lookup.get(x, math.cos(x))
-
-def sin(x):
-    if not isinstance(x, float):
-        raise TypeError("'x' must be float")
-    assert x == x
-    if math.isinf(x):
-        return float("nan")
-    pi = math.pi
-    lookup = {pi/2: 1.0, -pi/2: -1.0, pi: 0.0, -pi: 0.0, 2*pi: 0.0}
-    return lookup.get(x, math.sin(x))
-
-def atan2(a, b):
-    if not isinstance(a, float):
-        raise TypeError("'a' must be float")
-    if not isinstance(b, float):
-        raise TypeError("'b' must be float")
-    return math.atan2(a, b)
-
-def gcd(a, b):
-    if not isinstance(a, int):
-        raise TypeError("'a' must be int")
-    if not isinstance(b, int):
-        raise TypeError("'b' must be int")
-    return math.gcd(a, b)
-
-# Returns the simplest ratio `n / d` s.t. `n / d == x`.
 def simplest_ratio(x):
-    if not isinstance(x, float):
-        raise TypeError("'x' must be float")
+    """ Returns the simplest ratio `n, d` s.t. `n / d == x`. """
+    x = float(x)
 
     # gripped and ripped from fractions module.
     def limit_denom(numer, denom, max_denom):
@@ -113,12 +46,14 @@ def simplest_ratio(x):
     return n // g, d // g
 
 
-# Returns a tuple of the prime factorisation of `x`. Note this includes repeated
-# factors.
 def prime_factors(x):
-    #https://stackoverflow.com/a/22808285
-    if not isinstance(x, int):
-        raise TypeError("'x' must be int")
+    """
+    Returns a tuple of the prime factorisation of `x`. Note this includes repeated factors.
+    """
+    # https://stackoverflow.com/a/22808285
+    if not isinstance(x, float):
+        raise TypeError("can only factorise integers")
+    x = int(x)
     if x <= 0:
         raise ValueError("can only factorise strictly-positive integers")
     i = 2
@@ -134,12 +69,14 @@ def prime_factors(x):
     return tuple(sorted(factors))
 
 
-# Returns two integers `a,b` s.t.:
-#   x = a * b^n
-# where `b` is as large as possible.
 def factor_as_pow(x, n):
-    if not isinstance(x, int):
+    """
+    Returns two integers `a, b` s.t. `x = a * b^n`, where `b` is as large as
+    possible.
+    """
+    if not isinstance(x, float):
         raise TypeError("can only factorise integers")
+    x = int(x)
     if x <= 0:
         raise ValueError("can only factorise strictly-positive integers")
     if not isinstance(n, int):
@@ -168,16 +105,18 @@ def factor_as_pow(x, n):
     return _math.prod(a), _math.prod(b)
 
 
-# Returns the integer `y` s.t.:
-#   x = y^n
-# aka.
-#   y = x^(1/n)
-# or returns None if no such integer exists.
 def iroot(x, n):
-    if not isinstance(x, int):
+    """
+    Returns the integer `y` s.t. `x = y^n` aka `y = x^(1/n)`, or returns `None`
+    if no such integer exists.
+    """
+
+    if not isinstance(x, float):
         raise TypeError("can only root integers")
-    if not isinstance(n, int):
+    x = int(x)
+    if not isinstance(n, float):
         raise TypeError("can only take integer roots")
+    n = int(n)
     if n <= 0:
         raise ValueError("can only take strictly-positive roots")
 

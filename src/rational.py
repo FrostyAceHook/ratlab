@@ -1,6 +1,6 @@
 import maths
 from field import Field
-from immutable import immutable
+from util import *
 
 
 @immutable
@@ -21,7 +21,7 @@ class Rational(Field):
         self.de = denominator // gcd
 
     @classmethod
-    def cast(cls, obj, for_obj=None):
+    def _cast(cls, obj, for_obj=None):
         if not isinstance(obj, float):
             try:
                 obj = float(obj)
@@ -32,36 +32,38 @@ class Rational(Field):
         raise NotImplementedError()
 
     @classmethod
-    def zero(cls):
+    def _zero(cls):
         return cls(0, 1)
     @classmethod
-    def one(cls):
+    def _one(cls):
         return cls(1, 1)
 
     @classmethod
-    def add(cls, a, b):
+    def _add(cls, a, b):
         return cls(a.nu * b.de + b.nu * a.de, a.de * b.de)
     @classmethod
-    def neg(cls, a):
+    def _neg(cls, a):
         return cls(-a.nu, a.de)
     @classmethod
-    def mul(cls, a, b):
+    def _mul(cls, a, b):
         return cls(a.nu * b.nu, a.de * b.de)
     @classmethod
-    def rec(cls, a):
+    def _rec(cls, a):
         return cls(a.de, a.nu)
 
     @classmethod
-    def eq_zero(cls, a):
+    def _eq_zero(cls, a):
         return a.nu == 0
     @classmethod
-    def lt_zero(cls, a):
+    def _lt_zero(cls, a):
         return a.nu < 0
 
-    def floatof(a):
+    @classmethod
+    def _floatof(cls, a):
         return a.nu / a.de
 
-    def hashof(a):
+    @classmethod
+    def _hashof(cls, a):
         return hash((a.nu, a.de))
 
     def __repr__(self):

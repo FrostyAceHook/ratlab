@@ -1,9 +1,10 @@
 from enum import Enum
 
+import field
 import maths
 from field import Field
-from immutable import immutable
 from rational import Rational
+from util import *
 
 
 class Scale(Enum):
@@ -39,7 +40,7 @@ class Unit(Field):
                 raise ValueError(f"repeated base unit {repr(k)}")
             had.add(k)
             if isinstance(v, (int, float)):
-                v = Rational.zero().cast(v)
+                v = Rational.cast(v)
             if not isinstance(v, Rational):
                 raise TypeError("unit powers must be rationals")
             if v:
@@ -48,10 +49,11 @@ class Unit(Field):
         self._bases = tuple(cache)
 
     @classmethod
-    def one(cls):
+    def _one(cls):
         return Unit()
 
-    def mul(a, b):
+    @classmethod
+    def _mul(cls, a, b):
         bases = {k: v for k, v in a._bases}
         for name, power in b._bases:
             if name in bases:
@@ -59,20 +61,23 @@ class Unit(Field):
             else:
                 bases[name] = power
         return Unit(bases.items())
-    def rec(a):
+    @classmethod
+    def _rec(cls, a):
         return Unit([(k, -v) for k, v in a._bases])
 
     def __pow__(a, exp):
         if isinstance(exp, (int, float)):
-            exp = Rational.zero().cast(exp)
+            exp = Rational.cast(exp)
         if not isinstance(exp, Rational):
             raise NotImplementedError()
         return Unit([(k, v * exp) for k, v in a._bases])
 
-    def eq_one(a):
+    @classmethod
+    def _eq_one(cls, a):
         return not a._bases
 
-    def hashof(a):
+    @classmethod
+    def _hashof(cls, a):
         return hash(a._bases)
 
 
@@ -160,14 +165,7 @@ class Quantity(Field):
         self._isbare = isbare
 
     @classmethod
-    def zero(cls):
-        return cls(0)
-    @classmethod
-    def one(cls):
-        return cls(1)
-
-    @classmethod
-    def cast(cls, obj, for_obj=None):
+    def _cast(cls, obj, for_obj=None):
         if not isinstance(obj, float):
             try:
                 obj = float(obj)
@@ -178,7 +176,14 @@ class Quantity(Field):
         raise NotImplementedError()
 
     @classmethod
-    def add(cls, a, b):
+    def _zero(cls):
+        return cls(0)
+    @classmethod
+    def _one(cls):
+        return cls(1)
+
+    @classmethod
+    def _add(cls, a, b):
         # ignore units if value is 0.
         if b._value == 0 and not b._unit and not b._isbare:
             return a
@@ -204,14 +209,14 @@ class Quantity(Field):
                     f"'{cls._unit_repr(b._unit)}')")
         return cls(a._value + b._value, a._unit)
     @classmethod
-    def neg(cls, a):
+    def _neg(cls, a):
         if a._isbare:
             return cls(-a._value, a._unit, isbare=True)
         if a._logged:
             return cls(-a._value, ~a._unit, logged=True)
         return cls(-a._value, a._unit)
     @classmethod
-    def mul(cls, a, b):
+    def _mul(cls, a, b):
         # handle bare.
         if a._isbare + b._isbare:
             if (a._isbare or not a._unit) + (b._isbare or not b._unit) == 1:
@@ -231,38 +236,40 @@ class Quantity(Field):
             return cls(a._value*b._value, a._unit**b._value, logged=True)
         return cls(a._value * b._value, a._unit * b._unit)
     @classmethod
-    def rec(cls, a):
+    def _rec(cls, a):
         if a._isbare:
             return cls(1.0 / a._value, a._unit, isbare=True)
         if a._logged:
             raise NotImplementedError()
         return cls(1.0 / a._value, Unit() / a._unit)
     @classmethod
-    def exp(cls, a):
+    def _exp(cls, a):
         if a._isbare:
-            return cls(maths.exp(a._value), a._unit, isbare=True)
+            return cls(field.exp(a._value), a._unit, isbare=True)
         if a._logged or not a._unit:
-            return cls(maths.exp(a._value), a._unit, logged=False)
+            return cls(field.exp(a._value), a._unit, logged=False)
         raise NotImplementedError()
     @classmethod
-    def log(cls, a):
+    def _log(cls, a):
         if a._isbare:
-            return cls(maths.log(a._value), a._unit, isbare=True)
+            return cls(field.log(a._value), a._unit, isbare=True)
         if a._logged:
             raise NotImplementedError()
-        return cls(maths.log(a._value), a._unit, logged=True)
+        return cls(field.log(a._value), a._unit, logged=True)
 
     @classmethod
-    def eq_zero(cls, a):
+    def _eq_zero(cls, a):
         return a._value == 0.0
     @classmethod
-    def lt_zero(cls, a):
+    def _lt_zero(cls, a):
         return a._value < 0.0
 
-    def floatof(a):
+    @classmethod
+    def _floatof(cls, a):
         return a._value
 
-    def hashof(a):
+    @classmethod
+    def _hashof(cls, a):
         return hash((a._value, a._unit))
 
     def __repr__(a):
@@ -346,6 +353,10 @@ mm = 1e-3 * m
 um = 1e-6 * m
 nm = 1e-9 * m
 km = 1e3 * m
+
+# im gunna munt.
+In = 0.254 * m
+Ft = 12 * In
 
 m2 = m ** 2
 cm2 = cm ** 2
