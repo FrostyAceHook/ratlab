@@ -61,6 +61,11 @@ class Rational(field.Field):
         return a.nu < 0
 
     @classmethod
+    def _intof(cls, a):
+        if a.de != 1:
+            raise NotImplementedError()
+        return a.nu
+    @classmethod
     def _floatof(cls, a):
         return a.nu / a.de
 

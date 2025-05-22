@@ -263,6 +263,13 @@ class Quantity(field.Field):
         return a._value < 0.0
 
     @classmethod
+    def _intof(cls, a):
+        if a._value != a._value:
+            raise NotImplementedError()
+        if math.isinf(a._value) or a._value != int(a._value):
+            raise NotImplementedError()
+        return int(a._value)
+    @classmethod
     def _floatof(cls, a):
         return a._value
 

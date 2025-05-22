@@ -1,5 +1,6 @@
 import functools as _functools
 import inspect as _inspect
+import sys as _sys
 
 
 class classproperty:

@@ -1,4 +1,4 @@
-from math import atan2
+import math
 
 import field
 from util import immutable
@@ -109,7 +109,7 @@ class Num(field.Field):
         # = log(|a|) + i arg(a)  [principal branch]
         absa = _fp_mul(a.re, a.re) + _fp_mul(a.im, a.im)
         re = _fp_mul(0.5, field.log(absa))
-        im = atan2(a.im, a.re)
+        im = math.atan2(a.im, a.re)
         return cls(re, im)
 
     @classmethod
@@ -125,6 +125,15 @@ class Num(field.Field):
             raise NotImplementedError()
         return a.re < 0.0
 
+    @classmethod
+    def _intof(cls, a):
+        if a.isnan:
+            raise NotImplementedError()
+        if a.im:
+            raise NotImplementedError()
+        if math.isinf(a.re) or a.re != int(a.re):
+            raise NotImplementedError()
+        return int(a.re)
     @classmethod
     def _floatof(cls, a):
         if a.isnan:
