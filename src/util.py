@@ -13,6 +13,12 @@ class classproperty:
         return self.fget(owner)
 
 
+def tname(t):
+    m = str(t.__module__)
+    m = "" if m == "__main__" else m + "."
+    return m + t.__name__
+
+
 def immutable(cls):
     """
     Make the given class immutable (outside the `__init__` method). When a class

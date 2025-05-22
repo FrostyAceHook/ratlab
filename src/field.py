@@ -2,7 +2,7 @@ import math
 from math import pi
 from types import GeneratorType
 
-from util import classproperty
+from util import classproperty, tname
 
 
 class Field:
@@ -10,9 +10,7 @@ class Field:
 
     @classmethod
     def cast(cls, obj, for_obj=None):
-        if isinstance(obj, cls):
-            return obj
-        return cls._cast(obj, for_obj=for_obj)
+        return cls._cast(obj, for_obj)
 
     @classproperty
     def zero(cls): # additive identity.
@@ -89,8 +87,11 @@ class Field:
     # OVERRIDE ME:
 
     @classmethod
-    def _cast(cls, obj, for_obj=None): # returns a cls version of obj
-        raise NotImplementedError()
+    def _cast(cls, obj, for_obj): # returns a cls version of obj
+        if isinstance(obj, cls):
+            return obj
+        raise NotImplementedError(f"'{tname(type(obj))}' cannot be cast to "
+                f"'{tname(cls)}'")
 
     @classmethod
     def _zero(cls): # additive identity.

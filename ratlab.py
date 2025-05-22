@@ -142,10 +142,7 @@ lits.field = None
 
 def _wrapped_literal(x):
     if lits.field is not None:
-        try:
-            return lits.field.cast(x)
-        except NotImplementedError:
-            pass
+        return lits.field.cast(x)
     return x
 
 _WRAPPED_CONSTANTS = {

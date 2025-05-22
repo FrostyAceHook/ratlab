@@ -163,7 +163,7 @@ class Quantity(field.Field):
         self._isbare = isbare
 
     @classmethod
-    def _cast(cls, obj, for_obj=None):
+    def _cast(cls, obj, for_obj):
         if not isinstance(obj, float):
             try:
                 obj = float(obj)
@@ -171,7 +171,7 @@ class Quantity(field.Field):
                 pass
         if isinstance(obj, float):
             return cls(obj)
-        raise NotImplementedError()
+        super()._cast(obj, for_obj)
 
     @classmethod
     def _zero(cls):

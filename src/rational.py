@@ -23,7 +23,7 @@ class Rational(field.Field):
         self.de = denominator // gcd
 
     @classmethod
-    def _cast(cls, obj, for_obj=None):
+    def _cast(cls, obj, for_obj):
         if not isinstance(obj, float):
             try:
                 obj = float(obj)
@@ -31,7 +31,7 @@ class Rational(field.Field):
                 pass
         if isinstance(obj, float):
             return cls(*simplest_ratio(obj))
-        raise NotImplementedError()
+        super()._cast(obj, for_obj)
 
     @classmethod
     def _zero(cls):

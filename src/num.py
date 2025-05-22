@@ -44,7 +44,7 @@ class Num(field.Field):
 
 
     @classmethod
-    def _cast(cls, obj, for_obj=None):
+    def _cast(cls, obj, for_obj):
         if not isinstance(obj, complex):
             try:
                 obj = complex(obj)
@@ -53,7 +53,7 @@ class Num(field.Field):
         if isinstance(obj, complex):
             isnan = _fp_isnan(obj.real) or _fp_isnan(obj.imag)
             return cls(obj.real, obj.imag, isnan=isnan)
-        raise NotImplementedError()
+        super()._cast(obj, for_obj)
 
     @classmethod
     def _zero(cls):
