@@ -177,9 +177,9 @@ def lits(field):
 lits._field = None
 
 
-# convenience for current field.
+# current-field-aware identity matrix.
 def eye(n):
-    return matrix.eye(lits._field, n)
+    return Matrix[lits._field, (n, n)].eye
 
 
 

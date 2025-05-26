@@ -7,7 +7,12 @@ from util import classproperty, immutable, templated
 # Matrices.
 @templated(parents=Field, decorators=immutable)
 def Matrix(field, shape):
-    """ Fixed-sized two-dimensional sequence of elements. """
+    """
+    Fixed-sized two-dimensional sequence of elements. The general rule is all
+    field operations are element-wise, and then all matrix-specific function and
+    operations are implemented independantly.
+    """
+
     if not isinstance(field, type) or not issubclass(field, Field):
         raise TypeError("field must be a field class")
     if issubclass(field, Matrix):
@@ -38,8 +43,6 @@ def Matrix(field, shape):
     @property
     def rows(self):
         """ Tuple of row vectors. """
-        if not self:
-            return tuple()
         num_rows, num_cols = shape
         if num_rows == 1:
             return (self, )
@@ -50,8 +53,6 @@ def Matrix(field, shape):
     @property
     def cols(self):
         """ Tuple of column vectors. """
-        if not self:
-            return tuple()
         num_rows, num_cols = shape
         if num_cols == 1:
             return (self, )
@@ -130,7 +131,7 @@ def Matrix(field, shape):
         assert self.issquare, "cannot invert a non-square matrix"
         assert self.det != 0, "cannot invert a non-invertible matrix"
         size = shape[0]
-        aug = hstack(self, self.one)
+        aug = hstack(self, self.eye)
         aug = aug.rref
         inverse_cols = aug.cols[size:]
         return hstack(*inverse_cols)
@@ -140,6 +141,19 @@ def Matrix(field, shape):
         """ Matrix diagonal (as column vector). """
         cells = [self.at(i, i) for i in range(min(shape))]
         return Matrix[field, (len(cells), 1)](cells)
+
+    @classproperty
+    def eye(cls):
+        """ Identity matrix. """
+        if not cls.issquare:
+            raise NotImplementedError()
+        zero = field.zero
+        one = field.one
+        cells = [zero] * prod(shape)
+        n = shape[0]
+        for i in range(n):
+            cells[i*n + i] = one
+        return cls(cells)
 
 
     def __iter__(self):
@@ -231,12 +245,14 @@ def Matrix(field, shape):
         assert matrix.issquare, "matrix must be square to multiply with itself"
         if exp < 0:
             return matrix.inv ^ (-exp)
-        power = matrix.one
+        power = matrix.eye
         running = matrix
-        while exp:
+        while True:
             if (exp & 1):
                 power @= running
             exp >>= 1
+            if not exp:
+                break
             running @= running
         return power
 
@@ -399,14 +415,8 @@ def Matrix(field, shape):
         return cls(cells)
     @classmethod
     def _one(cls):
-        if not cls.issquare:
-            raise NotImplementedError()
-        zero = field.zero
         one = field.one
-        cells = [zero] * prod(shape)
-        n = shape[0]
-        for i in range(n):
-            cells[i*n + i] = one
+        cells = [one] * prod(shape)
         return cls(cells)
 
     def __abs__(self):
@@ -466,9 +476,6 @@ def Matrix(field, shape):
         str_rows = (wrap(join(row)) for row in rows)
         return ("\n" if multiline else "").join(str_rows)
 
-
-def eye(field, n):
-    return Matrix[field, (n, n)].one
 
 def diag(*elts):
     field = Field.fieldof(elts)
