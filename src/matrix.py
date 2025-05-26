@@ -18,7 +18,7 @@ def Matrix(field, shape):
     if prod(shape) <= 0 or shape[0] < 0:
         raise TypeError("num elements <=0")
 
-    def __init__(self, cells, print_colvec_flat=False):
+    def __init__(self, cells, print_colvec_flat=True):
         # cells = flattened, with contiguous rows.
         try:
             cells = tuple(cells)
@@ -102,14 +102,14 @@ def Matrix(field, shape):
             assert self.isvec, "specifiy both coordinates for a matrix cell"
             if i < 0:
                 i += len(self)
-            assert i in range(0, len(self)), "oob"
+            assert i in range(len(self)), "oob"
             return self.cells[i]
         assert isinstance(j, int)
         if i < 0:
             i += shape[0]
         if j < 0:
             j += shape[1]
-        assert i in range(0, shape[0]) and j in range(0, shape[1]), "oob"
+        assert i in range(shape[0]) and j in range(shape[1]), "oob"
         return self.cells[shape[1]*i + j]
 
     def __getitem__(self, ij):
@@ -186,24 +186,24 @@ def Matrix(field, shape):
         assert field == o.field, "matrices must be over the same field"
         assert shape[1] == o.shape[0], "incorrect size for matrix multiplication"
         shp = shape[0], o.shape[1]
-        cel = [0] * math.prod(shp)
         rows = self.rows
         cols = o.cols
+        cells = [None] * prod(shp)
         for i in range(shp[0]):
             for j in range(shp[1]):
-                cel[shp[1]*i + j] = rows[i] & cols[j]
-        return Matrix[field, shp](cel)
+                cells[shp[1]*i + j] = rows[i] & cols[j]
+        return Matrix[field, shp](cells)
 
-    def f(self, *values):
-        """ Shorthand for: self @ M(*values).T """
-        return self @ concat(values)
+    def __call__(self, *values):
+        """ Shorthand for: self @ vstack(*values) """
+        return self @ vstack(*values)
 
 
     @property
     def T(self):
         """ Matrix transpose. """
         shp = shape[1], shape[0]
-        cells = [0] * math.prod(shp)
+        cells = [None] * math.prod(shp)
         for i in range(shape[0]):
             for j in range(shape[1]):
                 cells[shp[1]*j + i] = self.at(i, j)
@@ -215,18 +215,16 @@ def Matrix(field, shape):
         assert self.issquare, "cannot invert a non-square matrix"
         assert self.det != 0, "cannot invert a non-invertible matrix"
         size = shape[0]
-        aug = concat(self, self.identity)
+        aug = hstack(self, self.one)
         aug = aug.rref
-        inverse = aug.cols[size:]
-        return concat(inverse)
+        inverse_cols = aug.cols[size:]
+        return hstack(*inverse_cols)
 
     @property
     def diag(self):
-        """ Matrix diagonal (as row vector). """
-        cel = [0]*min(shape)
-        for i in range(min(shape)):
-            cel[i] = self.at(i, i)
-        return Matrix[field, (1, min(shape))](cel)
+        """ Matrix diagonal (as column vector). """
+        cells = [self.at(i, i) for i in range(min(shape))]
+        return Matrix[field, (len(cells), 1)](cells)
 
 
     @property
@@ -245,13 +243,15 @@ def Matrix(field, shape):
                 return cells[0]
             if size == 2: # for speed only.
                 return cells[0]*cells[3] - cells[1]*cells[2]
-            det = 0
+            det = field.zero
             for j in range(size):
                 subcells = submatrix(cells, size, 0, j)
                 subsize = size - 1
                 subdet = determinant(subcells, subsize)
-                sign = (-1) ** j
-                det += sign * cells[j] * subdet
+                if j & 1:
+                    det -= cells[j] * subdet
+                else:
+                    det += cells[j] * subdet
             return det
 
         return determinant(self.cells, shape[0])
@@ -342,20 +342,20 @@ def Matrix(field, shape):
 
     @property
     def colspace(self):
-        """ Basis for column space (as row vectors). """
-        return tuple(self.cols[p].T for p in self.pivots)
+        """ Basis for column space (as column vectors). """
+        return tuple(self.cols[p] for p in self.pivots)
 
     @property
     def rowspace(self):
-        """ Basis for row space (as row vectors). """
+        """ Basis for row space (as column vectors). """
         rref = self.rref
         nonzeros = [i for i, r in enumerate(rref.rows)
                 if any(x != field.zero for x in r)]
-        return tuple(rref.rows[i] for i in nonzeros)
+        return tuple(rref.rows[i].T for i in nonzeros)
 
     @property
     def nullspace(self):
-        """ Basis for null space (as row vectors). """
+        """ Basis for null space (as column vectors). """
         sys = self.rref # implied zero-vec augment.
         pivotat = [field.find(field.one, sys.rows[i]) for i in range(shape[0])]
         basis = [[field.zero]*shape[1] for _ in sys.nonpivots]
@@ -365,7 +365,7 @@ def Matrix(field, shape):
                     basis[n][j] = 1
                     break
                 basis[n][pivotat[i]] = -sys.at(i, j)
-        return tuple(Matrix[field, (1, shape[1])](x) for x in basis)
+        return tuple(Matrix[field, (shape[1], 1)](x) for x in basis)
 
 
     @classmethod
@@ -444,7 +444,7 @@ def Matrix(field, shape):
 def eye(field, n):
     return Matrix[field, (n, n)].one
 
-def diag(elts):
+def diag(*elts):
     diag = []
     field = None
     for e in elts:
@@ -456,13 +456,53 @@ def diag(elts):
             raise TypeError("inconsistent field")
         diag.append(e)
     if field is None:
-        raise TypeError("cannot have empty diagonal")
+        raise TypeError("cannot have empty matrix")
     n = len(diag)
-    zero = field.zero
-    cells = [zero]
+    cells = [field.zero] * (n*n)
     for i in range(n):
         cells[i*n + i] = diag[i]
     return Matrix[field, (n, n)](cells)
 
 def concat(*rows):
+    cells = []
     shape = [0, 0]
+    for row in rows:
+        height = None
+        elts = []
+        for elt in row:
+            if not isinstance(elt, Matrix):
+                elt = Matrix[type(elt), (1, 1)]([elt])
+            if height is None:
+                height = elt.shape[0]
+            if height != elt.shape[0]:
+               raise ValueError("inconsistent vertical concat size")
+            elts.append(elt)
+
+        rowcells = []
+        for row in range(height):
+            for elt in elts:
+                rowcells.extend(elt[row, :])
+        assert len(rowcells) % height == 0
+        width = len(rowcells) // height
+        if not shape[1]:
+            shape[1] = width
+        if width != shape[1]:
+            raise ValueError("inconsistent horizontal concat size")
+        cells.extend(rowcells)
+        shape[0] += height
+
+    field = None
+    for e in cells:
+        if field is None:
+            field = type(e)
+            if not issubclass(field, Field):
+                raise TypeError("invalid field")
+        elif not isinstance(e, field):
+            raise TypeError("inconsistent field")
+    return Matrix[field, tuple(shape)](cells)
+
+def vstack(*elts):
+    return concat(*([e] for e in elts))
+
+def hstack(*elts):
+    return concat(elts)
