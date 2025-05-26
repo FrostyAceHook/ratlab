@@ -171,7 +171,7 @@ class Quantity(field.Field):
                 pass
         if isinstance(obj, float):
             return cls(obj)
-        super()._cast(obj, for_obj)
+        return super()._cast(obj, for_obj)
 
     @classmethod
     def _zero(cls):

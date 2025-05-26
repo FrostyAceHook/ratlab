@@ -8,9 +8,12 @@ from plot import *
 
 import units as u
 
+import field
+import matrix
+from field import Field
 from rational import Rational
 from num import Num
-from matrix import Matrix, eye, diag, concat, vstack, hstack
+from matrix import Matrix, diag, concat, vstack, hstack
 
 from bolt import Bolt
 from iso286 import iso286

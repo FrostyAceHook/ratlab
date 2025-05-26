@@ -1,8 +1,12 @@
 import ast as _ast
 import codeop as _codeop
+import contextlib as _contextlib
+import inspect as _inspect
+import io as _io
 import os as _os
 import sys as _sys
 import traceback as _traceback
+import warnings as _warnings
 
 # Hack src/ into the path so we can import.
 _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), "src"))
@@ -79,7 +83,11 @@ class _cli:
                 if not line:
                     break
                 try:
-                    command = _codeop.compile_command(source)
+                    # dont let the stupid compile command print to stderr.
+                    with _warnings.catch_warnings():
+                        _warnings.simplefilter("ignore", SyntaxWarning)
+                        with _contextlib.redirect_stderr(_io.StringIO()):
+                            command = codeop.compile_command(source)
                 except Exception as e:
                     break
                 if command is not None:
@@ -133,16 +141,51 @@ def _char_check():
 _cli.command(_char_check, "charcheck")
 
 
+def _mhelp():
+    def print_attr(name, desc):
+        s = f"{name} .."
+        s += "." * (15 - len(s))
+        s += f" {desc.strip()}"
+        print(s)
+
+    print(f"Matrix - {Matrix.__doc__.strip()}")
+    print_attr("field", "Cells are of this field.")
+    print_attr("shape", "(row count, column count)")
+
+    cls = Matrix[Field, (1, 1)]
+    attrs = [(name, attr) for name, attr in vars(cls).items()
+            if attr.__doc__ is not None
+            and name != "__module__"
+            and name != "__doc__"
+            and name != "template"
+            and name not in Matrix.params]
+    for name, attr in attrs:
+        if callable(attr):
+            sig = _inspect.signature(attr)
+            sig = str(sig)
+            if sig.startswith("(self, "):
+                sig = "(" + sig[len("(self, "):]
+            elif sig.startswith("(self"):
+                sig = "(" + sig[len("(self"):]
+            name += sig
+        print_attr(name, attr.__doc__)
+_cli.command(_mhelp, "mhelp")
 
 
 def lits(field):
-    lits.field = field
-lits.field = None
+    lits._field = field
+lits._field = None
+
+
+# convenience for current field.
+def eye(n):
+    return matrix.eye(lits._field, n)
+
 
 
 def _wrapped_literal(x):
-    if lits.field is not None:
-        return lits.field.cast(x)
+    if lits._field is not None:
+        return lits._field.cast(x)
     return x
 
 _WRAPPED_CONSTANTS = {
@@ -155,7 +198,18 @@ _WRAPPED_CONSTANTS = {
     "cnan": complex("nan+nanj")
 }
 def _wrapped_constant(x):
-    return lits.field.cast(_WRAPPED_CONSTANTS[x])
+    return lits._field.cast(_WRAPPED_CONSTANTS[x])
+
+def _wrapped_matrix1row(elts):
+    elts = tuple(elts)
+    field = Field.fieldof(elts)
+    return Matrix[field, (1, len(elts))](elts)
+
+def _wrapped_matrix(matrix, idx):
+    if not isinstance(idx, tuple):
+        idx = (idx, )
+    newrow = _wrapped_matrix1row(idx)
+    return vstack(matrix, newrow)
 
 class _WrappedTransformer(_ast.NodeTransformer):
     def __init__(self):
@@ -195,16 +249,46 @@ class _WrappedTransformer(_ast.NodeTransformer):
             keywords=[]
         )
 
-    # def visit_List(self, node):
-    #     # Visit children in case they have nested lists.
-    #     self.generic_visit(node)
+    def visit_List(self, node):
+        # Ensure children aren't skipped.
+        self.generic_visit(node)
 
-    #     # Wrap the list in a function call: wrap_list([original_list])
-    #     return _ast.Call(
-    #         func=_ast.Name(id='wrap_list', ctx=_ast.Load()),
-    #         args=[node],
-    #         keywords=[]
-    #     )
+        # Make it a matrix.
+        return _ast.Call(
+            func=_ast.Name(id="_wrapped_matrix1row", ctx=_ast.Load()),
+            args=[node],
+            keywords=[]
+        )
+
+    def visit_Subscript(self, node):
+        # Ensure children aren't skipped.
+        self.generic_visit(node)
+
+        # See if we're trying to create a list.
+        if isinstance(node.value, _ast.Name):
+            name = node.value
+            if name.id == "lst" and isinstance(name.ctx, _ast.Load):
+                # Make it a list.
+                if isinstance(node.slice, _ast.Tuple):
+                    elts = node.slice.elts[:]
+                else:
+                    elts = [node.slice]
+                return _ast.List(elts=elts, ctx=_ast.Load())
+
+        # Check if the value being subscripted is a matrix literal.
+        if not isinstance(node.value, _ast.Call):
+            return node
+        if not isinstance(node.value.func, _ast.Name):
+            return node
+        func_name = node.value.func.id
+        if func_name != "_wrapped_matrix1row" and func_name != "_wrapped_matrix":
+            return node
+        # Create a call to concat the row.
+        return _ast.Call(
+            func=_ast.Name(id="_wrapped_matrix", ctx=_ast.Load()),
+            args=[node.value, node.slice],
+            keywords=[]
+        )
 
 def _wrapped_print(x):
     if x is not None:
@@ -240,4 +324,7 @@ if __name__ == "__main__":
         "|    RATLAB® Stuart Inc.   |\n"
         "'--------------------------'\n"
         "  lits(field_cls) : changes literal types\n"
+        "  [1,2][3,4] : matrix\n"
+        "  lst[1,2,3] : list\n"
+        "  mhelp : print matrix methods\n"
     )

@@ -31,7 +31,7 @@ class Rational(field.Field):
                 pass
         if isinstance(obj, float):
             return cls(*simplest_ratio(obj))
-        super()._cast(obj, for_obj)
+        return super()._cast(obj, for_obj)
 
     @classmethod
     def _zero(cls):

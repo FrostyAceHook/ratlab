@@ -53,7 +53,7 @@ class Num(field.Field):
         if isinstance(obj, complex):
             isnan = _fp_isnan(obj.real) or _fp_isnan(obj.imag)
             return cls(obj.real, obj.imag, isnan=isnan)
-        super()._cast(obj, for_obj)
+        return super()._cast(obj, for_obj)
 
     @classmethod
     def _zero(cls):

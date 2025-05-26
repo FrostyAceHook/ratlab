@@ -10,6 +10,8 @@ class classproperty:
     """
     def __init__(self, fget):
         self.fget = fget
+        _functools.update_wrapper(self, fget)
+
     def __get__(self, instance, owner):
         return self.fget(owner)
 
@@ -238,6 +240,8 @@ def templated(creator, parents=(), decorators=(), metaclass=type):
 
     def __instancecheck__(self, instance): # im literally the best
         return isinstance(instance, create_class.values)
+    def __subclasscheck__(self, subclass):
+        return any(issubclass(subclass, t) for t in create_class.values)
 
     def __contains__(self, cls):
         return cls in create_class.values
@@ -253,6 +257,7 @@ def templated(creator, parents=(), decorators=(), metaclass=type):
 
     attrs = {
         "__instancecheck__": __instancecheck__,
+        "__subclasscheck__": __subclasscheck__,
         "__contains__": __contains__,
         "__getitem__": __getitem__,
         "__call__": __call__,

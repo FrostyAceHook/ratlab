@@ -10,6 +10,8 @@ def Matrix(field, shape):
     """ Fixed-sized two-dimensional sequence of elements. """
     if not isinstance(field, type) or not issubclass(field, Field):
         raise TypeError("field must be a field class")
+    if issubclass(field, Matrix):
+        raise TypeError("mate a matrix of matrices? calm down")
     if not isinstance(shape, tuple) or len(shape) != 2:
         raise TypeError("shape must be a tuple of (numrows, numcols)")
     shape = (int(shape[0]), int(shape[1]))
@@ -18,7 +20,7 @@ def Matrix(field, shape):
     if prod(shape) <= 0 or shape[0] < 0:
         raise TypeError("num elements <=0")
 
-    def __init__(self, cells, print_colvec_flat=True):
+    def __init__(self, cells, print_colvec_flat=True, print_zero_as_dot=True):
         # cells = flattened, with contiguous rows.
         try:
             cells = tuple(cells)
@@ -31,6 +33,31 @@ def Matrix(field, shape):
 
         self.cells = cells
         self.print_colvec_flat = print_colvec_flat
+        self.print_zero_as_dot = print_zero_as_dot
+
+    @property
+    def rows(self):
+        """ Tuple of row vectors. """
+        if not self:
+            return tuple()
+        num_rows, num_cols = shape
+        if num_rows == 1:
+            return (self, )
+        vec_type = Matrix[field, (1, num_cols)]
+        return tuple(vec_type(self.at(i, j) for j in range(num_cols))
+                                            for i in range(num_rows))
+
+    @property
+    def cols(self):
+        """ Tuple of column vectors. """
+        if not self:
+            return tuple()
+        num_rows, num_cols = shape
+        if num_cols == 1:
+            return (self, )
+        vec_type = Matrix[field, (num_rows, 1)]
+        return tuple(vec_type(self.at(i, j) for i in range(num_rows))
+                                            for j in range(num_cols))
 
     @classproperty
     def isvec(self):
@@ -87,6 +114,34 @@ def Matrix(field, shape):
         return True
 
 
+    @property
+    def T(self):
+        """ Matrix transpose. """
+        shp = shape[1], shape[0]
+        cells = [None] * math.prod(shp)
+        for i in range(shape[0]):
+            for j in range(shape[1]):
+                cells[shp[1]*j + i] = self.at(i, j)
+        return Matrix[field, shp](cells)
+
+    @property
+    def inv(self):
+        """ Matrix inverse. """
+        assert self.issquare, "cannot invert a non-square matrix"
+        assert self.det != 0, "cannot invert a non-invertible matrix"
+        size = shape[0]
+        aug = hstack(self, self.one)
+        aug = aug.rref
+        inverse_cols = aug.cols[size:]
+        return hstack(*inverse_cols)
+
+    @property
+    def diag(self):
+        """ Matrix diagonal (as column vector). """
+        cells = [self.at(i, i) for i in range(min(shape))]
+        return Matrix[field, (len(cells), 1)](cells)
+
+
     def __iter__(self):
         """ Row-major cell iterate. """
         return iter(self.cells)
@@ -129,102 +184,65 @@ def Matrix(field, shape):
         shp = len(rs), len(cs)
         return Matrix[field, shp](cells)
 
-    @property
-    def rows(self):
-        """ Tuple of row vectors. """
-        if not self:
-            return tuple()
-        num_rows, num_cols = shape
-        if num_rows == 1:
-            return (self, )
-        vec_type = Matrix[field, (1, num_cols)]
-        return tuple(vec_type(self.at(i, j) for j in range(num_cols))
-                                            for i in range(num_rows))
 
-    @property
-    def cols(self):
-        """ Tuple of column vectors. """
-        if not self:
-            return tuple()
-        num_rows, num_cols = shape
-        if num_cols == 1:
-            return (self, )
-        vec_type = Matrix[field, (num_rows, 1)]
-        return tuple(vec_type(self.at(i, j) for i in range(num_rows))
-                                            for j in range(num_cols))
-
-
-    def __abs__(self):
-        """ Element-wise absolute value. """
-        return Matrix[field, shape](abs(x) for x in self.cells)
-
-    def __and__(self, o):
+    def __and__(lhs, rhs):
         """ Dot product between two vectors. """
-        assert isinstance(o, Matrix), "must dot-product with a vector"
-        assert field == o.field, "matrices must be over the same field"
-        assert self.isvec, "cannot dot product a non-vector"
-        assert o.isvec, "cannot dot product a non-vector"
-        assert len(self) == len(o), "cannot operate on different sized vectors"
-        return field.sumof(x*y for x, y in zip(self, o))
+        assert isinstance(rhs, Matrix), "must dot-product with a vector"
+        assert field == rhs.field, "matrices must be over the same field"
+        assert lhs.isvec, "cannot dot product a non-vector"
+        assert rhs.isvec, "cannot dot product a non-vector"
+        assert len(lhs) == len(rhs), "cannot operate on different sized vectors"
+        return field.sumof(x*y for x, y in zip(lhs, rhs))
 
-    def __or__(self, o):
+    def __or__(lhs, rhs):
         """ Cross product between two three-element vectors. """
-        assert isinstance(o, Matrix), "must cross-product with a vector"
-        assert field == o.field, "matrices must be over the same field"
-        assert self.isvec, "cannot cross product a non-vector"
-        assert o.isvec, "cannot cross product a non-vector"
-        assert len(self) == 3, "cannot cross product a non-3D-vector"
-        assert len(o) == 3, "cannot cross product a non-3D-vector"
-        ax, ay, az = self.cells
-        bx, by, bz = o.cells
+        assert isinstance(rhs, Matrix), "must cross-product with a vector"
+        assert field == rhs.field, "matrices must be over the same field"
+        assert lhs.isvec, "cannot cross product a non-vector"
+        assert rhs.isvec, "cannot cross product a non-vector"
+        assert len(lhs) == 3, "cannot cross product a non-3D-vector"
+        assert len(rhs) == 3, "cannot cross product a non-3D-vector"
+        ax, ay, az = lhs.cells
+        bx, by, bz = rhs.cells
         cells = (ay*bz - az*by, az*bx - ax*bz, ax*by - ay*bx)
         return Matrix[field, (3, 1)](cells)
 
-    def __matmul__(self, o):
+    def __matmul__(lhs, rhs):
         """ Matrix multiplication. """
-        assert isinstance(o, Matrix), "must be matrix multiply with a matrix"
-        assert field == o.field, "matrices must be over the same field"
-        assert shape[1] == o.shape[0], "incorrect size for matrix multiplication"
-        shp = shape[0], o.shape[1]
-        rows = self.rows
-        cols = o.cols
+        assert isinstance(rhs, Matrix), "must be matrix multiply with a matrix"
+        assert field == rhs.field, "matrices must be over the same field"
+        assert shape[1] == rhs.shape[0], "incorrect size for matrix multiplication"
+        shp = shape[0], rhs.shape[1]
+        rows = lhs.rows
+        cols = rhs.cols
         cells = [None] * prod(shp)
         for i in range(shp[0]):
             for j in range(shp[1]):
                 cells[shp[1]*i + j] = rows[i] & cols[j]
         return Matrix[field, shp](cells)
 
-    def __call__(self, *values):
-        """ Shorthand for: self @ vstack(*values) """
-        return self @ vstack(*values)
+    def __xor__(matrix, exp):
+        """ Matrix power. """
+        try:
+            exp = int(exp)
+        except Exception:
+            pass
+        assert isinstance(exp, int), "must use an integer power"
+        assert matrix.issquare, "matrix must be square to multiply with itself"
+        if exp < 0:
+            return matrix.inv ^ (-exp)
+        power = matrix.one
+        running = matrix
+        while exp:
+            if (exp & 1):
+                power @= running
+            exp >>= 1
+            running @= running
+        return power
 
-
-    @property
-    def T(self):
-        """ Matrix transpose. """
-        shp = shape[1], shape[0]
-        cells = [None] * math.prod(shp)
-        for i in range(shape[0]):
-            for j in range(shape[1]):
-                cells[shp[1]*j + i] = self.at(i, j)
-        return Matrix[field, shp](cells)
-
-    @property
-    def inv(self):
-        """ Matrix inverse. """
-        assert self.issquare, "cannot invert a non-square matrix"
-        assert self.det != 0, "cannot invert a non-invertible matrix"
-        size = shape[0]
-        aug = hstack(self, self.one)
-        aug = aug.rref
-        inverse_cols = aug.cols[size:]
-        return hstack(*inverse_cols)
-
-    @property
-    def diag(self):
-        """ Matrix diagonal (as column vector). """
-        cells = [self.at(i, i) for i in range(min(shape))]
-        return Matrix[field, (len(cells), 1)](cells)
+    def __call__(matrix, *values):
+        """ Shorthand for: matrix @ vstack(*values) """
+        return matrix @ vstack(*values)
 
 
     @property
@@ -369,10 +387,16 @@ def Matrix(field, shape):
 
 
     @classmethod
+    def _cast(cls, obj, for_obj=None):
+        if isinstance(obj, field):
+            return cls([obj] * prod(shape))
+        return super()._cast(obj, for_obj)
+
+    @classmethod
     def _zero(cls):
         zero = field.zero
         cells = [zero] * prod(shape)
-        return Matrix[field, shape](cells)
+        return cls(cells)
     @classmethod
     def _one(cls):
         if not cls.issquare:
@@ -383,8 +407,10 @@ def Matrix(field, shape):
         n = shape[0]
         for i in range(n):
             cells[i*n + i] = one
-        return Matrix[field, shape](cells)
+        return cls(cells)
 
+    def __abs__(self):
+        return Matrix[field, shape](abs(x) for x in self.cells)
     @classmethod
     def _add(cls, a, b):
         return cls(x + y for x, y in zip(a, b))
@@ -413,11 +439,7 @@ def Matrix(field, shape):
         return hash(a.cells)
 
     def __repr__(self):
-        if self.print_colvec_flat and self.isvec:
-            multiline = False
-            s = repr
-        else:
-            multiline = True
+        if self.print_zero_as_dot:
             def s(x):
                 eqz = False
                 if not s.failed:
@@ -428,6 +450,10 @@ def Matrix(field, shape):
                         pass
                 return "." if eqz else repr(x)
             s.failed = False
+        else:
+            s = repr
+
+        multiline = not (self.print_colvec_flat and self.isvec)
         max_len = max(len(s(x)) for x in self.cells)
         padded = (max_len > 3)
         rows = []
@@ -445,22 +471,11 @@ def eye(field, n):
     return Matrix[field, (n, n)].one
 
 def diag(*elts):
-    diag = []
-    field = None
-    for e in elts:
-        if field is None:
-            field = type(e)
-            if not issubclass(field, Field):
-                raise TypeError("invalid field")
-        elif not isinstance(e, field):
-            raise TypeError("inconsistent field")
-        diag.append(e)
-    if field is None:
-        raise TypeError("cannot have empty matrix")
-    n = len(diag)
+    field = Field.fieldof(elts)
+    n = len(elts)
     cells = [field.zero] * (n*n)
     for i in range(n):
-        cells[i*n + i] = diag[i]
+        cells[i*n + i] = elts[i]
     return Matrix[field, (n, n)](cells)
 
 def concat(*rows):
@@ -491,14 +506,7 @@ def concat(*rows):
         cells.extend(rowcells)
         shape[0] += height
 
-    field = None
-    for e in cells:
-        if field is None:
-            field = type(e)
-            if not issubclass(field, Field):
-                raise TypeError("invalid field")
-        elif not isinstance(e, field):
-            raise TypeError("inconsistent field")
+    field = Field.fieldof(cells)
     return Matrix[field, tuple(shape)](cells)
 
 def vstack(*elts):

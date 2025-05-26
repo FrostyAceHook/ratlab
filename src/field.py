@@ -10,6 +10,8 @@ class Field:
 
     @classmethod
     def cast(cls, obj, for_obj=None):
+        if isinstance(obj, cls):
+            return obj
         return cls._cast(obj, for_obj)
 
     @classproperty
@@ -81,6 +83,19 @@ class Field:
                 return i
         return None
 
+    @classmethod
+    def fieldof(cls, xs):
+        field = None
+        for x in xs:
+            if field is None:
+                field = type(x)
+                if not issubclass(field, Field):
+                    raise TypeError("invalid field")
+            elif not isinstance(x, field):
+                raise TypeError("inconsistent field")
+        if field is None:
+            raise TypeError("cannot find field of no elements")
+        return field
 
 
 
@@ -88,8 +103,6 @@ class Field:
 
     @classmethod
     def _cast(cls, obj, for_obj): # returns a cls version of obj
-        if isinstance(obj, cls):
-            return obj
         raise NotImplementedError(f"'{tname(type(obj))}' cannot be cast to "
                 f"'{tname(cls)}'")
 
