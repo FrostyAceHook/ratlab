@@ -51,8 +51,15 @@ class Field:
             raise ZeroDivisionError("x^(1/0)")
         if n < 0:
             return ~self.root(-n)
-        one = type(self).one
-        nth = ~type(self).sumof(one for _ in range(n))
+        try:
+            nth = type(self).cast(n, for_obj=self)
+        except NotImplementedError:
+            # hand crank this bitch.
+            one = type(self).one
+            nth = type(self).zero
+            for _ in range(n):
+                nth += one
+        nth = ~nth
         return self ** nth
 
 
@@ -243,36 +250,37 @@ def fieldof(*xs):
                 raise TypeError("invalid field")
         elif not isinstance(x, field):
             raise TypeError("inconsistent field")
-    if field is None:
-        raise TypeError("cannot find field of no elements")
-    return field
+    return Field if field is None else field
 
 
-def summ(*xs, field=None):
+def summ(*xs, field):
     if len(xs) == 1 and iterable(xs[0]):
         return summ(*xs[0], field=field)
-    if field is None:
-        field = fieldof(xs)
+    if not xs:
+        return field.zero
+    assert field == fieldof(xs)
     r = field.zero
     for x in xs:
         r += x
     return r
 
-def prod(*xs, field=None):
+def prod(*xs, field):
     if len(xs) == 1 and iterable(xs[0]):
         return prod(*xs[0], field=field)
-    if field is None:
-        field = fieldof(xs)
+    if not xs:
+        return field.one
+    assert field == fieldof(xs)
     r = field.one
     for x in xs:
         r *= x
     return r
 
-def ave(*xs, field=None):
+def ave(*xs, field):
     if len(xs) == 1 and iterable(xs[0]):
         return ave(*xs[0], field=field)
-    if field is None:
-        field = fieldof(xs)
+    if not xs:
+        raise ValueError("cannot average no elements")
+    assert field == fieldof(xs)
     r = field.zero
     i = field.zero
     for x in xs:

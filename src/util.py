@@ -1,6 +1,7 @@
 import functools as _functools
 import inspect as _inspect
 import sys as _sys
+from types import GeneratorType as _GeneratorType
 
 
 class classproperty:
@@ -17,6 +18,8 @@ class classproperty:
 
 
 def iterable(obj):
+    if isinstance(obj, _GeneratorType):
+        return True
     try:
         obj.__iter__()
         obj.__len__()
@@ -193,7 +196,9 @@ def templated(creator, parents=(), decorators=(), metaclass=type):
     Used for templated classes. Essentially transforms a function into a class,
     and the fully-defined type can be created via `func[params]`. Basically the
     whole deal is that when this function is invoked, any locals that are around
-    at return are manhandled into a new class with those as attributes.
+    at return are manhandled into a new class with those as attributes. Also,
+    since the returns from this function must be the same object you can
+    "forward" the created class to another call of the template function.
     WARNING: to use `super()`, you must instead do `super(func[params], self)`,
              with the exact params that this class is using.
     - paramed "function" decorator.
@@ -218,7 +223,13 @@ def templated(creator, parents=(), decorators=(), metaclass=type):
         # function defines).
         ret, lcls = get_locals(creator, *params)
         if ret is not None:
-            raise ValueError("non-none return from templated function")
+            if not isinstance(ret, type):
+                raise ValueError("non-none and non-type return from templated "
+                        "function-class")
+            if ret not in create_class.values:
+                raise ValueError("can only return other instantiations of this "
+                        "template from the template")
+            return ret
 
         # Get the template parameters independantly.
         params = [(name, lcls[name]) for name in param_names]

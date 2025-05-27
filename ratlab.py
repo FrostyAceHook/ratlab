@@ -1,7 +1,6 @@
 import ast as _ast
 import codeop as _codeop
 import contextlib as _contextlib
-import inspect as _inspect
 import io as _io
 import os as _os
 import sys as _sys
@@ -87,7 +86,7 @@ class _cli:
                     with _warnings.catch_warnings():
                         _warnings.simplefilter("ignore", SyntaxWarning)
                         with _contextlib.redirect_stderr(_io.StringIO()):
-                            command = codeop.compile_command(source)
+                            command = _codeop.compile_command(source)
                 except Exception as e:
                     break
                 if command is not None:
@@ -134,60 +133,49 @@ _cli.command(_okie_we_leave, "quit")
 _cli.command(_okie_we_leave, "exit")
 _cli.command(_okie_we_leave, "return")
 _cli.command(lambda: _os.system("cls"), "cls")
-def _char_check():
-    for i in range(256*4 * 16):
-        print("\n"*((i%24) == 0) + " "+chr(i)+" ", end="")
-    print()
-_cli.command(_char_check, "charcheck")
+_cli.command(matrix.mhelp, "mhelp")
 
 
-def _mhelp():
-    def print_attr(name, desc):
-        s = f"{name} .."
-        s += "." * (15 - len(s))
-        s += f" {desc.strip()}"
-        print(s)
-
-    print(f"Matrix - {Matrix.__doc__.strip()}")
-    print_attr("field", "Cells are of this field.")
-    print_attr("shape", "(row count, column count)")
-
-    cls = Matrix[Field, (1, 1)]
-    attrs = [(name, attr) for name, attr in vars(cls).items()
-            if attr.__doc__ is not None
-            and name != "__module__"
-            and name != "__doc__"
-            and name != "template"
-            and name not in Matrix.params]
-    for name, attr in attrs:
-        if callable(attr):
-            sig = _inspect.signature(attr)
-            sig = str(sig)
-            if sig.startswith("(self, "):
-                sig = "(" + sig[len("(self, "):]
-            elif sig.startswith("(self"):
-                sig = "(" + sig[len("(self"):]
-            name += sig
-        print_attr(name, attr.__doc__)
-_cli.command(_mhelp, "mhelp")
-
-
+# Sets the current field.
 def lits(field):
     lits._field = field
 lits._field = None
 
 
-# current-field-aware identity matrix.
+# Field-aware functions.
+
+def summ(*xs):
+    if lits._field is None:
+        raise ValueError("specify a field using `lits`")
+    return field.summ(*xs, field=lits._field)
+def prod(*xs):
+    if lits._field is None:
+        raise ValueError("specify a field using `lits`")
+    return field.prod(*xs, field=lits._field)
+def ave(*xs):
+    if lits._field is None:
+        raise ValueError("specify a field using `lits`")
+    return field.ave(*xs, field=lits._field)
 def eye(n):
     if lits._field is None:
         raise ValueError("specify a field using `lits`")
-    return Matrix[lits._field, (n, n)].eye
-
+    return matrix.eye(n, field=lits._field)
+def zeros(rows, cols=None):
+    if lits._field is None:
+        raise ValueError("specify a field using `lits`")
+    return matrix.zeros(rows, cols, field=lits._field)
+def ones(rows, cols=None):
+    if lits._field is None:
+        raise ValueError("specify a field using `lits`")
+    return matrix.ones(rows, cols, field=lits._field)
 
 
 def _wrapped_literal(x):
     if lits._field is not None:
-        return lits._field.cast(x)
+        try:
+            return lits._field.cast(x)
+        except Exception:
+            pass
     return x
 
 _WRAPPED_CONSTANTS = {
@@ -321,9 +309,14 @@ def _wrapped_parse(source):
     return module
 
 
+
 if __name__ == "__main__":
     _cli.enqueue("lits(Num)")
-    _cli.cli(globals(), _wrapped_parse,
+    glbls = {k: v for k, v in globals().items()
+            if k.lower().startswith("_wrapped") # need to be visible.
+            or not k.startswith("_") # get rid of them.
+        }
+    _cli.cli(glbls, _wrapped_parse,
         ",--------------------------,\n"
         "|    RATLAB® Stuart Inc.   |\n"
         "'--------------------------'\n"
