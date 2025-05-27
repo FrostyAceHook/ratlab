@@ -93,7 +93,7 @@ class Quantity(field.Field):
 
     @property
     def unitless(self):
-        if self._unit:
+        if self._unit and not self._isbare:
             raise ValueError("value has units")
         return self._value
 
@@ -139,7 +139,7 @@ class Quantity(field.Field):
             return f"{value} {unit}"
 
     def unitsof(a, b):
-        if a.bare or b.bare:
+        if a._isbare or b._isbare:
             return False
         return a._unit == b._unit and a._logged == b._logged
 

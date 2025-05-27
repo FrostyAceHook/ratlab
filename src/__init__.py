@@ -1,7 +1,5 @@
 import math # just useful.
 
-from field import sqrt, cbrt, log, exp, cos, sin
-
 from numerical_methods import *
 
 from plot import *
@@ -10,7 +8,7 @@ import units as u
 
 import field
 import matrix
-from field import Field
+from field import Field, fieldof, summ, prod, ave, sqrt, cbrt, log, exp, cos, sin
 from rational import Rational
 from num import Num
 from matrix import Matrix, diag, concat, vstack, hstack

@@ -179,6 +179,8 @@ lits._field = None
 
 # current-field-aware identity matrix.
 def eye(n):
+    if lits._field is None:
+        raise ValueError("specify a field using `lits`")
     return Matrix[lits._field, (n, n)].eye
 
 
@@ -198,11 +200,13 @@ _WRAPPED_CONSTANTS = {
     "cnan": complex("nan+nanj")
 }
 def _wrapped_constant(x):
+    if lits._field is None:
+        return _WRAPPED_CONSTANTS[x]
     return lits._field.cast(_WRAPPED_CONSTANTS[x])
 
 def _wrapped_matrix1row(elts):
     elts = tuple(elts)
-    field = Field.fieldof(elts)
+    field = fieldof(elts)
     return Matrix[field, (1, len(elts))](elts)
 
 def _wrapped_matrix(matrix, idx):

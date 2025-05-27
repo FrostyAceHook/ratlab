@@ -1,8 +1,7 @@
 import math
 from math import pi
-from types import GeneratorType
 
-from util import classproperty, tname
+from util import iterable, classproperty, tname
 
 
 class Field:
@@ -55,47 +54,6 @@ class Field:
         one = type(self).one
         nth = ~type(self).sumof(one for _ in range(n))
         return self ** nth
-
-    @classmethod
-    def sumof(cls, *xs):
-        r = cls.zero
-        for x in xs:
-            if isinstance(x, (tuple, list, set, GeneratorType)):
-                r += cls.sumof(*x)
-            else:
-                r += x
-        return r
-
-    @classmethod
-    def prodof(cls, *xs):
-        r = cls.one
-        for x in xs:
-            if isinstance(x, (tuple, list, set, GeneratorType)):
-                r *= cls.prodof(*x)
-            else:
-                r *= x
-        return r
-
-    @classmethod
-    def find(cls, x, ys, find_true=True):
-        for i, y in enumerate(ys):
-            if (x == y) == find_true:
-                return i
-        return None
-
-    @classmethod
-    def fieldof(cls, xs):
-        field = None
-        for x in xs:
-            if field is None:
-                field = type(x)
-                if not issubclass(field, Field):
-                    raise TypeError("invalid field")
-            elif not isinstance(x, field):
-                raise TypeError("inconsistent field")
-        if field is None:
-            raise TypeError("cannot find field of no elements")
-        return field
 
 
 
@@ -166,11 +124,8 @@ class Field:
 
     @classmethod
     def _do(cls, a, b, func):
-        if isinstance(b, (tuple, list, set, GeneratorType)):
-            return [cls._do(a, c, func) for c in b]
-        else:
-            b = cls.cast(b, for_obj=a)
-            return func(a, b)
+        b = cls.cast(b, for_obj=a)
+        return func(a, b)
 
     def __pos__(s):
         return s
@@ -276,6 +231,54 @@ class Field:
     def __hash__(s):
         return type(s)._hashof(s)
 
+
+def fieldof(*xs):
+    if len(xs) == 1 and iterable(xs[0]):
+        return fieldof(*xs[0])
+    field = None
+    for x in xs:
+        if field is None:
+            field = type(x)
+            if not issubclass(field, Field):
+                raise TypeError("invalid field")
+        elif not isinstance(x, field):
+            raise TypeError("inconsistent field")
+    if field is None:
+        raise TypeError("cannot find field of no elements")
+    return field
+
+
+def summ(*xs, field=None):
+    if len(xs) == 1 and iterable(xs[0]):
+        return summ(*xs[0], field=field)
+    if field is None:
+        field = fieldof(xs)
+    r = field.zero
+    for x in xs:
+        r += x
+    return r
+
+def prod(*xs, field=None):
+    if len(xs) == 1 and iterable(xs[0]):
+        return prod(*xs[0], field=field)
+    if field is None:
+        field = fieldof(xs)
+    r = field.one
+    for x in xs:
+        r *= x
+    return r
+
+def ave(*xs, field=None):
+    if len(xs) == 1 and iterable(xs[0]):
+        return ave(*xs[0], field=field)
+    if field is None:
+        field = fieldof(xs)
+    r = field.zero
+    i = field.zero
+    for x in xs:
+        r += x
+        i += field.one
+    return r / i
 
 
 def sqrt(x):

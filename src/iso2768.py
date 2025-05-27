@@ -32,7 +32,7 @@ class iso2768:
         if isinstance(length, u.Quantity):
             if not length.unitsof(u.m):
                 raise TypeError(f"{name} must be a length")
-            length = length.value
+            length = length.bare.unitless
         if not isinstance(length, float):
             raise TypeError(f"{name} must be a number")
         length = abs(length)

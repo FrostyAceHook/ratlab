@@ -1,7 +1,7 @@
 from math import prod
 
-from field import Field
-from util import classproperty, immutable, templated
+from field import Field, fieldof
+from util import iterable, classproperty, immutable, templated
 
 
 # Matrices.
@@ -157,8 +157,17 @@ def Matrix(field, shape):
 
 
     def __iter__(self):
+        """ Vector-only cell iterate. """
+        assert self.isvec, "cannot iterate a matrix, use .rowmajor or .colmajor"
+        return iter(self.cells)
+
+    def rowmajor(self):
         """ Row-major cell iterate. """
         return iter(self.cells)
+
+    def colmajor(self):
+        """ Col-major cell iterate. """
+        return iter(self.T.cells)
 
     def __len__(self):
         """ Number of cells. """
@@ -183,6 +192,7 @@ def Matrix(field, shape):
 
     def __getitem__(self, ij):
         """ Submatrix of specified rows and columns. """
+        # TODO: make this not submatrix, but idk what should be instead.
         assert isinstance(ij, tuple)
         assert len(ij) == 2
         def process(k, length):
@@ -391,7 +401,12 @@ def Matrix(field, shape):
     def nullspace(self):
         """ Basis for null space (as column vectors). """
         sys = self.rref # implied zero-vec augment.
-        pivotat = [field.find(field.one, sys.rows[i]) for i in range(shape[0])]
+        def find_first_one(xs):
+            for i, x in enumerate(xs):
+                if x == field.one:
+                    return i
+            return None
+        pivotat = [find_first_one(sys.rows[i]) for i in range(shape[0])]
         basis = [[field.zero]*shape[1] for _ in sys.nonpivots]
         for n, j in enumerate(sys.nonpivots):
             for i in range(shape[0]):
@@ -477,12 +492,14 @@ def Matrix(field, shape):
         return ("\n" if multiline else "").join(str_rows)
 
 
-def diag(*elts):
-    field = Field.fieldof(elts)
-    n = len(elts)
+def diag(*xs):
+    if len(xs) == 1 and iterable(xs[0]):
+        return diag(*xs[0])
+    field = fieldof(xs)
+    n = len(xs)
     cells = [field.zero] * (n*n)
     for i in range(n):
-        cells[i*n + i] = elts[i]
+        cells[i*n + i] = xs[i]
     return Matrix[field, (n, n)](cells)
 
 def concat(*rows):
@@ -490,20 +507,20 @@ def concat(*rows):
     shape = [0, 0]
     for row in rows:
         height = None
-        elts = []
-        for elt in row:
-            if not isinstance(elt, Matrix):
-                elt = Matrix[type(elt), (1, 1)]([elt])
+        xs = []
+        for x in row:
+            if not isinstance(x, Matrix):
+                x = Matrix[type(x), (1, 1)]([x])
             if height is None:
-                height = elt.shape[0]
-            if height != elt.shape[0]:
+                height = x.shape[0]
+            if height != x.shape[0]:
                raise ValueError("inconsistent vertical concat size")
-            elts.append(elt)
+            xs.append(x)
 
         rowcells = []
         for row in range(height):
-            for elt in elts:
-                rowcells.extend(elt[row, :])
+            for x in xs:
+                rowcells.extend(x[row, :])
         assert len(rowcells) % height == 0
         width = len(rowcells) // height
         if not shape[1]:
@@ -513,11 +530,11 @@ def concat(*rows):
         cells.extend(rowcells)
         shape[0] += height
 
-    field = Field.fieldof(cells)
+    field = fieldof(cells)
     return Matrix[field, tuple(shape)](cells)
 
-def vstack(*elts):
-    return concat(*([e] for e in elts))
+def vstack(*xs):
+    return concat(*([x] for x in xs))
 
-def hstack(*elts):
-    return concat(elts)
+def hstack(*xs):
+    return concat(xs)

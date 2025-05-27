@@ -16,6 +16,16 @@ class classproperty:
         return self.fget(owner)
 
 
+def iterable(obj):
+    try:
+        obj.__iter__()
+        obj.__len__()
+        return True
+    except Exception:
+        pass
+    return False
+
+
 def tname(t):
     m = str(t.__module__)
     m = "" if m == "__main__" else m + "."
