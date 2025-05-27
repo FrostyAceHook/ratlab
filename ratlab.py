@@ -192,15 +192,17 @@ def _wrapped_constant(x):
         return _WRAPPED_CONSTANTS[x]
     return lits._field.cast(_WRAPPED_CONSTANTS[x])
 
-def _wrapped_matrix1row(elts):
-    elts = tuple(elts)
-    field = fieldof(elts)
-    return Matrix[field, (1, len(elts))](elts)
+def _wrapped_hstack(xs):
+    def tomat(x):
+        if isinstance(x, Matrix):
+            return x
+        return Matrix[type(x), (1, 1)]([x])
+    return hstack(tomat(x) for x in xs)
 
-def _wrapped_matrix(matrix, idx):
+def _wrapped_vstack(matrix, idx):
     if not isinstance(idx, tuple):
         idx = (idx, )
-    newrow = _wrapped_matrix1row(idx)
+    newrow = _wrapped_hstack(idx)
     return vstack(matrix, newrow)
 
 class _WrappedTransformer(_ast.NodeTransformer):
@@ -247,7 +249,7 @@ class _WrappedTransformer(_ast.NodeTransformer):
 
         # Make it a matrix.
         return _ast.Call(
-            func=_ast.Name(id="_wrapped_matrix1row", ctx=_ast.Load()),
+            func=_ast.Name(id="_wrapped_hstack", ctx=_ast.Load()),
             args=[node],
             keywords=[]
         )
@@ -273,11 +275,11 @@ class _WrappedTransformer(_ast.NodeTransformer):
         if not isinstance(node.value.func, _ast.Name):
             return node
         func_name = node.value.func.id
-        if func_name != "_wrapped_matrix1row" and func_name != "_wrapped_matrix":
+        if func_name != "_wrapped_hstack" and func_name != "_wrapped_vstack":
             return node
         # Create a call to concat the row.
         return _ast.Call(
-            func=_ast.Name(id="_wrapped_matrix", ctx=_ast.Load()),
+            func=_ast.Name(id="_wrapped_vstack", ctx=_ast.Load()),
             args=[node.value, node.slice],
             keywords=[]
         )
