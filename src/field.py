@@ -220,13 +220,13 @@ class Field:
         # note cannot use (s / o < 0) since may be divving negative.
         return Field._binop(s, o, lambda T, a, b: T._lt_zero(a - b))
     def __ne__(s, o):
-        return not (s == o)
+        return Field._binop(s, o, lambda T, a, b: not (a == b))
     def __le__(s, o):
-        return (s < o) or (s == o)
+        return Field._binop(s, o, lambda T, a, b: (a < b) or (a == b))
     def __gt__(s, o):
-        return (o < s)
+        return Field._binop(s, o, lambda T, a, b: (b < a))
     def __ge__(s, o):
-        return (o < s) or (s == o)
+        return Field._binop(s, o, lambda T, a, b: (b < a) or (a == b))
 
     def __bool__(s):
         try:

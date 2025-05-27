@@ -64,7 +64,7 @@ def rk4(f, T, Y0):
     Solves the given differential: f(t, Y) = Y'; over the given time values and
     using the given initial state vector Y0.
     """
-    Y = [Y0]
+    Y = [Y0] * (not not len(T))
     for i in range(1, len(T)):
         y = Y[-1]
         t = T[i]

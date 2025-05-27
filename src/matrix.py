@@ -534,6 +534,9 @@ def concat(*rows):
                raise ValueError("inconsistent vertical concat size")
             xs.append(x)
 
+        if height is None or height == 0:
+            continue
+
         rowcells = []
         for row in range(height):
             for x in xs:
