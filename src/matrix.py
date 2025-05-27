@@ -527,7 +527,7 @@ def concat(*rows):
             raise ValueError("must give a list of matrices for each row")
         for x in row:
             if not isinstance(x, Matrix):
-                x = Matrix[type(x), (1, 1)]([x])
+                raise ValueError("must give a list of matrices for each row")
             if height is None:
                 height = x.shape[0]
             if height != x.shape[0]:
@@ -552,10 +552,14 @@ def concat(*rows):
 
 def vstack(*xs):
     """ Vertically concatenates the given matrices or elements. """
-    return concat(*([x] for x in xs))
+    if len(xs) == 1 and iterable(xs[0]) and not isinstance(xs[0], Matrix):
+        return vstack(*xs[0])
+    return concat(*((x, ) for x in xs))
 
 def hstack(*xs):
     """ Horizontally concatenates the given matrices or elements. """
+    if len(xs) == 1 and iterable(xs[0]) and not isinstance(xs[0], Matrix):
+        return hstack(*xs[0])
     return concat(xs)
 
 def rep(x, rows, cols=1):

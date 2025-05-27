@@ -197,7 +197,7 @@ def _wrapped_hstack(xs):
         if isinstance(x, Matrix):
             return x
         return Matrix[type(x), (1, 1)]([x])
-    return hstack(tomat(x) for x in xs)
+    return hstack(*(tomat(x) for x in xs))
 
 def _wrapped_vstack(matrix, idx):
     if not isinstance(idx, tuple):
