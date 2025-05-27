@@ -130,9 +130,17 @@ class Field:
     # don look:
 
     @classmethod
-    def _do(cls, a, b, func):
-        b = cls.cast(b, for_obj=a)
-        return func(a, b)
+    def _binop(cls, a, b, func): # tricksy
+        try:
+            c = type(a).cast(b, for_obj=a)
+            T = type(a)
+            b = c
+        except NotImplementedError:
+            # look both sides before crossing the road.
+            c = type(b).cast(a, for_obj=b)
+            T = type(b)
+            a = c
+        return func(T, a, b)
 
     def __pos__(s):
         return s
@@ -146,82 +154,79 @@ class Field:
         return type(s)._neg(s) if s < type(s)._zero() else s
 
     def __add__(s, o):
-        return type(s)._do(s, o, lambda a, b: type(s)._add(a, b))
+        return Field._binop(s, o, lambda T, a, b: T._add(a, b))
     def __radd__(s, o):
-        return type(s)._do(s, o, lambda a, b: type(s)._add(b, a))
+        return Field._binop(s, o, lambda T, a, b: T._add(b, a))
     def __sub__(s, o):
-        return type(s)._do(s, o, lambda a, b: type(s)._add(a, type(s)._neg(b)))
+        return Field._binop(s, o, lambda T, a, b: T._add(a, T._neg(b)))
     def __rsub__(s, o):
-        return type(s)._do(s, o, lambda a, b: type(s)._add(b, type(s)._neg(a)))
+        return Field._binop(s, o, lambda T, a, b: T._add(b, T._neg(a)))
     def __mul__(s, o):
-        return type(s)._do(s, o, lambda a, b: type(s)._mul(a, b))
+        return Field._binop(s, o, lambda T, a, b: T._mul(a, b))
     def __rmul__(s, o):
-        return type(s)._do(s, o, lambda a, b: type(s)._mul(b, a))
+        return Field._binop(s, o, lambda T, a, b: T._mul(b, a))
     def __truediv__(s, o):
-        return type(s)._do(s, o, lambda a, b: type(s)._mul(a, type(s)._rec(b)))
+        return Field._binop(s, o, lambda T, a, b: T._mul(a, T._rec(b)))
     def __rtruediv__(s, o):
-        return type(s)._do(s, o, lambda a, b: type(s)._mul(b, type(s)._rec(a)))
+        return Field._binop(s, o, lambda T, a, b: T._mul(b, T._rec(a)))
     def __pow__(s, o):
         # x^y == e^(ln(x) * y)
         # x == 0 case must be handled by class internals.
-        cls = type(s)
-        def xor(a, b):
+        def xor(T, a, b):
             def eq_zero(x):
                 try:
-                    return cls._eq_zero(x)
+                    return T._eq_zero(x)
                 except NotImplementedError:
                     return False
             if eq_zero(a) and eq_zero(b):
                 raise ZeroDivisionError("0^0")
-            ab = cls._exp(cls._log(a) * b)
+            ab = T._exp(T._log(a) * b)
             if eq_zero(a) and not eq_zero(ab):
                 raise ZeroDivisionError("0^non-positive")
             return ab
-        return type(s)._do(s, o, xor)
+        return Field._binop(s, o, xor)
     def __rpow__(s, o):
-        cls = type(s)
-        def rxor(a, b):
+        def rxor(T, a, b):
             def eq_zero(x):
                 try:
-                    return cls._eq_zero(x)
+                    return T._eq_zero(x)
                 except NotImplementedError:
                     return False
             if eq_zero(a) and eq_zero(b):
                 raise ZeroDivisionError("0^0")
-            ba = cls._exp(cls._log(b) * a)
+            ba = T._exp(T._log(b) * a)
             if eq_zero(b) and not eq_zero(ba):
                 raise ZeroDivisionError("0^non-positive")
             return ba
-        return type(s)._do(s, o, rxor)
+        return Field._binop(s, o, rxor)
 
     def __eq__(s, o):
         # (s == o) iff (s - o == 0)
         # however can use (s / o == 1), provided o is non-zero.
-        cls = type(s)
-        def eq_zero(a, b):
+        def eq_zero(T, a, b):
             try:
-                return cls._eq_zero(a - b)
+                return T._eq_zero(a - b)
             except NotImplementedError:
                 try:
-                    if cls._eq_zero(b):
-                        return cls._eq_zero(a)
+                    if T._eq_zero(b):
+                        return T._eq_zero(a)
                 except Exception:
                     # assume b is non-zero.
                     pass
-                return cls._eq_one(a / b)
-        return type(s)._do(s, o, eq_zero)
+                return T._eq_one(a / b)
+        return Field._binop(s, o, eq_zero)
     def __lt__(s, o):
         # (s < o) iff (s - o < 0)
         # note cannot use (s / o < 0) since may be divving negative.
-        return type(s)._do(s, o, lambda a, b: type(s)._lt_zero(a - b))
+        return Field._binop(s, o, lambda T, a, b: T._lt_zero(a - b))
     def __ne__(s, o):
-        return type(s)._do(s, o, lambda a, b: not (a == b))
+        return not (s == o)
     def __le__(s, o):
-        return type(s)._do(s, o, lambda a, b: (a < b) or (a == b))
+        return (s < o) or (s == o)
     def __gt__(s, o):
-        return type(s)._do(s, o, lambda a, b: (b < a))
+        return (o < s)
     def __ge__(s, o):
-        return type(s)._do(s, o, lambda a, b: (b < a) or (a == b))
+        return (o < s) or (s == o)
 
     def __bool__(s):
         try:
