@@ -21,7 +21,7 @@ def Matrix(field, shape):
     if not isinstance(shape, tuple) or len(shape) != 2:
         raise TypeError("shape must be a tuple of (numrows, numcols)")
     if not isinstance(shape[0], int) or not isinstance(shape[1], int):
-        return Matrix[field, (int(shape[0]), int(shape[1]))]
+        raise TypeError("shape must use ints")
     if shape[0] < 0 or shape[1] < 0:
         raise TypeError("cannot have negative size")
     # collapse empty matrices to be over Field with (0,0).
@@ -164,7 +164,7 @@ def Matrix(field, shape):
     def __getitem__(self, i):
         """ Vector-only cell access. """
         assert self.isvec, "use .at for 2d matrix cell access"
-        i = int(i)
+        assert isinstance(i, int), "use an integer index"
         return self._cells[i]
 
     def __len__(self):
@@ -183,8 +183,8 @@ def Matrix(field, shape):
 
     def at(self, i, j):
         """ Cell at row i, column j. """
-        i = int(i)
-        j = int(j)
+        assert isinstance(i, int), "use an integer row index"
+        assert isinstance(j, int), "use an integer column index"
         if i < 0:
             i += shape[0]
         if j < 0:
@@ -200,12 +200,8 @@ def Matrix(field, shape):
             assert len(ij) == 2
             def process(k, length):
                 if isinstance(k, slice):
-                    conv = lambda x: x if x is None else int(x)
-                    k = slice(conv(k.start), conv(k.stop), conv(k.step))
-                    return tuple(range(*k.indices(length)))
-                if iterable(k):
-                    return k
-                return (int(k), )
+                    return range(*k.indices(length))
+                return k if iterable(k) else (k, )
             i, j = ij
             rs = process(i, shape[0])
             cs = process(j, shape[1])
@@ -261,10 +257,6 @@ def Matrix(field, shape):
 
     def __xor__(m, exp):
         """ Matrix power. """
-        try:
-            exp = int(exp)
-        except Exception:
-            pass
         assert isinstance(exp, int), "must use an integer power"
         assert m.issquare, "matrix must be square to multiply with itself"
         if exp < 0:
@@ -527,7 +519,7 @@ def concat(*rows):
             raise ValueError("must give a list of matrices for each row")
         for x in row:
             if not isinstance(x, Matrix):
-                raise ValueError("must give a list of matrices for each row")
+                x = Matrix[type(x), (1, 1)]((x, ))
             if height is None:
                 height = x.shape[0]
             if height != x.shape[0]:
@@ -570,9 +562,9 @@ def rep(x, rows, cols=1):
     Repeats the given matrix or element the given number of times for each
     direction.
     """
-    rows = int(rows)
-    cols = int(cols)
-    return concat(*[[x] * cols for _ in range(rows)])
+    assert isinstance(rows, int), "need an integer number of rows"
+    assert isinstance(cols, int), "need an integer number of columns"
+    return concat(*((x, ) * cols for _ in range(rows)))
 
 def diag(*xs):
     """

@@ -46,7 +46,8 @@ class Field:
         if isinstance(n, float):
             raise TypeError(".root is for integer roots, use `**` for "
                     "exponentiation")
-        n = int(n)
+        if isinstance(n, int):
+            raise TypeError("need integer power")
         if n == 0:
             raise ZeroDivisionError("x^(1/0)")
         if n < 0:

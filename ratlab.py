@@ -2,10 +2,12 @@ import ast as _ast
 import codeop as _codeop
 import contextlib as _contextlib
 import io as _io
+import itertools as _itertools
 import os as _os
 import sys as _sys
 import traceback as _traceback
 import warnings as _warnings
+from pathlib import Path as _Path
 
 # Hack src/ into the path so we can import.
 _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), "src"))
@@ -32,9 +34,7 @@ class _cli:
         entered.
         """
         if not isinstance(code, str):
-            raise ValueError("must enqueue strings")
-        if not code.lstrip():
-            raise ValueError("cannot enqueue empty string")
+            raise ValueError("can only enqueue strings")
         self._queue.append(code)
 
 
@@ -193,13 +193,11 @@ def _wrapped_constant(x):
     return lits._field.cast(_WRAPPED_CONSTANTS[x])
 
 def _wrapped_hstack(xs):
-    def tomat(x):
-        if isinstance(x, Matrix):
-            return x
-        return Matrix[type(x), (1, 1)]([x])
-    return hstack(*(tomat(x) for x in xs))
+    return hstack(*xs)
 
 def _wrapped_vstack(matrix, idx):
+    if isinstance(idx, slice):
+        raise TypeError("cannot use slices as matrix elements")
     if not isinstance(idx, tuple):
         idx = (idx, )
     newrow = _wrapped_hstack(idx)
@@ -312,12 +310,79 @@ def _wrapped_parse(source):
 
 
 
+class _MISSING:
+    def __enter__(self):
+        return self
+    def __exit__(self, etype, evalue, traceback):
+        return False
+_MISSING = _MISSING()
+
+def _readfile(path):
+    path = _Path(path)
+
+    def esc(path):
+        s = str(path)
+        # Always use forward slash separators for paths.
+        if _os.name == "nt":
+            s = s.replace("\\", "/")
+        # Escape any control codes, using repr and trimming its quotes.
+        for i in _itertools.chain(range(0x00, 0x20), range(0x7F, 0xA0)):
+            s = s.replace(chr(i), repr(chr(i))[1:-1])
+        quote = "\"" if ("'" in s) else "'"
+        s = s.replace(quote, "\\" + quote)
+        s = s.replace("\\", "\\\\")
+        return quote + s + quote
+
+    def query(msg):
+        msg = f"{msg} (y/n/a): "
+        if query.all:
+            print(msg + "y")
+            return True
+        while True:
+            response = input(msg).strip().casefold()
+            if not response:
+                continue
+            if response in "yna":
+                query.all = (response == "a")
+                return response != "n"
+    query.all = False
+
+    bad = False
+    if not path.exists():
+        bad = True
+        ignore = query(f"file {esc(path)} doesn't exist, ignore?")
+    elif not path.is_file():
+        bad = True
+        ignore = query(f"path {esc(path)} is not a file, ignore?")
+    if bad:
+        if not ignore:
+            print("ratlab: error: missing file", esc(path))
+            quit()
+        return None
+
+    return path.open("r", encoding="utf-8")
+
+def _enqueuefile(path):
+    with _readfile(path) as f:
+        if f is _MISSING:
+            return
+        for line in f:
+            if line[-1] == "\n":
+                line = line[:-1]
+            _cli.enqueue(line)
+
+
+
 if __name__ == "__main__":
-    _cli.enqueue("lits(Num)")
     glbls = {k: v for k, v in globals().items()
             if k.lower().startswith("_wrapped") # need to be visible.
             or not k.startswith("_") # get rid of them.
         }
+
+    # Read in any files entered.
+    for path in _sys.argv[1:]:
+        _enqueuefile(path)
+
     _cli.cli(glbls, _wrapped_parse,
         ",--------------------------,\n"
         "|    RATLAB® Stuart Inc.   |\n"
