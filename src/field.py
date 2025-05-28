@@ -131,15 +131,22 @@ class Field:
 
     @classmethod
     def _binop(cls, a, b, func): # tricksy
+        # unpack over lists specifically.
+        if isinstance(a, list):
+            return [Field._binop(x, b, func) for x in a]
+        if isinstance(b, list):
+            return [Field._binop(a, x, func) for x in b]
+
         try:
-            c = type(a).cast(b, for_obj=a)
-            T = type(a)
-            b = c
-        except NotImplementedError:
-            # look both sides before crossing the road.
+            # give preference to the rhs type, only to aid in united muls.
             c = type(b).cast(a, for_obj=b)
             T = type(b)
             a = c
+        except Exception:
+            # look both sides before crossing the road.
+            c = type(a).cast(b, for_obj=a)
+            T = type(a)
+            b = c
         return func(T, a, b)
 
     def __pos__(s):
