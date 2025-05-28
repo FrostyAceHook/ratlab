@@ -5,7 +5,7 @@ def init_plotting():
     global plt
     if plt is None:
         import matplotlib.pyplot as plt
-        plt.ion()
+        plt.ion() # get it
 
 
 def figure(xlabel=None, ylabel=None, title=None, grid=False):

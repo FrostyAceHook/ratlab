@@ -1,7 +1,7 @@
 from enum import Enum
 
 import field
-from rational import Rational
+from fields.rational import Rational
 from util import immutable
 
 
