@@ -13,10 +13,6 @@ def _fp_mul(a, b):
         return 0.0
     return a * b
 
-def _fp_isnan(x):
-    assert isinstance(x, float)
-    return x != x
-
 
 @immutable
 class Num(field.Field):
@@ -31,7 +27,7 @@ class Num(field.Field):
             raise TypeError("imaginary value must be a float")
         if not isinstance(isnan, bool):
             raise TypeError("isnan must be a bool")
-        if _fp_isnan(re) or _fp_isnan(im):
+        if re != re or im != im:
             isnan = True
         if re == 0.0:
             re = 0.0
@@ -51,8 +47,7 @@ class Num(field.Field):
             except Exception:
                 pass
         if isinstance(obj, complex):
-            isnan = _fp_isnan(obj.real) or _fp_isnan(obj.imag)
-            return cls(obj.real, obj.imag, isnan=isnan)
+            return cls(obj.real, obj.imag)
         return super()._cast(obj, for_obj)
 
     @classmethod
@@ -61,6 +56,12 @@ class Num(field.Field):
     @classmethod
     def _one(cls):
         return cls(1)
+    @classmethod
+    def _consts(cls):
+        return {
+            "e": cls(math.e),
+            "pi": cls(math.pi),
+        }
 
     @classmethod
     def _add(cls, a, b):

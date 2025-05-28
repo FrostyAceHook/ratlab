@@ -19,6 +19,9 @@ class Field:
     @classproperty
     def one(cls): # multiplicative identity.
         return cls._one()
+    @classproperty
+    def consts(cls): # map of str to instances of constants (e, pi, etc).
+        return cls._consts()
 
     @property
     def neg(a): # -a
@@ -78,6 +81,9 @@ class Field:
     @classmethod
     def _one(cls): # multiplicative identity.
         raise NotImplementedError()
+    @classmethod
+    def _consts(cls): # map of str to instances of constants (e, pi, etc).
+        return {}
 
     @classmethod
     def _add(cls, a, b): # a+b

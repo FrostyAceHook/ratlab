@@ -170,30 +170,13 @@ def ones(rows, cols=None):
     return matrix.ones(rows, cols, field=lits._field)
 
 
-def _wrapped_literal(x):
-    if lits._field is not None:
-        try:
-            return lits._field.cast(x)
-        except Exception:
-            pass
-    return x
-
-_WRAPPED_CONSTANTS = {
-    "e": math.e,
-    "pi": math.pi,
-    "i": 1.0j,
-    "inf": float("inf"),
-    "cinf": complex("inf+infj"),
-    "nan": float("nan"),
-    "cnan": complex("nan+nanj")
-}
 def _wrapped_constant(x):
-    if lits._field is None:
-        return _WRAPPED_CONSTANTS[x]
-    return lits._field.cast(_WRAPPED_CONSTANTS[x])
+    assert lits._field is not None
+    return lits._field.consts[x]
 
 def _wrapped_hstack(xs):
-    return hstack(*xs)
+    conv = lambda x: x if isinstance(x, Matrix) else lits._field.cast(x)
+    return hstack(*map(conv, xs))
 
 def _wrapped_vstack(matrix, idx):
     if isinstance(idx, slice):
@@ -213,24 +196,21 @@ class _WrappedTransformer(_ast.NodeTransformer):
         self.parents.pop()
         return new_node
 
-    def visit_Constant(self, node):
-        return _ast.Call(
-            func=_ast.Name(id="_wrapped_literal", ctx=_ast.Load()),
-            args=[node],
-            keywords=[],
-        )
-
     def visit_Name(self, node):
         # dont touch if its an attribute.
         parent = self.parents[-2] if len(self.parents) >= 2 else None
         if parent is not None and isinstance(parent, _ast.Attribute):
             return node
 
-        # Might not be a recognised constant.
-        if node.id not in _WRAPPED_CONSTANTS:
+        # Check if we even have a set field.
+        if lits._field is None:
             return node
 
-        # Ensure that its in a load context.
+        # Might not be a recognised constant.
+        if node.id not in lits._field.consts:
+            return node
+
+        # Ensure that its being loaded and not set.
         if not isinstance(node.ctx, _ast.Load):
             raise SyntaxError("cannot modify constants")
 
