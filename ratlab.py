@@ -2,7 +2,6 @@ import ast as _ast
 import codeop as _codeop
 import contextlib as _contextlib
 import io as _io
-import itertools as _itertools
 import os as _os
 import sys as _sys
 import traceback as _traceback
@@ -144,18 +143,6 @@ lits._field = None
 
 # Field-aware functions.
 
-def summ(*xs):
-    if lits._field is None:
-        raise ValueError("specify a field using `lits`")
-    return field.summ(*xs, field=lits._field)
-def prod(*xs):
-    if lits._field is None:
-        raise ValueError("specify a field using `lits`")
-    return field.prod(*xs, field=lits._field)
-def ave(*xs):
-    if lits._field is None:
-        raise ValueError("specify a field using `lits`")
-    return field.ave(*xs, field=lits._field)
 def eye(n):
     if lits._field is None:
         raise ValueError("specify a field using `lits`")
@@ -168,15 +155,48 @@ def ones(rows, cols=None):
     if lits._field is None:
         raise ValueError("specify a field using `lits`")
     return matrix.ones(rows, cols, field=lits._field)
+def summ(*xs):
+    if lits._field is None:
+        raise ValueError("specify a field using `lits`")
+    return matrix.summ(*xs, field=lits._field)
+def prod(*xs):
+    if lits._field is None:
+        raise ValueError("specify a field using `lits`")
+    return matrix.prod(*xs, field=lits._field)
+def ave(*xs):
+    if lits._field is None:
+        raise ValueError("specify a field using `lits`")
+    return matrix.ave(*xs, field=lits._field)
+def minn(*xs):
+    if lits._field is None:
+        raise ValueError("specify a field using `lits`")
+    return matrix.minn(*xs, field=lits._field)
+def maxx(*xs):
+    if lits._field is None:
+        raise ValueError("specify a field using `lits`")
+    return matrix.maxx(*xs, field=lits._field)
 
 
-def _wrapped_constant(x):
-    assert lits._field is not None
-    return lits._field.consts[x]
+# Overview of syntax changes:
+# - added 'lst' "keyword" to create list literals via `lst[1,2,3]`
+# - any list literals become row matrices.
+# - any subscripts on matrix literals append a row and are a matrix literal
+#       (looks like [1,2][3,4] and includes [1,2][3,4][5,6]).
+# - any literals within math expressions in matrix cells get cast to the current
+#       field. note this only propagates via some ops. (looks like
+#       [lit(1), lit(1) * lit(2) * function_call(1)], note the last 1 is not
+#       cast (to get around this, you must wrap it in a matrix literal [1])).
+
+def _wrapped_literal(x):
+    if lits._field is None:
+        raise ValueError("specify a field using `lits`")
+    if isinstance(x, Matrix):
+        return x
+    Mat = Matrix[lits._field, (1, 1)]
+    return Mat._cast(x)
 
 def _wrapped_hstack(xs):
-    conv = lambda x: x if isinstance(x, Matrix) else lits._field.cast(x)
-    return hstack(*map(conv, xs))
+    return hstack(*xs)
 
 def _wrapped_vstack(matrix, idx):
     if isinstance(idx, slice):
@@ -190,11 +210,30 @@ class _WrappedTransformer(_ast.NodeTransformer):
     def __init__(self):
         super().__init__()
         self.parents = []
+        self.in_matrix = False
+
     def visit(self, node):
         self.parents.append(node)
+
+        propagate_to = (_ast.BoolOp, _ast.NamedExpr, _ast.BinOp, _ast.UnaryOp,
+                _ast.Compare, _ast.IfExp, _ast.Constant)
+        was_in_matrix = self.in_matrix
+        if not isinstance(node, propagate_to):
+            self.in_matrix = False
         new_node = super().visit(node)
+        self.in_matrix = was_in_matrix
+
         self.parents.pop()
         return new_node
+
+    def visit_Constant(self, node):
+        if self.in_matrix:
+            return _ast.Call(
+                func=_ast.Name(id="_wrapped_literal", ctx=_ast.Load()),
+                args=[node],
+                keywords=[],
+            )
+        return node
 
     def visit_Name(self, node):
         # dont touch if its an attribute.
@@ -202,27 +241,18 @@ class _WrappedTransformer(_ast.NodeTransformer):
         if parent is not None and isinstance(parent, _ast.Attribute):
             return node
 
-        # Check if we even have a set field.
-        if lits._field is None:
-            return node
+        # Ensure `lst` is reserved.
+        if node.id == "lst" and not isinstance(node.ctx, _ast.Load):
+            raise SyntaxError("cannot modify 'lst' keyword")
 
-        # Might not be a recognised constant.
-        if node.id not in lits._field.consts:
-            return node
-
-        # Ensure that its being loaded and not set.
-        if not isinstance(node.ctx, _ast.Load):
-            raise SyntaxError("cannot modify constants")
-
-        # Wrap it.
-        return _ast.Call(
-            func=_ast.Name(id="_wrapped_constant", ctx=_ast.Load()),
-            args=[_ast.Constant(value=node.id)],
-            keywords=[]
-        )
+        # Thats all rn. used to do more, may do more in the future.
+        return node
 
     def visit_List(self, node):
-        # Ensure children aren't skipped.
+        # All list literals are matrices.
+        self.in_matrix = True
+
+        # Transform its elements.
         self.generic_visit(node)
 
         # Make it a matrix.
@@ -233,34 +263,46 @@ class _WrappedTransformer(_ast.NodeTransformer):
         )
 
     def visit_Subscript(self, node):
-        # Ensure children aren't skipped.
-        self.generic_visit(node)
+        what = "subscript"
+
+        # Recurse to the object being subscripted.
+        node.value = self.visit(node.value)
+        val = node.value
 
         # See if we're trying to create a list.
-        if isinstance(node.value, _ast.Name):
-            name = node.value
-            if name.id == "lst" and isinstance(name.ctx, _ast.Load):
-                # Make it a list.
-                if isinstance(node.slice, _ast.Tuple):
-                    elts = node.slice.elts[:]
-                else:
-                    elts = [node.slice]
-                return _ast.List(elts=elts, ctx=_ast.Load())
+        if isinstance(val, _ast.Name) and val.id == "lst":
+            what = "list"
 
-        # Check if the value being subscripted is a matrix literal.
-        if not isinstance(node.value, _ast.Call):
-            return node
-        if not isinstance(node.value.func, _ast.Name):
-            return node
-        func_name = node.value.func.id
-        if func_name != "_wrapped_hstack" and func_name != "_wrapped_vstack":
-            return node
-        # Create a call to concat the row.
-        return _ast.Call(
-            func=_ast.Name(id="_wrapped_vstack", ctx=_ast.Load()),
-            args=[node.value, node.slice],
-            keywords=[]
-        )
+        # See if we're subscripting a matrix literal.
+        if isinstance(val, _ast.Call) and isinstance(val.func, _ast.Name):
+            if val.func.id in {"_wrapped_hstack", "_wrapped_vstack"}:
+                what = "matrix"
+
+
+        # Now that we know if this is matrix, we can recurse to slice children.
+        self.in_matrix = (what == "matrix")
+        node.slice = self.visit(node.slice)
+
+        if what == "list":
+            # Make it a list, preserving context.
+            if isinstance(node.slice, _ast.Tuple):
+                elts = node.slice.elts[:] # unpack if tuple.
+            else:
+                elts = [node.slice]
+            return _ast.List(elts=elts, ctx=node.ctx)
+
+        if what == "matrix":
+            # Ensure its a load.
+            if not isinstance(node.ctx, _ast.Load):
+                raise SyntaxError("cannot assign to a matrix literal")
+            # Create a call to concat the row.
+            return _ast.Call(
+                func=_ast.Name(id="_wrapped_vstack", ctx=_ast.Load()),
+                args=[node.value, node.slice],
+                keywords=[]
+            )
+
+        return node
 
 def _wrapped_print(x):
     if x is not None:
@@ -290,69 +332,6 @@ def _wrapped_parse(source):
 
 
 
-class _MISSING:
-    def __enter__(self):
-        return self
-    def __exit__(self, etype, evalue, traceback):
-        return False
-_MISSING = _MISSING()
-
-def _readfile(path):
-    path = _Path(path)
-
-    def esc(path):
-        s = str(path)
-        # Always use forward slash separators for paths.
-        if _os.name == "nt":
-            s = s.replace("\\", "/")
-        # Escape any control codes, using repr and trimming its quotes.
-        for i in _itertools.chain(range(0x00, 0x20), range(0x7F, 0xA0)):
-            s = s.replace(chr(i), repr(chr(i))[1:-1])
-        quote = "\"" if ("'" in s) else "'"
-        s = s.replace(quote, "\\" + quote)
-        s = s.replace("\\", "\\\\")
-        return quote + s + quote
-
-    def query(msg):
-        msg = f"{msg} (y/n/a): "
-        if query.all:
-            print(msg + "y")
-            return True
-        while True:
-            response = input(msg).strip().casefold()
-            if not response:
-                continue
-            if response in "yna":
-                query.all = (response == "a")
-                return response != "n"
-    query.all = False
-
-    bad = False
-    if not path.exists():
-        bad = True
-        ignore = query(f"file {esc(path)} doesn't exist, ignore?")
-    elif not path.is_file():
-        bad = True
-        ignore = query(f"path {esc(path)} is not a file, ignore?")
-    if bad:
-        if not ignore:
-            print("ratlab: error: missing file", esc(path))
-            quit()
-        return None
-
-    return path.open("r", encoding="utf-8")
-
-def _enqueuefile(path):
-    with _readfile(path) as f:
-        if f is _MISSING:
-            return
-        for line in f:
-            if line[-1] == "\n":
-                line = line[:-1]
-            _cli.enqueue(line)
-
-
-
 if __name__ == "__main__":
     glbls = {k: v for k, v in globals().items()
             if k.lower().startswith("_wrapped") # need to be visible.
@@ -361,8 +340,15 @@ if __name__ == "__main__":
 
     # Read in any files entered.
     for path in _sys.argv[1:]:
-        _enqueuefile(path)
+        with util.readfile(path) as f:
+            if f is util.MISSING:
+                continue
+            for line in f:
+                if line[-1] == "\n":
+                    line = line[:-1]
+                _cli.enqueue(line)
 
+    _cli.enqueue("lits(Real)")
     _cli.cli(glbls, _wrapped_parse,
         ",--------------------------,\n"
         "|    RATLAB® Stuart Inc.   |\n"

@@ -1,13 +1,13 @@
 import math
 
-import field
+import matrix
 from numerical_methods import simplest_ratio
-from util import immutable
+from util import classconst, immutable
 
 
 @immutable
-class Rational(field.Field):
-    def __init__(self, numerator, denominator):
+class Rational(matrix.Field):
+    def __init__(self, numerator, denominator=1):
         if not isinstance(numerator, int):
             raise TypeError("numerator must be an int")
         if not isinstance(denominator, int):
@@ -22,59 +22,81 @@ class Rational(field.Field):
         self.nu = numerator // gcd
         self.de = denominator // gcd
 
-    @classmethod
-    def _cast(cls, obj, for_obj):
-        if not isinstance(obj, float):
-            try:
-                obj = float(obj)
-            except Exception:
-                pass
-        if isinstance(obj, float):
-            return cls(*simplest_ratio(obj))
-        return super()._cast(obj, for_obj)
 
     @classmethod
-    def _zero(cls):
-        return cls(0, 1)
+    def from_int(cls, x):
+        return cls(x)
     @classmethod
-    def _one(cls):
-        return cls(1, 1)
+    def from_float(cls, x):
+        return cls(*simplest_ratio(x))
+    @classmethod
+    def from_complex(cls, x):
+        if x.imag != 0.0:
+            raise NotImplementedError()
+        return cls(*simplest_ratio(x.real))
 
     @classmethod
-    def _add(cls, a, b):
-        return cls(a.nu * b.de + b.nu * a.de, a.de * b.de)
-    @classmethod
-    def _neg(cls, a):
-        return cls(-a.nu, a.de)
-    @classmethod
-    def _mul(cls, a, b):
-        return cls(a.nu * b.nu, a.de * b.de)
-    @classmethod
-    def _rec(cls, a):
-        return cls(a.de, a.nu)
-
-    @classmethod
-    def _eq_zero(cls, a):
-        return a.nu == 0
-    @classmethod
-    def _lt_zero(cls, a):
-        return a.nu < 0
-
-    @classmethod
-    def _intof(cls, a):
+    def to_int(cls, a):
         if a.de != 1:
             raise NotImplementedError()
         return a.nu
     @classmethod
-    def _floatof(cls, a):
+    def to_float(cls, a):
         return a.nu / a.de
+    @classmethod
+    def to_complex(cls, a):
+        return complex(a.nu / a.de)
+
+    @classconst
+    def zero(cls):
+        return cls(0, 1)
+    @classconst
+    def one(cls):
+        return cls(1, 1)
 
     @classmethod
-    def _hashof(cls, a):
+    def add(cls, a, b):
+        return cls(a.nu * b.de + b.nu * a.de, a.de * b.de)
+    @classmethod
+    def sub(cls, a, b):
+        return cls(a.nu * b.de - b.nu * a.de, a.de * b.de)
+    @classmethod
+    def absolute(cls, a):
+        return cls(abs(a.nu), a.de)
+
+    @classmethod
+    def mul(cls, a, b):
+        return cls(a.nu * b.nu, a.de * b.de)
+    @classmethod
+    def div(cls, a, b):
+        return cls(a.nu * b.de, a.de * b.nu)
+
+    @classmethod
+    def power(cls, a, b):
+        raise NotImplementedError("haven don it yet")
+    @classmethod
+    def log(cls, a, b):
+        raise NotImplementedError("haven don it yet")
+
+    @classmethod
+    def eq(cls, a, b):
+        return a.nu == b.nu and a.de == b.de
+    @classmethod
+    def lt(cls, a):
+        return a.nu * b.de < b.nu * a.de
+
+    @classmethod
+    def hashed(cls, a):
         return hash((a.nu, a.de))
 
-    def __repr__(self):
-        return str(self.nu) + (self.de != 1) * f"/{self.de}"
+    @classmethod
+    def repr_short(cls, a):
+        s = cls.repr_long(a)
+        return f"≈{(a.nu / a.de):.6g}" if len(s) > 10 else s
+
+    @classmethod
+    def repr_long(cls, a):
+        return str(a.nu) + (a.de != 1) * f"/{a.de}"
 
     def exp_as_string(self):
         if self.de == 1:

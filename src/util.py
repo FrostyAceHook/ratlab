@@ -1,20 +1,44 @@
 import functools as _functools
 import inspect as _inspect
+import itertools as _itertools
+import os as _os
 import sys as _sys
+from pathlib import Path as _Path
 from types import GeneratorType as _GeneratorType
 
 
-class classproperty:
+class classconst:
     """
-    Makes the given method a class property.
+    Makes the given method a cached class property.
     - method decorator.
     """
     def __init__(self, fget):
-        self.fget = fget
+        self._fget = fget
+        self._cache = {}
         _functools.update_wrapper(self, fget)
 
     def __get__(self, instance, owner):
-        return self.fget(owner)
+        if owner not in self._cache:
+            self._cache[owner] = self._fget(owner)
+        return self._cache[owner]
+
+class instconst:
+    """
+    Makes the given method a cached instance property.
+    - method decorator.
+    """
+    def __init__(self, fget):
+        self._fget = fget
+        self._attr_name = f"_cached_{fget.__name__}"
+        _functools.update_wrapper(self, fget)
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+        if not hasattr(instance, self._attr_name):
+            setattr(instance, self._attr_name, self._fget(instance))
+        return getattr(instance, self._attr_name)
+
 
 
 def iterable(obj):
@@ -30,16 +54,18 @@ def iterable(obj):
 
 
 def tname(t):
+    if not isinstance(t, type):
+        raise TypeError(f"expected type, got {tname(type(t))}")
     m = str(t.__module__)
-    m = "" if m == "__main__" else m + "."
-    return m + t.__name__
+    m = "" if m == "__main__" or m == "builtins" else m + "."
+    return f"'{m}{t.__name__}'"
 
 
 def immutable(cls):
     """
-    Make the given class immutable (outside the `__init__` method). When a class
-    inherits from this, it will be mutable except for the members which were
-    assigned during the immutable classes `__init__`.
+    Make the given class immutable (outside the `__init__` method), however
+    allows the creation of new underscore attributes. When a class inherits from this, it will be mutable except for the members which were assigned during
+    the immutable classes `__init__`.
     - class decorator.
     """
 
@@ -67,9 +93,12 @@ def immutable(cls):
         if getattr(self, "_in_init", 1):
             cooked = False
         else:
-            cooked = type(self) is cls or name in self._frozen
+            cooked = name in self._frozen
+            if type(self) is cls:
+                cooked |= not name.startswith("_")
         if cooked:
-            raise AttributeError("cannot modify an immutable instance")
+            raise AttributeError(f"cannot modify attribute {repr(name)} of an "
+                    "immutable instance")
 
     def __setattr__(self, name, value):
         check(self, name)
@@ -215,7 +244,7 @@ def templated(creator, parents=(), decorators=(), metaclass=type):
 
     sig = _inspect.signature(creator)
     param_names = [p.name for p in sig.parameters.values()]
-    param_str = lambda x: x.__name__ if isinstance(x, type) else repr(x)
+    param_str = lambda x: tname(x) if isinstance(x, type) else repr(x)
 
     @cached(forwards_to=creator)
     def create_class(*params):
@@ -290,3 +319,57 @@ def templated(creator, parents=(), decorators=(), metaclass=type):
     _functools.update_wrapper(Creator, creator)
     return Creator
     # not confusing at all
+
+
+
+class MISSING:
+    def __enter__(self):
+        return self
+    def __exit__(self, etype, evalue, traceback):
+        return False
+MISSING = MISSING()
+
+def readfile(path):
+    path = _Path(path)
+
+    def esc(path):
+        s = str(path)
+        # Always use forward slash separators for paths.
+        if _os.name == "nt":
+            s = s.replace("\\", "/")
+        # Escape any control codes, using repr and trimming its quotes.
+        for i in _itertools.chain(range(0x00, 0x20), range(0x7F, 0xA0)):
+            s = s.replace(chr(i), repr(chr(i))[1:-1])
+        quote = "\"" if ("'" in s) else "'"
+        s = s.replace(quote, "\\" + quote)
+        s = s.replace("\\", "\\\\")
+        return quote + s + quote
+
+    def query(msg):
+        msg = f"{msg} (y/n/a): "
+        if query.all:
+            print(msg + "y")
+            return True
+        while True:
+            response = input(msg).strip().casefold()
+            if not response:
+                continue
+            if response in "yna":
+                query.all = (response == "a")
+                return response != "n"
+    query.all = False
+
+    bad = False
+    if not path.exists():
+        bad = True
+        ignore = query(f"file {esc(path)} doesn't exist, ignore?")
+    elif not path.is_file():
+        bad = True
+        ignore = query(f"path {esc(path)} is not a file, ignore?")
+    if bad:
+        if not ignore:
+            print("ratlab: error: missing file", esc(path))
+            quit()
+        return None
+
+    return path.open("r", encoding="utf-8")
