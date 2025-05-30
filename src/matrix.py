@@ -21,31 +21,24 @@ class Field:
     def consts(cls):
         return {}
 
-    @_classconst
-    def yes(cls):
-        return object()
-
     @classmethod
     def atan2(cls, y, x):
-        if "pi" in cls.consts:
-            pi = cls.consts["pi"]
-        else:
-            pi = cls.from_float(_pi)
+        pi = cls.consts["pi"] if "pi" in cls.consts else cls.from_float(_pi)
         two = cls.from_int(2)
 
-        if cls.lt(cls.zero, x) is cls.yes:
+        if cls.lt(cls.zero, x):
             return cls.atan(cls.div(y, x))
-        elif cls.lt(x, cls.zero) is cls.yes:
+        elif cls.lt(x, cls.zero):
             if cls.lt(cls.zero, y):
                 return cls.add(cls.atan(cls.div(y, x)), pi)
             else:
                 return cls.sub(cls.atan(cls.div(y, x)), pi)
-        elif cls.eq(x, cls.zero) is cls.yes:
-            if cls.lt(cls.zero, y) is cls.yes:
+        elif cls.eq(x, cls.zero):
+            if cls.lt(cls.zero, y):
                 return cls.div(pi, two)
-            elif cls.lt(y, cls.zero) is cls.yes:
+            elif cls.lt(y, cls.zero):
                 return cls.div(cls.sub(cls.zero, pi), two)
-            elif cls.eq(y, cls.zero) is cls.yes:
+            elif cls.eq(y, cls.zero):
                 return cls.zero # atan(0/0)
             else:
                 raise TypeError(f"value '{repr(y)}' could not be ordered "
@@ -53,10 +46,6 @@ class Field:
         else:
             raise TypeError(f"value '{repr(x)}' could not be ordered against "
                     f"zero ('{repr(cls.zero)}')")
-
-    @classmethod
-    def repr_short(cls, a):
-        return cls.repr_long(a)
 
     def __repr__(s):
         rep = s.repr_short if hasattr(s, "repr_short") else s.repr_long
@@ -159,20 +148,16 @@ class ExampleField(Field):
         return cls()
 
     # Comparisons don't necessarily have bool returns, they may also return any
-    # Field type (including this class). However, when a comparison is always
-    # true, `cls.yes` must be returned (again, this object does not need to be a
-    # bool). Note that the return type of comparisons must be consistent across
-    # calls with different values (eq and lt must always return the type of
-    # `cls.yes`).
-    @_classconst
-    def yes(cls): # object returned when the result of a comparison is yes.
-        return object() # may be `True`.
+    # Field type (including this class). However, when this returned object is
+    # cast to bool, it must be true iff the original comparison is always true.
+    # Note that the return type of comparisons must be consistent across calls
+    # with different values (but eq may be different from lt).
     @classmethod
     def eq(cls, a, b): # a == b
-        return cls.yes
+        return ...
     @classmethod
     def lt(cls, a, b): # a < b
-        return cls.yes
+        return ...
 
     @classmethod
     def hashed(cls, a): # hash(a)
@@ -261,9 +246,6 @@ def GenericField(T):
     def power(cls, a, b):
         return cls._generic(a.v ** b.v)
 
-    @_classconst
-    def yes(cls):
-        return True
     @classmethod
     def eq(cls, a, b):
         return bool(a.v == b.v)
@@ -277,9 +259,13 @@ def GenericField(T):
 
     @classmethod
     def repr_short(cls, a):
+        if T is bool:
+            return "Y" if a.v else "N"
         return repr(a.v)
     @classmethod
     def repr_long(cls, a):
+        if T is bool:
+            return "yeagh" if a.v else "nogh"
         return repr(a.v)
 
 
@@ -313,7 +299,7 @@ def Matrix(field, shape):
     if _prod(shape) == 0 and (shape != (0, 0) or field != Field):
         return Matrix[Field, (0, 0)]
 
-    size_string = f"{shape[0]}x{shape[1]}"
+    _size_str = f"{shape[0]}x{shape[1]}"
 
     @classmethod
     def _need(cls, method, extra=""):
@@ -389,7 +375,7 @@ def Matrix(field, shape):
                         f"value {cells[i]})")
         if len(cells) != _prod(shape):
             raise TypeError("cells must match flattened shape (expected "
-                    f"{size_string}={_prod(shape)}, got {len(cells)})")
+                    f"{_size_str}={_prod(shape)}, got {len(cells)})")
 
         self._cells = cells
         self._print_colvec_flat = print_colvec_flat
@@ -403,7 +389,7 @@ def Matrix(field, shape):
         """
         if not cls.issquare:
             raise TypeError("only square matricies have an identity (got size "
-                    f"{size_string})")
+                    f"{_size_str})")
         n = shape[0]
         cells = [cls._f("zero")] * _prod(shape) if n else ()
         for i in range(n):
@@ -421,7 +407,7 @@ def Matrix(field, shape):
         """
         One-filled matrix.
         """
-        cells = (cls._f("zero"), ) * _prod(shape) if shape[0] else ()
+        cells = (cls._f("one"), ) * _prod(shape) if shape[0] else ()
         return cls(cells)
     @_classconst
     def zero(cls):
@@ -472,7 +458,7 @@ def Matrix(field, shape):
         """
         if not s.isvec:
             raise TypeError("only vectors have bare iteration (got size "
-                    f"{size_string}), use .rowmajor or .colmajor for matrix "
+                    f"{_size_str}), use .rowmajor or .colmajor for matrix "
                     "iterate")
         return iter(s.rowmajor)
 
@@ -482,7 +468,7 @@ def Matrix(field, shape):
         """
         if not s.isvec:
             raise TypeError("only vectors have bare getitem (got size "
-                    f"{size_string}), use .at for matrix cell access")
+                    f"{_size_str}), use .at for matrix cell access")
         xs = s._cells.__getitem__(i)
         if not isinstance(xs, tuple):
             xs = (xs, )
@@ -515,15 +501,15 @@ def Matrix(field, shape):
         """
         if not isinstance(i, int):
             raise TypeError("expected an integer row index (got "
-                    f"{tname(type(i))}")
+                    f"{_tname(type(i))}")
         if not isinstance(j, int):
             raise TypeError("expected an integer column index (got "
-                    f"{tname(type(j))}")
+                    f"{_tname(type(j))}")
         ii = i + (i < 0) * shape[0]
         jj = j + (j < 0) * shape[1]
         if ii not in range(shape[0]):
             raise ValueError(f"row index {i} out-of-bounds for {shape[0]} rows")
-        if jj not in range(shape[0]):
+        if jj not in range(shape[1]):
             raise ValueError(f"column index {j} out-of-bounds for {shape[1]} "
                     "columns")
         return single(s._cells[shape[1]*i + j])
@@ -590,7 +576,7 @@ def Matrix(field, shape):
         """
         if not s.issquare:
             raise TypeError("cannot invert a non-square matrix (got size "
-                    f"{s.size_string})")
+                    f"{s._size_str})")
         if s.det == s.zero:
             raise ValueError("cannot invert a non-invertible matrix (det == 0)")
         aug = hstack(s, s.eye)
@@ -603,8 +589,8 @@ def Matrix(field, shape):
         """
         Matrix diagonal (as column vector).
         """
-        cells = (s.at(i, i) for i in range(min(shape)))
-        return Matrix[field, (len(cells), 1)](cells)
+        cells = (s._at(i, i) for i in range(min(shape)))
+        return Matrix[field, (min(shape), 1)](cells)
 
 
     @_instconst
@@ -670,7 +656,7 @@ def Matrix(field, shape):
         """
         if not s.issquare:
             raise TypeError("cannot find determinant of non-square matrix (got "
-                    f"size {s.size_string})")
+                    f"size {s._size_str})")
 
         if s.isempty:
             return 1 # det([]) defined as 1.
@@ -706,7 +692,7 @@ def Matrix(field, shape):
         """
         if not s.issquare:
             raise TypeError("cannot find trace of non-square matrix (got size "
-                    f"{s.size_string})")
+                    f"{s._size_str})")
         trace = s.zero
         for i in range(shape[0]):
             trace += s.at(i, i)
@@ -719,7 +705,7 @@ def Matrix(field, shape):
         """
         if not s.isvec:
             raise TypeError("cannot find magnitude of a non-vector (got size "
-                    f"{s.size_string})")
+                    f"{s._size_str})")
         return (s & s).sqrt
 
 
@@ -796,8 +782,8 @@ def Matrix(field, shape):
         """
         rref = s.rref
         return tuple(i for i, c in enumerate(rref.cols)
-                if 1 == sum(not eq(x, s._f("zero")) for x in c)
-                and 1 == sum(not eq(x, s._f("one")) for x in c))
+                if 1 == sum(not s._f("eq")(x, s._f("zero")) for x in c)
+                and 1 == sum(not s._f("eq")(x, s._f("one")) for x in c))
 
     @_instconst
     def nonpivots(s):
@@ -821,7 +807,7 @@ def Matrix(field, shape):
         """
         rref = s.rref
         nonzeros = (i for i, r in enumerate(rref.rows)
-                    if any(eq(x, s.zero) for x in r))
+                    if any(s._f("eq")(x, s._f("zero")) for x in r))
         return tuple(rref.rows[i].T for i in nonzeros)
 
     @_instconst
@@ -832,7 +818,7 @@ def Matrix(field, shape):
         sys = s.rref # implied zero-vec augment.
         def find_first_one(xs):
             for i, x in enumerate(xs):
-                if eq(x, s.one):
+                if s._f("eq")(x, s._f("one")):
                     return i
             return None
         pivotat = tuple(find_first_one(sys.rows[i]) for i in range(shape[0]))
@@ -846,16 +832,16 @@ def Matrix(field, shape):
         return tuple(Matrix[field, (shape[1], 1)](x) for x in basis)
 
     def _repr(s, islong):
-        rep = s._f("repr_long" if islong else "repr_short")
-
         if s.isempty:
             return "my boy "*islong + "M.T."
+
+        rep = s._f("repr_long" if islong else "repr_short")
 
         if s.issingle:
             # return "[ " + rep(s._cells[0]) + " ]"
             return rep(s._cells[0])
 
-        if s._print_zero_as_dot:
+        if s._print_zero_as_dot and not islong:
             rep_ = rep
             def rep(x):
                 if rep.can_eq_zero:
@@ -942,7 +928,7 @@ def Matrix(field, shape):
                 o = Matrix[field, s.shape](o._cells * _prod(s.shape))
         if s.shape != o.shape:
             raise TypeError("cannot element-wise operate on matrices of "
-                    f"different sizes ({s.size_string} vs {o.size_string})")
+                    f"different sizes ({s._size_str} vs {o._size_str})")
 
         cells = tuple(func(a, b) for a, b in zip(s._cells, o._cells))
         newfield = type(cells[0]) if cells else Field
@@ -1036,7 +1022,8 @@ def Matrix(field, shape):
         """
         Element-wise natural logarithm.
         """
-        return s._eltwise_unary(s, lambda x: s._f("log")(s._f("exp")(s._f("one")), x))
+        f = lambda x: s._f("log")(s._f("exp")(s._f("one")), x)
+        return s._eltwise_unary(s, f)
 
     def log(s, base):
         """
@@ -1051,13 +1038,13 @@ def Matrix(field, shape):
         """
         return s._eltwise_unary(s, s._f("sin"))
     @_instconst
-    def cos(cls, a):
+    def cos(s):
         """
         Element-wise trigonometric cosine.
         """
         return s._eltwise_unary(s, s._f("cos"))
     @_instconst
-    def tan(cls, a):
+    def tan(s):
         """
         Element-wise trigonometric tangent.
         """
@@ -1070,13 +1057,13 @@ def Matrix(field, shape):
         """
         return s._eltwise_unary(s, s._f("asin"))
     @_instconst
-    def acos(cls, a):
+    def acos(s):
         """
         Element-wise trigonometric inverse-cosine.
         """
         return s._eltwise_unary(s, s._f("acos"))
     @_instconst
-    def atan(cls, a):
+    def atan(s):
         """
         Element-wise trigonometric inverse-tangent.
         """
@@ -1085,15 +1072,16 @@ def Matrix(field, shape):
 
     def __eq__(s, o):
         """
-        Element-wise equality (use 'eq' to check if all pairs are equal).
+        Element-wise equality (cast return to bool to determine if all pairs are
+        equal).
         """
         return s._eltwise_binary(s, o, s._f("eq"))
     def __ne__(s, o):
         return s._eltwise_binary(s, o, lambda a, b: not s._f("eq")(a, b))
     def __lt__(s, o):
         """
-        Element-wise ordering (use 'lt' to check if all pairs are strictly
-        ascending).
+        Element-wise ordering (cast return to bool to determine if all pairs are
+        ordered strictly ascending).
         """
         return s._eltwise_binary(s, o, s._f("lt"))
     def __le__(s, o):
@@ -1113,10 +1101,10 @@ def Matrix(field, shape):
         o = s._cast(o)
         if not s.isvec or not o.isvec:
             raise TypeError(f"can only dot product vectors (got sizes "
-                    f"{s.size_string} and {o.size_string})")
+                    f"{s._size_str} and {o._size_str})")
         if len(s) != len(o):
             raise TypeError(f"can only dot product same-size vectors (got sizes "
-                    f"{s.size_string} and {o.size_string})")
+                    f"{s._size_str} and {o._size_str})")
         mul = s._f("mul")
         add = s._f("add")
         dot = s._f("zero")
@@ -1134,10 +1122,10 @@ def Matrix(field, shape):
         o = s._cast(o)
         if not s.isvec or not o.isvec:
             raise TypeError(f"can only cross product vectors (got sizes "
-                    f"{s.size_string} and {o.size_string})")
+                    f"{s._size_str} and {o._size_str})")
         if len(s) != 3 or len(o) != 3:
             raise TypeError(f"can only cross product 3-element vectors (got "
-                    f"sizes {s.size_string} and {o.size_string})")
+                    f"sizes {s._size_str} and {o._size_str})")
         shp = (3, 1) # column vector takes precedence.
         if lhs.shape == (1, 3) and rhs.shape == (1, 3):
             # but keep row vector if both are.
@@ -1163,7 +1151,7 @@ def Matrix(field, shape):
         o = s._cast(o)
         if s.shape[1] != o.shape[0]:
             raise TypeError("incorrect size for matrix multiplication "
-                    f"({s.size_string} times {o.size_string})")
+                    f"({s._size_str} times {o._size_str})")
         shp = s.shape[0], o.shape[1]
         mul = s._f("mul")
         add = s._f("add")
@@ -1177,7 +1165,7 @@ def Matrix(field, shape):
                     o_idx = o.shape[1]*k + j
                     r_idx = shp[1]*i + j
                     prod = mul(s._cells[s_idx], o._cells[o_idx])
-                    cells[r_idx] = add(cells[idx], prod)
+                    cells[r_idx] = add(cells[r_idx], prod)
         return Matrix[field, shp](cells)
     def __rmatmul__(s, o):
         o = s._cast(o)
@@ -1200,7 +1188,7 @@ def Matrix(field, shape):
                     f"{_tname(type(exp))})")
         if not s.issquare:
             raise TypeError("can only raise square matrices to a power (got "
-                    f"{s.size_string})")
+                    f"{s._size_str})")
         if exp < 0:
             return s.inv ^ (-exp)
         power = s.eye
@@ -1220,11 +1208,9 @@ def Matrix(field, shape):
         True iff any elements are non-zero (or non-one if field has no zero).
         """
         if hasattr(field, "zero"):
-            eqz = lambda x: (s._f("eq")(x, s._f("zero")) is s._f("yes"))
-            return not all(eqz(x) for x in s._cells)
+            return not all(s._f("eq")(x, s._f("zero")) for x in s._cells)
         if hasattr(field, "one"):
-            eqo = lambda x: (s._f("eq")(x, s._f("one")) is s._f("yes"))
-            return not all(eqo(x) for x in s._cells)
+            return not all(s._f("eq")(x, s._f("one")) for x in s._cells)
         raise NotImplementedError("no zero or one element in field "
                 f"{_tname(field)}, must specify an element to compare to")
 
@@ -1233,7 +1219,7 @@ def Matrix(field, shape):
         Cast a single to int.
         """
         if not s.issingle:
-            raise TypeError(f"cannot cast {s.size_string} matrix to int (requires "
+            raise TypeError(f"cannot cast {s._size_str} matrix to int (requires "
                     "1x1)")
         return s._f("to_int")(s._cells[0])
     def __float__(s):
@@ -1241,7 +1227,7 @@ def Matrix(field, shape):
         Cast a single to float.
         """
         if not s.issingle:
-            raise TypeError(f"cannot cast {s.size_string} matrix to float "
+            raise TypeError(f"cannot cast {s._size_str} matrix to float "
                     "(requires 1x1)")
         return s._f("to_float")(s._cells[0])
     def __complex__(s):
@@ -1249,7 +1235,7 @@ def Matrix(field, shape):
         Cast a single to complex.
         """
         if not s.issingle:
-            raise TypeError(f"cannot cast {s.size_string} matrix to complex "
+            raise TypeError(f"cannot cast {s._size_str} matrix to complex "
                     "(requires 1x1)")
         return s._f("to_complex")(s._cells[0])
 
@@ -1278,70 +1264,6 @@ def Matrix(field, shape):
         return Matrix[field, shape](cells)
 
 
-def eq(a, b):
-    """
-    True if all pairs of elements in a and b are equal, false otherwise.
-    """
-    if not isinstance(a, Matrix):
-        raise TypeError(f"expected matrix for lhs, got {tname(type(a))}")
-    if not isinstance(b, Matrix):
-        raise TypeError(f"expected matrix for rhs, got {tname(type(b))}")
-    if a.field != b.field:
-        raise TypeError(f"matrix fields must be the same (got {tname(a.field)} "
-                f"and {tname(b.field)}")
-    return all(x._cells[0] is a._f("yes") for x in (a == b).rowmajor)
-def neq(a, b):
-    if not isinstance(a, Matrix):
-        raise TypeError(f"expected matrix for lhs, got {tname(type(a))}")
-    if not isinstance(b, Matrix):
-        raise TypeError(f"expected matrix for rhs, got {tname(type(b))}")
-    if a.field != b.field:
-        raise TypeError(f"matrix fields must be the same (got {tname(a.field)} "
-                f"and {tname(b.field)}")
-    return all(x._cells[0] is a._f("yes") for x in (a != b).rowmajor)
-def lt(a, b):
-    """
-    True if all pairs of elements in a and b are strictly ascending, false
-    otherwise.
-    """
-    if not isinstance(a, Matrix):
-        raise TypeError(f"expected matrix for lhs, got {tname(type(a))}")
-    if not isinstance(b, Matrix):
-        raise TypeError(f"expected matrix for rhs, got {tname(type(b))}")
-    if a.field != b.field:
-        raise TypeError(f"matrix fields must be the same (got {tname(a.field)} "
-                f"and {tname(b.field)}")
-    return all(x._cells[0] is a._f("yes") for x in (a < b).rowmajor)
-def le(a, b):
-    if not isinstance(a, Matrix):
-        raise TypeError(f"expected matrix for lhs, got {tname(type(a))}")
-    if not isinstance(b, Matrix):
-        raise TypeError(f"expected matrix for rhs, got {tname(type(b))}")
-    if a.field != b.field:
-        raise TypeError(f"matrix fields must be the same (got {tname(a.field)} "
-                f"and {tname(b.field)}")
-    return all(x._cells[0] is a._f("yes") for x in (a <= b).rowmajor)
-def gt(a, b):
-    if not isinstance(a, Matrix):
-        raise TypeError(f"expected matrix for lhs, got {tname(type(a))}")
-    if not isinstance(b, Matrix):
-        raise TypeError(f"expected matrix for rhs, got {tname(type(b))}")
-    if a.field != b.field:
-        raise TypeError(f"matrix fields must be the same (got {tname(a.field)} "
-                f"and {tname(b.field)}")
-    return all(x._cells[0] is a._f("yes") for x in (a > b).rowmajor)
-def ge(a, b):
-    if not isinstance(a, Matrix):
-        raise TypeError(f"expected matrix for lhs, got {tname(type(a))}")
-    if not isinstance(b, Matrix):
-        raise TypeError(f"expected matrix for rhs, got {tname(type(b))}")
-    if a.field != b.field:
-        raise TypeError(f"matrix fields must be the same (got {tname(a.field)} "
-                f"and {tname(b.field)}")
-    return all(x._cells[0] is a._f("yes") for x in (a >= b).rowmajor)
-
-
-
 def single(x):
     return Matrix[type(x), (1, 1)]((x, ))
 
@@ -1357,8 +1279,13 @@ def long(a):
     Prints a long string representation of 'a'.
     """
     if not isinstance(a, Matrix):
-        raise TypeError(f"expected matrix, got {tname(type(a))}")
+        raise TypeError(f"expected matrix, got {_tname(type(a))}")
     print(a.repr_long)
+
+
+
+def keep_unpacking(xs):
+    return len(xs) == 1 and _iterable(xs[0]) and not issingle(xs[0])
 
 
 def concat(*rows):
@@ -1376,10 +1303,10 @@ def concat(*rows):
                     "just a bare matrix")
         for x in row:
             if not isinstance(x, Matrix):
-                # raise TypeError("must give a matrix to be concatenated, got "
-                #         f"{_tname(type(x))}")
+                raise TypeError("must give a matrix to be concatenated, got "
+                        f"{_tname(type(x))}")
                 # on god i have changed this line back and forth about 50 times.
-                x = single(x)
+                # x = single(x)
             if height is None:
                 height = x.shape[0]
             if height != x.shape[0]:
@@ -1430,24 +1357,36 @@ def rep(x, rows, cols=1):
     """
     if not isinstance(rows, int):
         raise TypeError("expected an integer number of rows, got "
-                f"{tname(type(rows))}")
+                f"{_tname(type(rows))}")
     if not isinstance(cols, int):
         raise TypeError("expected an integer number of columns, got "
-                f"{tname(type(cols))}")
+                f"{_tname(type(cols))}")
     return concat(*((x, ) * cols for _ in range(rows)))
 
 def diag(*xs):
     """
     Creates a matrix with a diagonal of the given elements and zeros elsewhere.
     """
-    if len(xs) == 1 and _iterable(xs[0]) and not issingle(x):
+    if keep_unpacking(xs):
         return diag(*xs[0])
-    field = xs[0].field if xs else Field
+    if not xs:
+        field = Field
+    else:
+        if not isinstance(xs[0], Matrix):
+            raise TypeError("expected matrices for the elements of the "
+                    f"diagonal, at index 0 got {_tname(type(xs[0]))}")
+        field = xs[0].field
     n = len(xs)
     Mat = Matrix[field, (n, n)]
     cells = [Mat._f("zero")] * (n*n) if n else []
     for i in range(n):
-        cells[i*n + i] = xs[i]
+        if not isinstance(xs[i], Matrix):
+            raise TypeError("expected matrices for the elements of the "
+                    f"diagonal, at index {i} got {_tname(type(xs[0]))}")
+        if not xs[i].issingle:
+            raise TypeError("expected singles for the elements of the "
+                    f"diagonal, at index {i} got size {xs[0]._size_str}")
+        cells[i*n + i] = xs[i]._cells[0]
     return Mat(cells)
 
 def eye(n, *, field):
@@ -1469,6 +1408,63 @@ def ones(rows, cols=None, *, field):
     """
     cols = rows if cols is None else cols
     return Matrix[field, (rows, cols)].ones
+
+
+
+def summ(*xs, field):
+    if keep_unpacking(xs):
+        return summ(*xs[0], field=field)
+    if not xs:
+        return single(field.zero)
+    r = single(field.zero)
+    for x in xs:
+        r += x
+    return r
+
+def prod(*xs, field):
+    if keep_unpacking(xs):
+        return prod(*xs[0], field=field)
+    if not xs:
+        return single(field.one)
+    r = single(field.one)
+    for x in xs:
+        r *= x
+    return r
+
+def ave(*xs, field):
+    if keep_unpacking(xs):
+        return ave(*xs[0], field=field)
+    if not xs:
+        raise ValueError("cannot average no elements")
+    r = single(field.zero)
+    i = single(field.zero)
+    for x in xs:
+        r += x
+        i += single(field.one)
+    return r / i
+
+def minn(*xs, field):
+    if keep_unpacking(xs):
+        return minn(*xs[0], field=field)
+    if not xs:
+        raise ValueError("cannot find minimum of no elements")
+    r = xs[0]
+    for x in xs[1:]:
+        if x < r:
+            r = x
+    return r
+
+def maxx(*xs, field):
+    if keep_unpacking(xs):
+        return maxx(*xs[0], field=field)
+    if not xs:
+        raise ValueError("cannot find maximum of no elements")
+    r = xs[0]
+    for x in xs[1:]:
+        if x > r:
+            r = x
+    return r
+
 
 
 def sqrt(x):
@@ -1505,16 +1501,38 @@ def exp(x):
         return x.exp
     x = float(x)
     return math.exp(x)
-def log(x):
+def ln(x):
     """
-    Alias for 'x.log', and overloaded for basic number types.
+    Alias for 'x.ln', and overloaded for basic number types.
     """
     if isinstance(x, Field):
-        return x.log
+        return x.ln
     x = float(x)
     if x == 0.0:
         return -float("inf")
     return math.log(x)
+
+def log2(x):
+    """
+    Alias for 'x.log(2)', and overloaded for basic number types.
+    """
+    return log(x, 2)
+def log10(x, base):
+    """
+    Alias for 'x.log(10)', and overloaded for basic number types.
+    """
+    return log(x, 10)
+def log(x, base):
+    """
+    Alias for 'x.log(base)', and overloaded for basic number types.
+    """
+    if isinstance(x, Field):
+        return x.log(base)
+    x = float(x)
+    if x == 0.0:
+        return -float("inf")
+    return math.log(x) / math.log(base)
+
 
 def sin(x):
     """
@@ -1579,7 +1597,7 @@ def atan2(y, x):
             x = y._cast(x)
         if not isinstance(y, Matrix):
             y = x._cast(y)
-        return x._eltwise_binary(x, y, x._f("atan2"))
+        return x._eltwise_binary(y, x, x._f("atan2"))
     y = float(y)
     x = float(x)
     return math.atan2(y, x)
@@ -1588,71 +1606,11 @@ def atan2(y, x):
 
 
 
-def keep_unpacking(xs):
-    return len(xs) == 1 and _iterable(xs[0]) and not issingle(xs[0])
-
-
-def summ(*xs, field):
-    if keep_unpacking(xs):
-        return summ(*xs[0], field=field)
-    if not xs:
-        return single(field.zero)
-    r = single(field.zero)
-    for x in xs:
-        r += x
-    return r
-
-def prod(*xs, field):
-    if keep_unpacking(xs):
-        return prod(*xs[0], field=field)
-    if not xs:
-        return single(field.one)
-    r = single(field.one)
-    for x in xs:
-        r *= x
-    return r
-
-def ave(*xs, field):
-    if keep_unpacking(xs):
-        return ave(*xs[0], field=field)
-    if not xs:
-        raise ValueError("cannot average no elements")
-    r = single(field.zero)
-    i = single(field.zero)
-    for x in xs:
-        r += x
-        i += single(field.one)
-    return r / i
-
-def minn(*xs, field):
-    if keep_unpacking(xs):
-        return minn(*xs[0], field=field)
-    if not xs:
-        raise ValueError("cannot find minimum of no elements")
-    r = xs[0]
-    for x in xs[1:]:
-        if x < r:
-            r = x
-    return r
-
-def maxx(*xs, field):
-    if keep_unpacking(xs):
-        return maxx(*xs[0], field=field)
-    if not xs:
-        raise ValueError("cannot find maximum of no elements")
-    r = xs[0]
-    for x in xs[1:]:
-        if x > r:
-            r = x
-    return r
-
-
-
 class series:
     def __init__(self, xs):
         if not isinstance(xs, Matrix):
             raise TypeError("expected a matrix for the argument of series, got "
-                    f"{tname(type(xs))}")
+                    f"{_tname(type(xs))}")
         self.xs = xs
 
     def __repr__(self):
@@ -1684,15 +1642,15 @@ def mhelp():
                 print(w * " ", end="")
             else:
                 w = len(name)
-            line = s[:80 - w]
-            if len(line) == 80 - w and " " in line:
+            line = s[:90 - w]
+            if len(line) == 90 - w and " " in line:
                 line = line[:line.rindex(" ")]
             print(line)
             s = s[len(line):].lstrip()
 
     def print_attr(name, desc):
         s = f"{name} .."
-        s += "." * (16 - len(s)) + " "
+        s += "." * (18 - len(s)) + " "
         printme(s, desc)
 
     printme("Matrix - ", Matrix.__doc__)
@@ -1702,6 +1660,7 @@ def mhelp():
     cls = Matrix[Field, (1, 1)]
     attrs = [(name, attr) for name, attr in vars(cls).items()
             if attr.__doc__ is not None
+            and not name.startswith("_")
             and name != "__module__"
             and name != "__doc__"
             and name != "template"
@@ -1769,9 +1728,21 @@ def mhelp():
             name = f"m.{name}"
         print_attr(name, attr.__doc__)
 
-    # also chuck the functions operating on or returning matrices.
-    extras = [concat, vstack, hstack, rep, diag, eye, zeros, ones]
-    for func in extras:
+    # also chuck the other functions in this file.
+    funcs = []
+    this_func = _inspect.currentframe().f_code.co_name
+    for obj in globals().values():
+        if not _inspect.isfunction(obj):
+            continue
+        if obj.__module__ != __name__: # must be in this file.
+            continue
+        if obj.__name__ == this_func: # mustnt be this func.
+            continue
+        if obj.__doc__ is None:
+            continue
+        funcs.append(obj)
+
+    for func in funcs:
         sig = _inspect.signature(func)
         sig = str(sig)
         sig = sig[1:-1]
@@ -1781,15 +1752,3 @@ def mhelp():
             sig = sig[:-len(", field")]
         name = f"{func.__name__}({sig})"
         print_attr(name, func.__doc__)
-
-def print_all_docstrings():
-    current_function = _inspect.currentframe().f_code.co_name
-    for name, obj in globals().items():
-        if (
-            _inspect.isfunction(obj)
-            and obj.__module__ == __name__  # Only functions in this file
-            and name != current_function    # Skip this function itself
-        ):
-            print(f"Function: {name}")
-            print(_inspect.getdoc(obj) or "[No docstring]")
-            print("-" * 40)

@@ -244,7 +244,7 @@ def templated(creator, parents=(), decorators=(), metaclass=type):
 
     sig = _inspect.signature(creator)
     param_names = [p.name for p in sig.parameters.values()]
-    param_str = lambda x: tname(x) if isinstance(x, type) else repr(x)
+    param_str = lambda x: x.__name__ if isinstance(x, type) else repr(x)
 
     @cached(forwards_to=creator)
     def create_class(*params):

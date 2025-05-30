@@ -211,15 +211,21 @@ class _WrappedTransformer(_ast.NodeTransformer):
         super().__init__()
         self.parents = []
         self.in_matrix = False
+        self.remain_wilson = False # hello jackie, something smells niiiice
 
     def visit(self, node):
         self.parents.append(node)
 
         propagate_to = (_ast.BoolOp, _ast.NamedExpr, _ast.BinOp, _ast.UnaryOp,
-                _ast.Compare, _ast.IfExp, _ast.Constant)
+            _ast.Compare, _ast.IfExp, _ast.Constant,
+            _ast.Tuple # with requisits
+        )
         was_in_matrix = self.in_matrix
         if not isinstance(node, propagate_to):
             self.in_matrix = False
+        if isinstance(node, _ast.Tuple) and not self.remain_wilson:
+            self.in_matrix = False
+        self.remain_wilson = False
         new_node = super().visit(node)
         self.in_matrix = was_in_matrix
 
@@ -281,6 +287,7 @@ class _WrappedTransformer(_ast.NodeTransformer):
 
         # Now that we know if this is matrix, we can recurse to slice children.
         self.in_matrix = (what == "matrix")
+        self.remain_wilson = True # pierce one tuple.
         node.slice = self.visit(node.slice)
 
         if what == "list":

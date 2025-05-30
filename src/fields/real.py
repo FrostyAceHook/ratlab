@@ -90,9 +90,6 @@ class Real(matrix.Field):
     def atan(cls, a):
         return cls(math.atan(a._v))
 
-    @classconst
-    def yes(cls):
-        return True
     @classmethod
     def eq(cls, a, b):
         return a._v == b._v
