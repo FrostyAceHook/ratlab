@@ -1,6 +1,7 @@
 import inspect as _inspect
+import math as _math
 import types as _types
-from math import prod as _prod, pi as _pi
+from math import prod as _prod
 
 from util import (
     classconst as _classconst, instconst as _instconst, tname as _tname,
@@ -23,7 +24,10 @@ class Field:
 
     @classmethod
     def atan2(cls, y, x):
-        pi = cls.consts["pi"] if "pi" in cls.consts else cls.from_float(_pi)
+        if "pi" in cls.consts:
+            pi = cls.consts["pi"]
+        else:
+            pi = cls.from_float(_math.pi)
         two = cls.from_int(2)
 
         if cls.lt(cls.zero, x):
@@ -299,7 +303,9 @@ def Matrix(field, shape):
     if _prod(shape) == 0 and (shape != (0, 0) or field != Field):
         return Matrix[Field, (0, 0)]
 
-    _size_str = f"{shape[0]}x{shape[1]}"
+    class _TomHollandManIDontWannaTalkToY(str):
+        __doc__ = None
+    _size_str = _TomHollandManIDontWannaTalkToY(f"{shape[0]}x{shape[1]}")
 
     @classmethod
     def _need(cls, method, extra=""):
@@ -322,14 +328,12 @@ def Matrix(field, shape):
 
                 "add": "cannot do addition",
                 "sub": "cannot do subtraction",
-                "abs": "cannot do absolution",
+                "absolute": "cannot do absolution",
 
                 "mul": "cannot do multiplication",
                 "div": "cannot do division",
 
                 "power": "cannot do powers",
-                "root": "cannot do roots",
-                "exp": "cannot do natural exponential",
                 "log": "cannot do natural lograithm",
 
                 "sin": "cannot do sin",
@@ -950,7 +954,7 @@ def Matrix(field, shape):
         """
         Element-wise absolution.
         """
-        return s._eltwise_unary(s, s._f("abs"))
+        return s._eltwise_unary(s, s._f("absolute"))
 
     def __add__(s, o):
         """
@@ -993,7 +997,7 @@ def Matrix(field, shape):
         """
         Element-wise square root.
         """
-        cls._need("from_int", "to represent 2")
+        s._need("from_int", "to represent 2")
         two = s._f("from_int")(2)
         return s._eltwise_unary(s, lambda x: s._f("root")(x, two))
     @_instconst
@@ -1001,7 +1005,7 @@ def Matrix(field, shape):
         """
         Element-wise cube root.
         """
-        cls._need("from_int", "to represent 3")
+        s._need("from_int", "to represent 3")
         three = s._f("from_int")(3)
         return s._eltwise_unary(s, lambda x: s._f("root")(x, three))
 
@@ -1016,15 +1020,56 @@ def Matrix(field, shape):
         """
         Element-wise natural exponential.
         """
-        return s._eltwise_unary(s, s._f("exp"))
+        if "e" in field.consts:
+            base = field.consts[e]
+        else:
+            s._need("from_float", "to represent e")
+            base = s._f("from_float")(_math.e)
+        return s._eltwise_unary(s, lambda x: s._f("power")(base, x))
+    @_instconst
+    def exp2(s):
+        """
+        Element-wise base-2 exponential.
+        """
+        s._need("from_int", "to represent 2")
+        base = s._f("from_int")(2)
+        return s._eltwise_unary(s, lambda x: s._f("power")(base, x))
+    @_instconst
+    def exp10(s):
+        """
+        Element-wise base-10 exponential.
+        """
+        s._need("from_int", "to represent 10")
+        base = s._f("from_int")(10)
+        return s._eltwise_unary(s, lambda x: s._f("power")(base, x))
+
     @_instconst
     def ln(s):
         """
         Element-wise natural logarithm.
         """
-        f = lambda x: s._f("log")(s._f("exp")(s._f("one")), x)
-        return s._eltwise_unary(s, f)
-
+        if "e" in field.consts:
+            base = field.consts[e]
+        else:
+            s._need("from_float", "to represent e")
+            base = s._f("from_float")(_math.e)
+        return s._eltwise_unary(s, lambda x: s._f("log")(base, x))
+    @_instconst
+    def log2(s):
+        """
+        Element-wise base-2 logarithm.
+        """
+        s._need("from_int", "to represent 2")
+        base = s._f("from_int")(2)
+        return s._eltwise_unary(s, lambda x: s._f("log")(base, x))
+    @_instconst
+    def log10(s):
+        """
+        Element-wise base-10 logarithm.
+        """
+        s._need("from_int", "to represent 10")
+        base = s._f("from_int")(10)
+        return s._eltwise_unary(s, lambda x: s._f("log")(base, x))
     def log(s, base):
         """
         Element-wise base-specified logarithm.
@@ -1110,7 +1155,7 @@ def Matrix(field, shape):
         dot = s._f("zero")
         for a, b in zip(s._cells, o._cells):
             dot = add(dot, mul(a, b))
-        return s._single(dot)
+        return single(dot)
     def __rand__(s, o):
         o = s._cast(o)
         return o.__and__(s)
@@ -1179,7 +1224,8 @@ def Matrix(field, shape):
 
     def __xor__(s, exp):
         """
-        Matrix power.
+        Matrix power (repeated self matrix multiplication, with possible
+        inverse).
         """
         if isinstance(exp, field):
             exp = s._f("to_int")(exp)
@@ -1267,11 +1313,11 @@ def Matrix(field, shape):
 def single(x):
     return Matrix[type(x), (1, 1)]((x, ))
 
-def issingle(x):
+def issingle(a):
     """
-    Returns true iff 'x' is a matrix with only one cell.
+    Returns true iff 'a' is a matrix with only one cell.
     """
-    return isinstance(x, Matrix) and x.issingle
+    return isinstance(a, Matrix) and a.issingle
 
 
 def long(a):
@@ -1474,7 +1520,7 @@ def sqrt(x):
     if isinstance(x, Matrix):
         return x.sqrt
     x = float(x)
-    return math.sqrt(x)
+    return _math.sqrt(x)
 def cbrt(x):
     """
     Alias for 'x.cbrt', and overloaded for basic number types.
@@ -1482,7 +1528,7 @@ def cbrt(x):
     if isinstance(x, Matrix):
         return x.cbrt
     x = float(x)
-    return math.cbrt(x)
+    return _math.cbrt(x)
 def root(x, n):
     """
     Alias for 'x.root(n)', and overloaded for basic number types.
@@ -1500,7 +1546,24 @@ def exp(x):
     if isinstance(x, Field):
         return x.exp
     x = float(x)
-    return math.exp(x)
+    return _math.exp(x)
+def exp2(x):
+    """
+    Alias for 'x.exp2', and overloaded for basic number types.
+    """
+    if isinstance(x, Field):
+        return x.exp2
+    x = float(x)
+    return 2.0 ** x
+def exp10(x):
+    """
+    Alias for 'x.exp10', and overloaded for basic number types.
+    """
+    if isinstance(x, Field):
+        return x.exp10
+    x = float(x)
+    return 10.0 ** x
+
 def ln(x):
     """
     Alias for 'x.ln', and overloaded for basic number types.
@@ -1510,19 +1573,28 @@ def ln(x):
     x = float(x)
     if x == 0.0:
         return -float("inf")
-    return math.log(x)
-
+    return _math.log(x)
 def log2(x):
     """
-    Alias for 'x.log(2)', and overloaded for basic number types.
+    Alias for 'x.log2', and overloaded for basic number types.
     """
-    return log(x, 2)
-def log10(x, base):
+    if isinstance(x, Field):
+        return x.log2
+    x = float(x)
+    if x == 0.0:
+        return -float("inf")
+    return _math.log(x) / _math.log(2.0)
+def log10(x):
     """
-    Alias for 'x.log(10)', and overloaded for basic number types.
+    Alias for 'x.log10', and overloaded for basic number types.
     """
-    return log(x, 10)
-def log(x, base):
+    if isinstance(x, Field):
+        return x.log10
+    x = float(x)
+    if x == 0.0:
+        return -float("inf")
+    return _math.log(x) / _math.log(10.0)
+def log(base, x):
     """
     Alias for 'x.log(base)', and overloaded for basic number types.
     """
@@ -1531,7 +1603,8 @@ def log(x, base):
     x = float(x)
     if x == 0.0:
         return -float("inf")
-    return math.log(x) / math.log(base)
+    return _math.log(x) / _math.log(base)
+
 
 
 def sin(x):
@@ -1541,8 +1614,10 @@ def sin(x):
     if isinstance(x, Matrix):
         return x.sin
     x = float(x)
+    # cheeky lookup to make some values exact (it just feels nice ok).
+    pi = _math.pi
     lookup = {pi/2: 1.0, -pi/2: -1.0, pi: 0.0, -pi: 0.0, 2*pi: 0.0}
-    return lookup.get(x, math.sin(x))
+    return lookup.get(x, _math.sin(x))
 def cos(x):
     """
     Alias for 'x.cos', and overloaded for basic number types.
@@ -1550,8 +1625,9 @@ def cos(x):
     if isinstance(x, Matrix):
         return x.cos
     x = float(x)
+    pi = _math.pi
     lookup = {pi/2: 0.0, -pi/2: 0.0, pi: -1.0, -pi: -1.0, 2*pi: 1.0}
-    return lookup.get(x, math.cos(x))
+    return lookup.get(x, _math.cos(x))
 def tan(x):
     """
     Alias for 'x.tan', and overloaded for basic number types.
@@ -1559,7 +1635,7 @@ def tan(x):
     if isinstance(x, Matrix):
         return x.tan
     x = float(x)
-    return math.tan(x)
+    return _math.tan(x)
 
 def asin(x):
     """
@@ -1568,8 +1644,7 @@ def asin(x):
     if isinstance(x, Matrix):
         return x.asin
     x = float(x)
-    lookup = {pi/2: 1.0, -pi/2: -1.0, pi: 0.0, -pi: 0.0, 2*pi: 0.0}
-    return lookup.get(x, math.asin(x))
+    return _math.asin(x)
 def acos(x):
     """
     Alias for 'x.acos', and overloaded for basic number types.
@@ -1577,8 +1652,7 @@ def acos(x):
     if isinstance(x, Matrix):
         return x.acos
     x = float(x)
-    lookup = {pi/2: 0.0, -pi/2: 0.0, pi: -1.0, -pi: -1.0, 2*pi: 1.0}
-    return lookup.get(x, math.acos(x))
+    return _math.acos(x)
 def atan(x):
     """
     Alias for 'x.atan', and overloaded for basic number types.
@@ -1586,7 +1660,7 @@ def atan(x):
     if isinstance(x, Matrix):
         return x.atan
     x = float(x)
-    return math.atan(x)
+    return _math.atan(x)
 
 def atan2(y, x):
     """
@@ -1600,7 +1674,7 @@ def atan2(y, x):
         return x._eltwise_binary(y, x, x._f("atan2"))
     y = float(y)
     x = float(x)
-    return math.atan2(y, x)
+    return _math.atan2(y, x)
 
 
 
@@ -1634,6 +1708,7 @@ class series:
 
 def mhelp():
     def printme(name, long):
+        name = "  " + name
         print(name, end="")
         s = long.strip().replace("\n", " ")
         w = 0
@@ -1660,7 +1735,7 @@ def mhelp():
     cls = Matrix[Field, (1, 1)]
     attrs = [(name, attr) for name, attr in vars(cls).items()
             if attr.__doc__ is not None
-            and not name.startswith("_")
+            # and not name.startswith("_")
             and name != "__module__"
             and name != "__doc__"
             and name != "template"
