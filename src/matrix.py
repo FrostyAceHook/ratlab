@@ -449,6 +449,20 @@ def Matrix(field, shape):
         return cls.isempty or shape[0] == 1 or shape[1] == 1
 
     @_classconst
+    def iscol(cls):
+        """
+        Is column vector? (empty and single count as column vectors)
+        """
+        return cls.isempty or shape[1] == 1
+
+    @_classconst
+    def isrow(cls):
+        """
+        Is row vector? (empty and single count as row vectors)
+        """
+        return cls.isempty or shape[0] == 1
+
+    @_classconst
     def issquare(cls):
         """
         Is square matrix?
@@ -488,16 +502,16 @@ def Matrix(field, shape):
     @_instconst
     def rowmajor(s):
         """
-        Tuple of row-major cells.
+        Column vector of cells in row-major order.
         """
-        return tuple(single(x) for x in s._cells)
+        return Matrix[field, (_prod(shape), 1)](s._cells)
 
     @_instconst
     def colmajor(s):
         """
-        Tuple of column-major cells.
+        Column vector of cells in column-major order.
         """
-        return s.T.rowmajor
+        return Matrix[field, (_prod(shape), 1)](s.T._cells)
 
     def at(s, i, j):
         """
@@ -570,8 +584,14 @@ def Matrix(field, shape):
         """
         Matrix transpose.
         """
-        cells = (s._at(i, j) for j in range(shape[1]) for i in range(shape[0]))
-        return Matrix[field, (shape[1], shape[0])](cells)
+        nr, nc = shape
+        if s.isvec:
+            # Make sure vector transpose is super fast bc its literally the same
+            # in-memory.
+            cells = s._cells
+        else:
+            cells = (s._at(i, j) for j in range(nc) for i in range(nr))
+        return Matrix[field, (nc, nr)](cells)
 
     @_instconst
     def inv(s):
@@ -1216,12 +1236,6 @@ def Matrix(field, shape):
         o = s._cast(o)
         return o.__matmul__(s)
 
-    def __call__(s, *values):
-        """
-        Shorthand for '@ vstack(*values)'
-        """
-        return s @ vstack(*values)
-
     def __xor__(s, exp):
         """
         Matrix power (repeated self matrix multiplication, with possible
@@ -1302,12 +1316,15 @@ def Matrix(field, shape):
         If a non-matrix attribute is accessed, it will be retrived from each
         element instead.
         """
-        if attr.startswith("_"):
-            raise AttributeError()
         cells = object.__getattribute__(s, "_cells") # cooked.
+        if not cells:
+            return Matrix[Field, (0, 0)](())
+        if attr.startswith("_") or not hasattr(cells[0], attr):
+            raise AttributeError(f"{repr(type(s).__name__)} object has no "
+                    f"attribute {repr(attr)}")
         cells = tuple(getattr(x, attr) for x in cells)
-        field = type(cells[0]) if cells else Field
-        return Matrix[field, shape](cells)
+        newfield = type(cells[0]) if cells else Field
+        return Matrix[newfield, shape](cells)
 
 
 def single(x):
@@ -1330,15 +1347,39 @@ def long(a):
 
 
 
-def keep_unpacking(xs):
-    return len(xs) == 1 and _iterable(xs[0]) and not issingle(xs[0])
+def _keep_unpacking(xs, unpack_vectors=True):
+    if len(xs) > 1:
+        return False
+    if not _iterable(xs[0]):
+        return False
+    if unpack_vectors:
+        return not issingle(xs[0])
+    return not isinstance(xs[0], Matrix)
 
 
-def concat(*rows):
+def lits(field):
     """
-    Concatenates the given matrices as:
-    concat(([0], [1]), ([2], [3])) -> [1,2][2,3]
+    Sets the current/default field to the given field.
     """
+    if field is not None:
+        if not isinstance(field, type):
+            raise TypeError(f"expected a field class, got {_tname(type(field))}")
+        if not issubclass(field, Field):
+            raise TypeError("expected a field class which inherits from "
+                    f"{_tname(Field)}, got {_tname(field)} (which doesn't)")
+    lits.field = field
+lits.field = None
+
+
+def concat(*rows, field=None):
+    """
+    Concatenates the given matrices as: concat((0, 1), (2, 3)) = [1,2][2,3]
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using `lits`")
+        field = lits.field
+    Mat = Matrix[field, (1, 1)]
     cells = []
     shape = [0, 0]
     for row in rows:
@@ -1349,10 +1390,13 @@ def concat(*rows):
                     "just a bare matrix")
         for x in row:
             if not isinstance(x, Matrix):
-                raise TypeError("must give a matrix to be concatenated, got "
-                        f"{_tname(type(x))}")
+                # raise TypeError("must give a matrix to be concatenated, got "
+                #         f"{_tname(type(x))}")
                 # on god i have changed this line back and forth about 50 times.
-                # x = single(x)
+                x = Mat._cast(x)
+            if x.field != field:
+                raise TypeError(f"inconsistent field (expected "
+                        f"{_tname(field)}, got {_tname(x.field)}")
             if height is None:
                 height = x.shape[0]
             if height != x.shape[0]:
@@ -1380,85 +1424,148 @@ def concat(*rows):
     field = type(cells[0]) if _prod(shape) else Field
     return Matrix[field, tuple(shape)](cells)
 
-def vstack(*xs):
+def vstack(*xs, field=None):
     """
     Vertically concatenates the given matrices.
     """
-    if len(xs) == 1 and _iterable(xs[0]) and not isinstance(xs[0], Matrix):
-        return vstack(*xs[0])
-    return concat(*((x, ) for x in xs))
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using `lits`")
+        field = lits.field
+    if _keep_unpacking(xs, unpack_vectors=False):
+        return vstack(*xs[0], field=field)
+    return concat(*((x, ) for x in xs), field=field)
 
-def hstack(*xs):
+def hstack(*xs, field=None):
     """
     Horizontally concatenates the given matrices.
     """
-    if len(xs) == 1 and _iterable(xs[0]) and not isinstance(xs[0], Matrix):
-        return hstack(*xs[0])
-    return concat(xs)
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using `lits`")
+        field = lits.field
+    if _keep_unpacking(xs, unpack_vectors=False):
+        return hstack(*xs[0], field=field)
+    return concat(xs, field=field)
 
-def rep(x, rows, cols=1):
+def ascol(*xs, field=None):
     """
-    Repeats the given matrix the given number of times for each
-    direction.
+    Returns a column vector of the combined input vectors.
     """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using `lits`")
+        field = lits.field
+    if _keep_unpacking(xs, unpack_vectors=False):
+        return ascol(*xs[0], field=field)
+    def tocol(x):
+        if isinstance(x, Matrix) and x.isrow:
+            return x.T
+        if isinstance(x, Matrix) and not x.iscol:
+            raise TypeError(f"cannot give non-vectors, got size {x._size_str}")
+        return x
+    return concat(*((tocol(x), ) for x in xs), field=field)
+
+def asrow(*xs, field=None):
+    """
+    Returns a row vector of the combined input vectors.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using `lits`")
+        field = lits.field
+    if _keep_unpacking(xs, unpack_vectors=False):
+        return asrow(*xs[0], field=field)
+    def torow(x):
+        if isinstance(x, Matrix) and x.iscol:
+            return x.T
+        if isinstance(x, Matrix) and not x.isrow:
+            raise TypeError(f"cannot give non-vectors, got size {x._size_str}")
+        return x
+    return concat((torow(x) for x in xs), field=field)
+
+def rep(x, rows, cols=1, *, field=None):
+    """
+    Repeats the given matrix the given number of times for each direction.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using `lits`")
+        field = lits.field
     if not isinstance(rows, int):
         raise TypeError("expected an integer number of rows, got "
                 f"{_tname(type(rows))}")
     if not isinstance(cols, int):
         raise TypeError("expected an integer number of columns, got "
                 f"{_tname(type(cols))}")
-    return concat(*((x, ) * cols for _ in range(rows)))
+    return concat(*((x, ) * cols for _ in range(rows)), field=field)
 
-def diag(*xs):
+
+def diag(*xs, field=None):
     """
     Creates a matrix with a diagonal of the given elements and zeros elsewhere.
     """
-    if keep_unpacking(xs):
-        return diag(*xs[0])
-    if not xs:
-        field = Field
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using `lits`")
+        field = lits.field
+    if _keep_unpacking(xs):
+        return diag(*xs[0], field=field)
+    diagvec = ascol(*xs, field=field)
+    n = len(diagvec)
+    if n == 1:
+        cells = diagvec._cells
     else:
-        if not isinstance(xs[0], Matrix):
-            raise TypeError("expected matrices for the elements of the "
-                    f"diagonal, at index 0 got {_tname(type(xs[0]))}")
-        field = xs[0].field
-    n = len(xs)
-    Mat = Matrix[field, (n, n)]
-    cells = [Mat._f("zero")] * (n*n) if n else []
-    for i in range(n):
-        if not isinstance(xs[i], Matrix):
-            raise TypeError("expected matrices for the elements of the "
-                    f"diagonal, at index {i} got {_tname(type(xs[0]))}")
-        if not xs[i].issingle:
-            raise TypeError("expected singles for the elements of the "
-                    f"diagonal, at index {i} got size {xs[0]._size_str}")
-        cells[i*n + i] = xs[i]._cells[0]
+        Mat = Matrix[field, (n, n)]
+        cells = [Mat._f("zero")] * (n*n) if n else []
+        for i in range(n):
+            cells[i*n + i] = diagvec._cells[i]
     return Mat(cells)
 
-def eye(n, *, field):
+
+def eye(n, *, field=None):
     """
     Identity matrix, of the given size.
     """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using `lits`")
+        field = lits.field
     return Matrix[field, (n, n)].eye
 
-def zeros(rows, cols=None, *, field):
+def zeros(rows, cols=None, *, field=None):
     """
     Zero-filled matrix, defaulting to square if only one size given.
     """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using `lits`")
+        field = lits.field
     cols = rows if cols is None else cols
     return Matrix[field, (rows, cols)].zeros
 
-def ones(rows, cols=None, *, field):
+def ones(rows, cols=None, *, field=None):
     """
     One-filled matrix, defaulting to square if only one size given.
     """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using `lits`")
+        field = lits.field
     cols = rows if cols is None else cols
     return Matrix[field, (rows, cols)].ones
 
 
 
-def summ(*xs, field):
-    if keep_unpacking(xs):
+def summ(*xs, field=None):
+    """
+    Returns the additive sum of the given values.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using `lits`")
+        field = lits.field
+    if _keep_unpacking(xs):
         return summ(*xs[0], field=field)
     if not xs:
         return single(field.zero)
@@ -1467,8 +1574,15 @@ def summ(*xs, field):
         r += x
     return r
 
-def prod(*xs, field):
-    if keep_unpacking(xs):
+def prod(*xs, field=None):
+    """
+    Returns the multiplicative product of the given values.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using `lits`")
+        field = lits.field
+    if _keep_unpacking(xs):
         return prod(*xs[0], field=field)
     if not xs:
         return single(field.one)
@@ -1477,8 +1591,15 @@ def prod(*xs, field):
         r *= x
     return r
 
-def ave(*xs, field):
-    if keep_unpacking(xs):
+def ave(*xs, field=None):
+    """
+    Returns the arithmetic mean of the given values.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using `lits`")
+        field = lits.field
+    if _keep_unpacking(xs):
         return ave(*xs[0], field=field)
     if not xs:
         raise ValueError("cannot average no elements")
@@ -1489,8 +1610,16 @@ def ave(*xs, field):
         i += single(field.one)
     return r / i
 
-def minn(*xs, field):
-    if keep_unpacking(xs):
+def minn(*xs, field=None):
+    """
+    Returns the minimum of the given values (first occurrence in the case of
+    ties).
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using `lits`")
+        field = lits.field
+    if _keep_unpacking(xs):
         return minn(*xs[0], field=field)
     if not xs:
         raise ValueError("cannot find minimum of no elements")
@@ -1500,8 +1629,16 @@ def minn(*xs, field):
             r = x
     return r
 
-def maxx(*xs, field):
-    if keep_unpacking(xs):
+def maxx(*xs, field=None):
+    """
+    Returns the maximum of the given values (first occurrence in the case of
+    ties).
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using `lits`")
+        field = lits.field
+    if _keep_unpacking(xs):
         return maxx(*xs[0], field=field)
     if not xs:
         raise ValueError("cannot find maximum of no elements")
@@ -1821,9 +1958,9 @@ def mhelp():
         sig = _inspect.signature(func)
         sig = str(sig)
         sig = sig[1:-1]
-        if sig.endswith(", *, field"):
-            sig = sig[:-len(", *, field")]
-        elif sig.endswith(", field"):
-            sig = sig[:-len(", field")]
+        if sig.endswith(", *, field=None"):
+            sig = sig[:-len(", *, field=None")]
+        elif sig.endswith(", field=None"):
+            sig = sig[:-len(", field=None")]
         name = f"{func.__name__}({sig})"
         print_attr(name, func.__doc__)
