@@ -47,7 +47,7 @@ def _main():
     # Read and execute each input file, treating "-" as a cli.
     for path in args:
         if path.strip() == "-":
-            _syntax.cli.start(space)
+            _syntax.run_cli(space)
         else:
             _syntax.run_file(path, space)
 

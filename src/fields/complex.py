@@ -3,15 +3,15 @@ import math
 import matrix
 from fields.real import Real
 from util import classconst, immutable
+from matrix import Single, single
 
 
 @immutable
 class Complex(matrix.Field):
-    def __init__(self, re=matrix.single(Real()), im=matrix.single(Real()), *,
-            isnan=False):
-        if not isinstance(re, Real):
+    def __init__(self, re=single(Real()), im=single(Real()), *, isnan=False):
+        if not isinstance(re, Single[Real]):
             raise TypeError("real value must be a Real")
-        if not isinstance(im, Real):
+        if not isinstance(im, Single[Real]):
             raise TypeError("imaginary value must be a Real")
         if not isinstance(isnan, bool):
             raise TypeError("isnan must be a bool")
@@ -25,14 +25,14 @@ class Complex(matrix.Field):
 
     @classmethod
     def from_int(cls, x):
-        return cls(matrix.single(Real.from_int(x)))
+        return cls(Single[Real].cast(x))
     @classmethod
     def from_float(cls, x):
-        return cls(matrix.single(Real.from_float(x)))
+        return cls(Single[Real].cast(x))
     @classmethod
     def from_complex(cls, x):
-        re = matrix.single(Real.from_float(x.real))
-        im = matrix.single(Real.from_float(x.imag))
+        re = Single[Real].cast(x.real)
+        im = Single[Real].cast(x.imag)
         return cls(re, im)
 
     @classmethod
@@ -59,10 +59,10 @@ class Complex(matrix.Field):
 
     @classconst
     def zero(cls):
-        return cls(Real(0.0))
+        return cls(single(Real(0.0)))
     @classconst
     def one(cls):
-        return cls(Real(1.0))
+        return cls(single(Real(1.0)))
 
     @classmethod
     def add(cls, a, b):
@@ -107,6 +107,9 @@ class Complex(matrix.Field):
         # a^b = e^(ln(a) * b)
         return exp(a.ln * b)
     @classmethod
+    def root(cls, a, b):
+        return cls.power(a, cls.div(cls.one, b))
+    @classmethod
     def log(cls, a, b):
         def ln(x):
             # ln(a)
@@ -136,7 +139,7 @@ class Complex(matrix.Field):
             return "nan"
         re = self.re
         im = self.im
-        rep = Real.repr_long if islong else Real.repr_short
+        rep = Single[Real].repr_long if islong else Single[Real].repr_short
 
         sep = "+"
 

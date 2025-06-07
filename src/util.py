@@ -35,6 +35,9 @@ class instconst:
     def __get__(self, instance, owner):
         if instance is None:
             return self
+        return self(instance)
+
+    def __call__(self, instance):
         if not hasattr(instance, self._attr_name):
             setattr(instance, self._attr_name, self._fget(instance))
         return getattr(instance, self._attr_name)
@@ -306,12 +309,13 @@ def templated(creator, parents=(), decorators=(), metaclass=type):
                 "params")
 
     attrs = {
+        "params": param_names,
+        "_creator": creator,
         "__instancecheck__": __instancecheck__,
         "__subclasscheck__": __subclasscheck__,
         "__contains__": __contains__,
         "__getitem__": __getitem__,
         "__call__": __call__,
-        "params": param_names,
     }
 
     CreatorCreator = type("CreatorCreator", (), attrs)

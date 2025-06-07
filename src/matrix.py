@@ -125,6 +125,9 @@ class ExampleField(Field):
     def power(cls, a, b): # a^b
         return cls()
     @classmethod
+    def root(cls, a, b): # a^(1/b)
+        return cls()
+    @classmethod
     def log(cls, a, b): # log_a(b)
         return cls()
 
@@ -180,10 +183,11 @@ class ExampleField(Field):
 # Generic wrapper for any type which isnt a field, attempting to make it one.
 @_templated(parents=Field, decorators=_immutable)
 def GenericField(T):
-    # It cannot be good if we tryna make a matrix outa these.
-    assert T not in {tuple, list, dict, _types.FunctionType,
+    if T in {tuple, list, dict, _types.FunctionType,
             _types.BuiltinFunctionType, _types.MethodType,
-            _types.BuiltinMethodType}
+            _types.BuiltinMethodType}:
+        raise TypeError("it cannot be good if we tryna make a matrix outta "
+                f"{_tname(T)}")
 
     @classmethod
     def _generic(cls, x):
@@ -274,13 +278,53 @@ def GenericField(T):
 
 
 
+# Current field.
+def lits(field, *, space=None):
+    """
+    Sets the current/default field to the given field and injects constants such
+    as 'e' and 'pi' into the space.
+    """
+    if field is not None:
+        if not isinstance(field, type):
+            raise TypeError(f"expected a field class, got {_tname(type(field))}")
+        if not issubclass(field, Field):
+            raise TypeError("expected a field class which inherits from "
+                    f"{_tname(Field)}, got {_tname(field)} (which doesn't)")
+
+    if field is not None and space is not None:
+        # Inject constants, but only if they aren't currently overridden.
+        OldMat = Single[lits.field] if lits.field is not None else None
+        NewMat = Single[field]
+        def isoverridden(name):
+            if name not in space:
+                return False
+            if OldMat is None:
+                return True
+            got = space[name]
+            expect = getattr(OldMat, name)
+            if type(got) is not type(expect):
+                return True
+            return got != expect
+        def inject(name):
+            if isoverridden(name):
+                return
+            try:
+                space[name] = getattr(NewMat, name)
+            except NotImplementedError:
+                pass
+        inject("e")
+        inject("pi")
+    lits.field = field
+lits.field = None
+
+
 
 # Matrices.
 @_templated(parents=Field, decorators=_immutable)
 def Matrix(field, shape):
     """
     Fixed-sized two-dimensional sequence of elements. The general rule is all
-    field operations are element-wise, and then all matrix-specific function and
+    field operations are element-wise, and then all matrix-specific functions and
     operations are implemented independantly.
     """
 
@@ -300,8 +344,8 @@ def Matrix(field, shape):
     if shape[0] < 0 or shape[1] < 0:
         raise TypeError("cannot have negative size")
     # collapse empty matrices to be over Field with (0,0).
-    if _prod(shape) == 0 and (shape != (0, 0) or field != Field):
-        return Matrix[Field, (0, 0)]
+    if _prod(shape) == 0 and shape != (0, 0):
+        return Matrix[field, (0, 0)]
 
     class _TomHollandManIDontWannaTalkToY(str):
         __doc__ = None
@@ -334,6 +378,7 @@ def Matrix(field, shape):
                 "div": "cannot do division",
 
                 "power": "cannot do powers",
+                "root": "cannot do roots",
                 "log": "cannot do natural lograithm",
 
                 "sin": "cannot do sin",
@@ -413,6 +458,7 @@ def Matrix(field, shape):
         """
         cells = (cls._f("one"), ) * _prod(shape) if shape[0] else ()
         return cls(cells)
+
     @_classconst
     def zero(cls):
         """
@@ -425,6 +471,28 @@ def Matrix(field, shape):
         Single one.
         """
         return single(cls._f("one"))
+    @_classconst
+    def e(cls):
+        """
+        Single euler's number.
+        """
+        if "e" in field.consts:
+            e = field.consts["e"]
+        else:
+            cls._need("from_float", "to represent e")
+            e = cls._f("from_float")(_math.e)
+        return single(e)
+    @_classconst
+    def pi(cls):
+        """
+        Single pi.
+        """
+        if "pi" in field.consts:
+            pi = field.consts["pi"]
+        else:
+            cls._need("from_float", "to represent pi")
+            pi = cls._f("from_float")(_math.pi)
+        return single(pi)
 
 
     @_classconst
@@ -478,7 +546,7 @@ def Matrix(field, shape):
             raise TypeError("only vectors have bare iteration (got size "
                     f"{_size_str}), use .rowmajor or .colmajor for matrix "
                     "iterate")
-        return iter(s.rowmajor)
+        return (single(x) for x in s._cells)
 
     def __getitem__(s, i):
         """
@@ -877,7 +945,7 @@ def Matrix(field, shape):
                 s._need("eq")
                 s._need("zero")
             except NotImplementedError:
-                s.can_eq_zero = False
+                rep.can_eq_zero = False
 
         multiline = not (s._print_colvec_flat and s.isvec)
         max_len = max(len(rep(x)) for x in s._cells)
@@ -907,9 +975,14 @@ def Matrix(field, shape):
         return s._repr(True)
 
 
-    # casts `o` to a matrix over the same field, but does no size check.
     @classmethod
-    def _cast(cls, o):
+    def cast(cls, o, keep_single=False):
+        """
+        Attempts to cast 'o' to a matrix over the same field. If 'o' is a matrix,
+        its size will not be altered. Otherwise, 'o' will be a single if
+        'keep_single' and the same size as this matrix if not.
+        """
+
         # Any matrix over the same field is okie.
         if isinstance(o, Matrix):
             if field != o.field:
@@ -924,39 +997,92 @@ def Matrix(field, shape):
             raise TypeError(f"{_tname(type(o))} cannot operate with "
                     f"{_tname(field)}")
         o = cls._f(convs[type(o)])(o)
-        # Create a matrix with it as every element.
+        if keep_single:
+            # Just single.
+            return single(o)
+        # Otherwise create a matrix with it as every element.
         return cls((o, ) * _prod(shape))
 
 
     @classmethod
-    def _eltwise_unary(cls, s, func):
-        assert isinstance(s, cls)
-        cells = tuple(func(x) for x in s._cells)
-        newfield = type(cells[0]) if cells else Field
-        return Matrix[newfield, shape](cells)
+    def _eltwise(cls, func, *xs, rettype=None, pierce=True):
+        def f(*y):
+            nonlocal rettype
+            ret = func(*y)
+            if isinstance(ret, Matrix):
+                if not ret.issingle:
+                    raise TypeError("'func' returned a non-single matrix (got "
+                            f"{ret._size_str})")
+                ret = ret._cells[0]
+            if rettype is None:
+                rettype = type(ret)
+            elif not isinstance(ret, rettype):
+                raise TypeError("inconsistently typed return from 'func' "
+                        f"(expected {_tname(rettype)}, got "
+                        f"{_tname(type(ret))})")
+            return ret
+
+        if not xs:
+            # MT^2
+            if not _prod(shape):
+                if rettype is None:
+                    rettype = field
+                return Matrix[rettype, shape](())
+            # Matrix of just the things.
+            cell = f()
+            return Matrix[rettype, shape]((cell, ) * _prod(shape))
+
+        # Cast all to matricies over the correct field.
+        xs = [cls.cast(x, keep_single=True) for x in xs]
+
+        # Find the largest size.
+        newshape = (0, 0)
+        newsize = 0
+        for x in xs:
+            size = _prod(x.shape)
+            if size > newsize:
+                newshape = x.shape
+                newsize = _prod(newshape)
+
+        # Assume eltwise operations on MT dont change field.
+        if newsize == 0:
+            return Matrix[field, newshape](())
+
+        # Enforce size conformity.
+        def conform(x):
+            # Broadcast singles up.
+            if x.issingle and newsize != 1:
+                x = Matrix[field, newshape](x._cells * newsize)
+            if x.shape != newshape:
+                raise TypeError("cannot element-wise operate on matrices of "
+                        f"different sizes (expected "
+                        f"{newshape[0]}x{newshape[1]}, got {x._size_str})")
+            return x
+        xs = [conform(x) for x in xs]
+
+        # Apply.
+        zipped = zip(*(x._cells for x in xs))
+        if pierce:
+            cells = tuple(f(*y) for y in zipped)
+        else:
+            cells = tuple(f(*map(single, y)) for y in zipped)
+        return Matrix[rettype, newshape](cells)
+
 
     @classmethod
-    def _eltwise_binary(cls, s, o, func): # tricksy
-        assert isinstance(s, cls)
+    def eltwise(cls, func, *xs, rettype=None):
+        """
+        Constructs a matrix from the results of 'func(a, b, ...)' for all zipped
+        elements in '*xs'. If 'rettype' is non-none, hints/enforces the return
+        type from 'func'.
+        """
+        return cls._eltwise(func, *xs, rettype=rettype, pierce=False)
 
-        # unpack over lists specifically.
-        if isinstance(o, list):
-            return [cls._eltwise_binary(s, x, func) for x in o]
-
-        o = cls._cast(o)
-        # Project singles to the full size.
-        if s.issingle or o.issingle:
-            if s.issingle:
-                s = Matrix[field, o.shape](s._cells * _prod(o.shape))
-            else:
-                o = Matrix[field, s.shape](o._cells * _prod(s.shape))
-        if s.shape != o.shape:
-            raise TypeError("cannot element-wise operate on matrices of "
-                    f"different sizes ({s._size_str} vs {o._size_str})")
-
-        cells = tuple(func(a, b) for a, b in zip(s._cells, o._cells))
-        newfield = type(cells[0]) if cells else Field
-        return Matrix[newfield, s.shape](cells)
+    def apply(s, func, *os, rettype=None):
+        """
+        Alias for 'M.eltwise(func, s, *os, rettype=rettype)'.
+        """
+        return type(s).eltwise(func, s, *os, rettype=rettype)
 
 
     def __pos__(s):
@@ -969,48 +1095,48 @@ def Matrix(field, shape):
         Element-wise negation.
         """
         f = lambda x: s._f("sub")(s._f("zero"), x)
-        return s._eltwise_unary(s, f)
+        return s._eltwise(f, s)
     def __abs__(s):
         """
         Element-wise absolution.
         """
-        return s._eltwise_unary(s, s._f("absolute"))
+        return s._eltwise(s._f("absolute"), s)
 
     def __add__(s, o):
         """
         Element-wise addition.
         """
-        return s._eltwise_binary(s, o, s._f("add"))
+        return s._eltwise(s._f("add"), s, o)
     def __radd__(s, o):
-        return s._eltwise_binary(s, o, lambda a, b: s._f("add")(b, a))
+        return s._eltwise(lambda a, b: s._f("add")(b, a), s, o)
     def __sub__(s, o):
         """
         Element-wise subtraction.
         """
-        return s._eltwise_binary(s, o, s._f("sub"))
+        return s._eltwise(s._f("sub"), s, o)
     def __rsub__(s, o):
-        return s._eltwise_binary(s, o, lambda a, b: s._f("sub")(b, a))
+        return s._eltwise(lambda a, b: s._f("sub")(b, a), s, o)
     def __mul__(s, o):
         """
         Element-wise multiplication (use '@' for matrix multiplication).
         """
-        return s._eltwise_binary(s, o, s._f("mul"))
+        return s._eltwise(s._f("mul"), s, o)
     def __rmul__(s, o):
-        return s._eltwise_binary(s, o, lambda a, b: s._f("mul")(b, a))
+        return s._eltwise(lambda a, b: s._f("mul")(b, a), s, o)
     def __truediv__(s, o):
         """
         Element-wise division.
         """
-        return s._eltwise_binary(s, o, s._f("div"))
+        return s._eltwise(s._f("div"), s, o)
     def __rtruediv__(s, o):
-        return s._eltwise_binary(s, o, lambda a, b: s._f("div")(b, a))
+        return s._eltwise(lambda a, b: s._f("div")(b, a), s, o)
     def __pow__(s, o):
         """
         Element-wise power.
         """
-        return s._eltwise_binary(s, o, s._f("power"))
+        return s._eltwise(s._f("power"), s, o)
     def __rpow__(s, o):
-        return s._eltwise_binary(s, o, lambda a, b: s._f("power")(b, a))
+        return s._eltwise(lambda a, b: s._f("power")(b, a), s, o)
 
     @_instconst
     def sqrt(s):
@@ -1019,7 +1145,7 @@ def Matrix(field, shape):
         """
         s._need("from_int", "to represent 2")
         two = s._f("from_int")(2)
-        return s._eltwise_unary(s, lambda x: s._f("root")(x, two))
+        return s._eltwise(lambda x: s._f("root")(x, two), s)
     @_instconst
     def cbrt(s):
         """
@@ -1027,25 +1153,21 @@ def Matrix(field, shape):
         """
         s._need("from_int", "to represent 3")
         three = s._f("from_int")(3)
-        return s._eltwise_unary(s, lambda x: s._f("root")(x, three))
+        return s._eltwise(lambda x: s._f("root")(x, three), s)
 
     def root(s, n):
         """
         Element-wise nth root.
         """
-        return s._eltwise_binary(s, n, s._f("root"))
+        return s._eltwise(s._f("root"), s, n)
 
     @_instconst
     def exp(s):
         """
         Element-wise natural exponential.
         """
-        if "e" in field.consts:
-            base = field.consts[e]
-        else:
-            s._need("from_float", "to represent e")
-            base = s._f("from_float")(_math.e)
-        return s._eltwise_unary(s, lambda x: s._f("power")(base, x))
+        base = s.e._cells[0]
+        return s._eltwise(lambda x: s._f("power")(base, x), s)
     @_instconst
     def exp2(s):
         """
@@ -1053,7 +1175,7 @@ def Matrix(field, shape):
         """
         s._need("from_int", "to represent 2")
         base = s._f("from_int")(2)
-        return s._eltwise_unary(s, lambda x: s._f("power")(base, x))
+        return s._eltwise(lambda x: s._f("power")(base, x), s)
     @_instconst
     def exp10(s):
         """
@@ -1061,19 +1183,15 @@ def Matrix(field, shape):
         """
         s._need("from_int", "to represent 10")
         base = s._f("from_int")(10)
-        return s._eltwise_unary(s, lambda x: s._f("power")(base, x))
+        return s._eltwise(lambda x: s._f("power")(base, x), s)
 
     @_instconst
     def ln(s):
         """
         Element-wise natural logarithm.
         """
-        if "e" in field.consts:
-            base = field.consts[e]
-        else:
-            s._need("from_float", "to represent e")
-            base = s._f("from_float")(_math.e)
-        return s._eltwise_unary(s, lambda x: s._f("log")(base, x))
+        base = s.e._cells[0]
+        return s._eltwise(lambda x: s._f("log")(base, x), s)
     @_instconst
     def log2(s):
         """
@@ -1081,7 +1199,7 @@ def Matrix(field, shape):
         """
         s._need("from_int", "to represent 2")
         base = s._f("from_int")(2)
-        return s._eltwise_unary(s, lambda x: s._f("log")(base, x))
+        return s._eltwise(lambda x: s._f("log")(base, x), s)
     @_instconst
     def log10(s):
         """
@@ -1089,50 +1207,50 @@ def Matrix(field, shape):
         """
         s._need("from_int", "to represent 10")
         base = s._f("from_int")(10)
-        return s._eltwise_unary(s, lambda x: s._f("log")(base, x))
+        return s._eltwise(lambda x: s._f("log")(base, x), s)
     def log(s, base):
         """
         Element-wise base-specified logarithm.
         """
-        return s._eltwise_binary(s, base, lambda a, b: s._f("log")(b, a))
+        return s._eltwise(lambda a, b: s._f("log")(b, a), s, base)
 
     @_instconst
     def sin(s):
         """
         Element-wise trigonometric sine.
         """
-        return s._eltwise_unary(s, s._f("sin"))
+        return s._eltwise(s._f("sin"), s)
     @_instconst
     def cos(s):
         """
         Element-wise trigonometric cosine.
         """
-        return s._eltwise_unary(s, s._f("cos"))
+        return s._eltwise(s._f("cos"), s)
     @_instconst
     def tan(s):
         """
         Element-wise trigonometric tangent.
         """
-        return s._eltwise_unary(s, s._f("tan"))
+        return s._eltwise(s._f("tan"), s)
 
     @_instconst
     def asin(s):
         """
         Element-wise trigonometric inverse-sine.
         """
-        return s._eltwise_unary(s, s._f("asin"))
+        return s._eltwise(s._f("asin"), s)
     @_instconst
     def acos(s):
         """
         Element-wise trigonometric inverse-cosine.
         """
-        return s._eltwise_unary(s, s._f("acos"))
+        return s._eltwise(s._f("acos"), s)
     @_instconst
     def atan(s):
         """
         Element-wise trigonometric inverse-tangent.
         """
-        return s._eltwise_unary(s, s._f("atan"))
+        return s._eltwise(s._f("atan"), s)
 
 
     def __eq__(s, o):
@@ -1140,30 +1258,30 @@ def Matrix(field, shape):
         Element-wise equality (cast return to bool to determine if all pairs are
         equal).
         """
-        return s._eltwise_binary(s, o, s._f("eq"))
+        return s._eltwise(s._f("eq"), s, o)
     def __ne__(s, o):
-        return s._eltwise_binary(s, o, lambda a, b: not s._f("eq")(a, b))
+        return s._eltwise(lambda a, b: not s._f("eq")(a, b), s, o)
     def __lt__(s, o):
         """
         Element-wise ordering (cast return to bool to determine if all pairs are
         ordered strictly ascending).
         """
-        return s._eltwise_binary(s, o, s._f("lt"))
+        return s._eltwise(s._f("lt"), s, o)
     def __le__(s, o):
         f = lambda a, b: s._f("eq")(a, b) or s._f("lt")(a, b)
-        return s._eltwise_binary(s, o, f)
+        return s._eltwise(f, s, o)
     def __gt__(s, o):
-        return s._eltwise_binary(s, o, lambda a, b: s._f("lt")(b, a))
+        return s._eltwise(lambda a, b: s._f("lt")(b, a), s, o)
     def __ge__(s, o):
         f = lambda a, b: s._f("eq")(a, b) or s._f("lt")(b, a)
-        return s._eltwise_binary(s, o, f)
+        return s._eltwise(f, s, o)
 
 
     def __and__(s, o):
         """
         Vector dot product.
         """
-        o = s._cast(o)
+        o = s.cast(o, keep_single=True)
         if not s.isvec or not o.isvec:
             raise TypeError(f"can only dot product vectors (got sizes "
                     f"{s._size_str} and {o._size_str})")
@@ -1177,14 +1295,14 @@ def Matrix(field, shape):
             dot = add(dot, mul(a, b))
         return single(dot)
     def __rand__(s, o):
-        o = s._cast(o)
+        o = s.cast(o, keep_single=True)
         return o.__and__(s)
 
     def __or__(s, o):
         """
         3D vector cross product.
         """
-        o = s._cast(o)
+        o = s.cast(o, keep_single=True)
         if not s.isvec or not o.isvec:
             raise TypeError(f"can only cross product vectors (got sizes "
                     f"{s._size_str} and {o._size_str})")
@@ -1206,14 +1324,14 @@ def Matrix(field, shape):
         )
         return Matrix[field, shp](cells)
     def __ror__(s, o):
-        o = s._cast(o)
+        o = s.cast(o, keep_single=True)
         return o.__or__(s)
 
     def __matmul__(s, o):
         """
         Matrix multiplication.
         """
-        o = s._cast(o)
+        o = s.cast(o, keep_single=True)
         if s.shape[1] != o.shape[0]:
             raise TypeError("incorrect size for matrix multiplication "
                     f"({s._size_str} times {o._size_str})")
@@ -1233,7 +1351,7 @@ def Matrix(field, shape):
                     cells[r_idx] = add(cells[r_idx], prod)
         return Matrix[field, shp](cells)
     def __rmatmul__(s, o):
-        o = s._cast(o)
+        o = s.cast(o, keep_single=True)
         return o.__matmul__(s)
 
     def __xor__(s, exp):
@@ -1311,30 +1429,258 @@ def Matrix(field, shape):
 
 
 
+    # Its so dangerous bruh.
     def __getattr__(s, attr):
         """
         If a non-matrix attribute is accessed, it will be retrived from each
         element instead.
         """
         cells = object.__getattribute__(s, "_cells") # cooked.
-        if not cells:
-            return Matrix[Field, (0, 0)](())
-        if attr.startswith("_") or not hasattr(cells[0], attr):
+        bad = False
+        if attr.startswith("_"):
+            bad = True
+        elif cells:
+            bad = not hasattr(cells[0], attr)
+        else:
+            try:
+                bad = not hasattr(s._f("zero"), attr)
+            except NotImplementedError:
+                try:
+                    bad = not hasattr(s._f("one"), attr)
+                except NotImplementedError:
+                    bad = False # giv up.
+        if bad:
             raise AttributeError(f"{repr(type(s).__name__)} object has no "
                     f"attribute {repr(attr)}")
+        if not cells:
+            return Matrix[Field, (0, 0)](())
         cells = tuple(getattr(x, attr) for x in cells)
         newfield = type(cells[0]) if cells else Field
         return Matrix[newfield, shape](cells)
 
 
+
+class Single:
+    def __getitem__(self, field):
+        return Matrix[field, (1, 1)]
+Single = Single()
+Single.__doc__ = """
+Refers to the type 'Matrix[field, (1, 1)]'. Note this is not a proper templated
+class, only a thin wrapper.
+"""
+
 def single(x):
-    return Matrix[type(x), (1, 1)]((x, ))
+    """
+    Returns the given object as a single matrix (1x1).
+    """
+    return Single[type(x)]((x, ))
 
 def issingle(a):
     """
     Returns true iff 'a' is a matrix with only one cell.
     """
     return isinstance(a, Matrix) and a.issingle
+
+
+
+def sqrt(x, *, field=None):
+    """
+    Alias for 'x.sqrt'.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using 'lits'")
+        field = lits.field
+    if not isinstance(x, Matrix):
+        x = Single[field].cast(x)
+    return x.sqrt
+def cbrt(x, *, field=None):
+    """
+    Alias for 'x.cbrt'.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using 'lits'")
+        field = lits.field
+    if not isinstance(x, Matrix):
+        x = Single[field].cast(x)
+    return x.cbrt
+def root(base, x, *, field=None):
+    """
+    Alias for 'x.root(base)'.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using 'lits'")
+        field = lits.field
+    if not isinstance(x, Matrix):
+        x = Single[field].cast(x)
+    return x.root(base)
+
+def exp(x, *, field=None):
+    """
+    Alias for 'x.exp'.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using 'lits'")
+        field = lits.field
+    if not isinstance(x, Matrix):
+        x = Single[field].cast(x)
+    return x.exp
+def exp2(x, *, field=None):
+    """
+    Alias for 'x.exp2'.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using 'lits'")
+        field = lits.field
+    if not isinstance(x, Matrix):
+        x = Single[field].cast(x)
+    return x.exp2
+def exp10(x, *, field=None):
+    """
+    Alias for 'x.exp10'.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using 'lits'")
+        field = lits.field
+    if not isinstance(x, Matrix):
+        x = Single[field].cast(x)
+    return x.exp10
+
+def ln(x, *, field=None):
+    """
+    Alias for 'x.ln'.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using 'lits'")
+        field = lits.field
+    if not isinstance(x, Matrix):
+        x = Single[field].cast(x)
+    return x.ln
+def log2(x, *, field=None):
+    """
+    Alias for 'x.log2'.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using 'lits'")
+        field = lits.field
+    if not isinstance(x, Matrix):
+        x = Single[field].cast(x)
+    return x.log2
+def log10(x, *, field=None):
+    """
+    Alias for 'x.log10'.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using 'lits'")
+        field = lits.field
+    if not isinstance(x, Matrix):
+        x = Single[field].cast(x)
+    return x.log10
+def log(base, x, *, field=None):
+    """
+    Alias for 'x.log(base)'.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using 'lits'")
+        field = lits.field
+    if not isinstance(x, Matrix):
+        x = Single[field].cast(x)
+    return x.log(base)
+def sin(x, *, field=None):
+    """
+    Alias for 'x.sin'.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using 'lits'")
+        field = lits.field
+    if not isinstance(x, Matrix):
+        x = Single[field].cast(x)
+    return x.sin
+def cos(x, *, field=None):
+    """
+    Alias for 'x.cos'.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using 'lits'")
+        field = lits.field
+    if not isinstance(x, Matrix):
+        x = Single[field].cast(x)
+    return x.cos
+def tan(x, *, field=None):
+    """
+    Alias for 'x.tan'.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using 'lits'")
+        field = lits.field
+    if not isinstance(x, Matrix):
+        x = Single[field].cast(x)
+    return x.tan
+def asin(x, *, field=None):
+    """
+    Alias for 'x.asin'.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using 'lits'")
+        field = lits.field
+    if not isinstance(x, Matrix):
+        x = Single[field].cast(x)
+    return x.asin
+def acos(x, *, field=None):
+    """
+    Alias for 'x.acos'.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using 'lits'")
+        field = lits.field
+    if not isinstance(x, Matrix):
+        x = Single[field].cast(x)
+    return x.acos
+def atan(x, *, field=None):
+    """
+    Alias for 'x.atan'.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using 'lits'")
+        field = lits.field
+    if not isinstance(x, Matrix):
+        x = Single[field].cast(x)
+    return x.atan
+
+def atan2(y, x, *, field=None):
+    """
+    Quadrant-aware 'atan(y / x)'.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using 'lits'")
+        field = lits.field
+    Mat = Single[field]
+    if isinstance(y, Matrix):
+        Mat = type(y)
+    elif isinstance(x, Matrix):
+        Mat = type(x)
+    if not isinstance(y, Matrix):
+        y = Mat.cast(y)
+    if not isinstance(x, Matrix):
+        x = Mat.cast(x)
+    return y._eltwise(y._f("atan2"), y, x)
+
 
 
 def long(a):
@@ -1347,28 +1693,13 @@ def long(a):
 
 
 
-def _keep_unpacking(xs, unpack_vectors=True):
-    if len(xs) > 1:
+def _keep_unpacking(xs):
+    if len(xs) == 0 or len(xs) > 1:
         return False
-    if not _iterable(xs[0]):
+    if isinstance(xs[0], Matrix):
         return False
-    if unpack_vectors:
-        return not issingle(xs[0])
-    return not isinstance(xs[0], Matrix)
+    return _iterable(xs[0])
 
-
-def lits(field):
-    """
-    Sets the current/default field to the given field.
-    """
-    if field is not None:
-        if not isinstance(field, type):
-            raise TypeError(f"expected a field class, got {_tname(type(field))}")
-        if not issubclass(field, Field):
-            raise TypeError("expected a field class which inherits from "
-                    f"{_tname(Field)}, got {_tname(field)} (which doesn't)")
-    lits.field = field
-lits.field = None
 
 
 def concat(*rows, field=None):
@@ -1377,9 +1708,9 @@ def concat(*rows, field=None):
     """
     if field is None:
         if lits.field is None:
-            raise RuntimeError("specify a field using `lits`")
+            raise RuntimeError("specify a field using 'lits'")
         field = lits.field
-    Mat = Matrix[field, (1, 1)]
+    Mat = Single[field]
     cells = []
     shape = [0, 0]
     for row in rows:
@@ -1393,7 +1724,7 @@ def concat(*rows, field=None):
                 # raise TypeError("must give a matrix to be concatenated, got "
                 #         f"{_tname(type(x))}")
                 # on god i have changed this line back and forth about 50 times.
-                x = Mat._cast(x)
+                x = Mat.cast(x)
             if x.field != field:
                 raise TypeError(f"inconsistent field (expected "
                         f"{_tname(field)}, got {_tname(x.field)}")
@@ -1421,7 +1752,6 @@ def concat(*rows, field=None):
         cells.extend(rowcells)
         shape[0] += height
 
-    field = type(cells[0]) if _prod(shape) else Field
     return Matrix[field, tuple(shape)](cells)
 
 def vstack(*xs, field=None):
@@ -1430,9 +1760,9 @@ def vstack(*xs, field=None):
     """
     if field is None:
         if lits.field is None:
-            raise RuntimeError("specify a field using `lits`")
+            raise RuntimeError("specify a field using 'lits'")
         field = lits.field
-    if _keep_unpacking(xs, unpack_vectors=False):
+    if _keep_unpacking(xs):
         return vstack(*xs[0], field=field)
     return concat(*((x, ) for x in xs), field=field)
 
@@ -1442,9 +1772,9 @@ def hstack(*xs, field=None):
     """
     if field is None:
         if lits.field is None:
-            raise RuntimeError("specify a field using `lits`")
+            raise RuntimeError("specify a field using 'lits'")
         field = lits.field
-    if _keep_unpacking(xs, unpack_vectors=False):
+    if _keep_unpacking(xs):
         return hstack(*xs[0], field=field)
     return concat(xs, field=field)
 
@@ -1454,9 +1784,9 @@ def ascol(*xs, field=None):
     """
     if field is None:
         if lits.field is None:
-            raise RuntimeError("specify a field using `lits`")
+            raise RuntimeError("specify a field using 'lits'")
         field = lits.field
-    if _keep_unpacking(xs, unpack_vectors=False):
+    if _keep_unpacking(xs):
         return ascol(*xs[0], field=field)
     def tocol(x):
         if isinstance(x, Matrix) and x.isrow:
@@ -1472,9 +1802,9 @@ def asrow(*xs, field=None):
     """
     if field is None:
         if lits.field is None:
-            raise RuntimeError("specify a field using `lits`")
+            raise RuntimeError("specify a field using 'lits'")
         field = lits.field
-    if _keep_unpacking(xs, unpack_vectors=False):
+    if _keep_unpacking(xs):
         return asrow(*xs[0], field=field)
     def torow(x):
         if isinstance(x, Matrix) and x.iscol:
@@ -1490,7 +1820,7 @@ def rep(x, rows, cols=1, *, field=None):
     """
     if field is None:
         if lits.field is None:
-            raise RuntimeError("specify a field using `lits`")
+            raise RuntimeError("specify a field using 'lits'")
         field = lits.field
     if not isinstance(rows, int):
         raise TypeError("expected an integer number of rows, got "
@@ -1507,16 +1837,16 @@ def diag(*xs, field=None):
     """
     if field is None:
         if lits.field is None:
-            raise RuntimeError("specify a field using `lits`")
+            raise RuntimeError("specify a field using 'lits'")
         field = lits.field
     if _keep_unpacking(xs):
         return diag(*xs[0], field=field)
     diagvec = ascol(*xs, field=field)
     n = len(diagvec)
+    Mat = Matrix[field, (n, n)]
     if n == 1:
         cells = diagvec._cells
     else:
-        Mat = Matrix[field, (n, n)]
         cells = [Mat._f("zero")] * (n*n) if n else []
         for i in range(n):
             cells[i*n + i] = diagvec._cells[i]
@@ -1529,7 +1859,7 @@ def eye(n, *, field=None):
     """
     if field is None:
         if lits.field is None:
-            raise RuntimeError("specify a field using `lits`")
+            raise RuntimeError("specify a field using 'lits'")
         field = lits.field
     return Matrix[field, (n, n)].eye
 
@@ -1539,7 +1869,7 @@ def zeros(rows, cols=None, *, field=None):
     """
     if field is None:
         if lits.field is None:
-            raise RuntimeError("specify a field using `lits`")
+            raise RuntimeError("specify a field using 'lits'")
         field = lits.field
     cols = rows if cols is None else cols
     return Matrix[field, (rows, cols)].zeros
@@ -1550,7 +1880,7 @@ def ones(rows, cols=None, *, field=None):
     """
     if field is None:
         if lits.field is None:
-            raise RuntimeError("specify a field using `lits`")
+            raise RuntimeError("specify a field using 'lits'")
         field = lits.field
     cols = rows if cols is None else cols
     return Matrix[field, (rows, cols)].ones
@@ -1563,15 +1893,18 @@ def summ(*xs, field=None):
     """
     if field is None:
         if lits.field is None:
-            raise RuntimeError("specify a field using `lits`")
+            raise RuntimeError("specify a field using 'lits'")
         field = lits.field
     if _keep_unpacking(xs):
         return summ(*xs[0], field=field)
     if not xs:
-        return single(field.zero)
-    r = single(field.zero)
+        return Single[field].zero
+    r = Single[field].zero
     for x in xs:
-        r += x
+        if not isinstance(x, Matrix):
+            x = Single[field].cast(x)
+        for y in x:
+            r += y
     return r
 
 def prod(*xs, field=None):
@@ -1580,35 +1913,19 @@ def prod(*xs, field=None):
     """
     if field is None:
         if lits.field is None:
-            raise RuntimeError("specify a field using `lits`")
+            raise RuntimeError("specify a field using 'lits'")
         field = lits.field
     if _keep_unpacking(xs):
         return prod(*xs[0], field=field)
     if not xs:
-        return single(field.one)
-    r = single(field.one)
+        return Single[field].one
+    r = Single[field].one
     for x in xs:
-        r *= x
+        if not isinstance(x, Matrix):
+            x = Single[field].cast(x)
+        for y in x:
+            r *= y
     return r
-
-def ave(*xs, field=None):
-    """
-    Returns the arithmetic mean of the given values.
-    """
-    if field is None:
-        if lits.field is None:
-            raise RuntimeError("specify a field using `lits`")
-        field = lits.field
-    if _keep_unpacking(xs):
-        return ave(*xs[0], field=field)
-    if not xs:
-        raise ValueError("cannot average no elements")
-    r = single(field.zero)
-    i = single(field.zero)
-    for x in xs:
-        r += x
-        i += single(field.one)
-    return r / i
 
 def minn(*xs, field=None):
     """
@@ -1617,16 +1934,21 @@ def minn(*xs, field=None):
     """
     if field is None:
         if lits.field is None:
-            raise RuntimeError("specify a field using `lits`")
+            raise RuntimeError("specify a field using 'lits'")
         field = lits.field
     if _keep_unpacking(xs):
         return minn(*xs[0], field=field)
     if not xs:
         raise ValueError("cannot find minimum of no elements")
-    r = xs[0]
-    for x in xs[1:]:
-        if x < r:
-            r = x
+    r = None
+    for x in xs:
+        if not isinstance(x, Matrix):
+            x = Single[field].cast(x)
+        for y in x:
+            if r is None:
+                r = y
+            elif y < r:
+                r = y
     return r
 
 def maxx(*xs, field=None):
@@ -1636,183 +1958,136 @@ def maxx(*xs, field=None):
     """
     if field is None:
         if lits.field is None:
-            raise RuntimeError("specify a field using `lits`")
+            raise RuntimeError("specify a field using 'lits'")
         field = lits.field
     if _keep_unpacking(xs):
         return maxx(*xs[0], field=field)
     if not xs:
         raise ValueError("cannot find maximum of no elements")
-    r = xs[0]
-    for x in xs[1:]:
-        if x > r:
-            r = x
+    r = None
+    for x in xs:
+        if not isinstance(x, Matrix):
+            x = Single[field].cast(x)
+        for y in x:
+            if r is None:
+                r = y
+            elif y > r:
+                r = y
     return r
 
 
-
-def sqrt(x):
+def mean(*xs, field=None):
     """
-    Alias for 'x.sqrt', and overloaded for basic number types.
+    Returns the arithmetic mean of the given values.
     """
-    if isinstance(x, Matrix):
-        return x.sqrt
-    x = float(x)
-    return _math.sqrt(x)
-def cbrt(x):
-    """
-    Alias for 'x.cbrt', and overloaded for basic number types.
-    """
-    if isinstance(x, Matrix):
-        return x.cbrt
-    x = float(x)
-    return _math.cbrt(x)
-def root(x, n):
-    """
-    Alias for 'x.root(n)', and overloaded for basic number types.
-    """
-    if isinstance(x, Matrix):
-        return x.root(n)
-    x = float(x)
-    n = int(n)
-    return x ** (1.0 / n)
-
-def exp(x):
-    """
-    Alias for 'x.exp', and overloaded for basic number types.
-    """
-    if isinstance(x, Field):
-        return x.exp
-    x = float(x)
-    return _math.exp(x)
-def exp2(x):
-    """
-    Alias for 'x.exp2', and overloaded for basic number types.
-    """
-    if isinstance(x, Field):
-        return x.exp2
-    x = float(x)
-    return 2.0 ** x
-def exp10(x):
-    """
-    Alias for 'x.exp10', and overloaded for basic number types.
-    """
-    if isinstance(x, Field):
-        return x.exp10
-    x = float(x)
-    return 10.0 ** x
-
-def ln(x):
-    """
-    Alias for 'x.ln', and overloaded for basic number types.
-    """
-    if isinstance(x, Field):
-        return x.ln
-    x = float(x)
-    if x == 0.0:
-        return -float("inf")
-    return _math.log(x)
-def log2(x):
-    """
-    Alias for 'x.log2', and overloaded for basic number types.
-    """
-    if isinstance(x, Field):
-        return x.log2
-    x = float(x)
-    if x == 0.0:
-        return -float("inf")
-    return _math.log(x) / _math.log(2.0)
-def log10(x):
-    """
-    Alias for 'x.log10', and overloaded for basic number types.
-    """
-    if isinstance(x, Field):
-        return x.log10
-    x = float(x)
-    if x == 0.0:
-        return -float("inf")
-    return _math.log(x) / _math.log(10.0)
-def log(base, x):
-    """
-    Alias for 'x.log(base)', and overloaded for basic number types.
-    """
-    if isinstance(x, Field):
-        return x.log(base)
-    x = float(x)
-    if x == 0.0:
-        return -float("inf")
-    return _math.log(x) / _math.log(base)
-
-
-
-def sin(x):
-    """
-    Alias for 'x.sin', and overloaded for basic number types.
-    """
-    if isinstance(x, Matrix):
-        return x.sin
-    x = float(x)
-    # cheeky lookup to make some values exact (it just feels nice ok).
-    pi = _math.pi
-    lookup = {pi/2: 1.0, -pi/2: -1.0, pi: 0.0, -pi: 0.0, 2*pi: 0.0}
-    return lookup.get(x, _math.sin(x))
-def cos(x):
-    """
-    Alias for 'x.cos', and overloaded for basic number types.
-    """
-    if isinstance(x, Matrix):
-        return x.cos
-    x = float(x)
-    pi = _math.pi
-    lookup = {pi/2: 0.0, -pi/2: 0.0, pi: -1.0, -pi: -1.0, 2*pi: 1.0}
-    return lookup.get(x, _math.cos(x))
-def tan(x):
-    """
-    Alias for 'x.tan', and overloaded for basic number types.
-    """
-    if isinstance(x, Matrix):
-        return x.tan
-    x = float(x)
-    return _math.tan(x)
-
-def asin(x):
-    """
-    Alias for 'x.asin', and overloaded for basic number types.
-    """
-    if isinstance(x, Matrix):
-        return x.asin
-    x = float(x)
-    return _math.asin(x)
-def acos(x):
-    """
-    Alias for 'x.acos', and overloaded for basic number types.
-    """
-    if isinstance(x, Matrix):
-        return x.acos
-    x = float(x)
-    return _math.acos(x)
-def atan(x):
-    """
-    Alias for 'x.atan', and overloaded for basic number types.
-    """
-    if isinstance(x, Matrix):
-        return x.atan
-    x = float(x)
-    return _math.atan(x)
-
-def atan2(y, x):
-    """
-    Quadrant-aware 'atan(y / x)'.
-    """
-    if isinstance(x, Matrix) or isinstance(y, Matrix):
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using 'lits'")
+        field = lits.field
+    if _keep_unpacking(xs):
+        return mean(*xs[0], field=field)
+    if not xs:
+        raise ValueError("cannot find the arithmetic mean no elements")
+    r = Single[field].zero
+    n = Single[field].zero
+    for x in xs:
         if not isinstance(x, Matrix):
-            x = y._cast(x)
-        if not isinstance(y, Matrix):
-            y = x._cast(y)
-        return x._eltwise_binary(y, x, x._f("atan2"))
-    y = float(y)
-    x = float(x)
-    return _math.atan2(y, x)
+            x = Single[field].cast(x)
+        for y in x:
+            r += y
+            n += Single[field].one
+    return r / n
+def ave(*xs, field=None):
+    """
+    Alias for 'mean(*xs)'.
+    """
+    return mean(*xs, field=field)
 
+def geomean(*xs, field=None):
+    """
+    Returns the geometric mean of the given values.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using 'lits'")
+        field = lits.field
+    if _keep_unpacking(xs):
+        return geomean(*xs[0], field=field)
+    if not xs:
+        raise ValueError("cannot find the geometric mean no elements")
+    r = Single[field].one
+    n = Single[field].zero
+    for x in xs:
+        if not isinstance(x, Matrix):
+            x = Single[field].cast(x)
+        for y in x:
+            r *= y
+            n += Single[field].one
+    return r.root(n)
+
+def harmean(*xs, field=None):
+    """
+    Returns the harmonic mean of the given values.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using 'lits'")
+        field = lits.field
+    if _keep_unpacking(xs):
+        return harmean(*xs[0], field=field)
+    if not xs:
+        raise ValueError("cannot find the harmonic mean no elements")
+    r = Single[field].zero
+    n = Single[field].zero
+    for x in xs:
+        if not isinstance(x, Matrix):
+            x = Single[field].cast(x)
+        for y in x:
+            r += y.one / y
+            n += Single[field].one
+    return n / r
+
+def quadmean(*xs, field=None):
+    """
+    Returns the quadratic mean (root-mean-square) of the given values.
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using 'lits'")
+        field = lits.field
+    if _keep_unpacking(xs):
+        return quadmean(*xs[0], field=field)
+    if not xs:
+        raise ValueError("cannot find the root-mean-square no elements")
+    r = Single[field].zero
+    n = Single[field].zero
+    for x in xs:
+        if not isinstance(x, Matrix):
+            x = Single[field].cast(x)
+        for y in x:
+            r += y * y
+            n += Single[field].one
+    return (r / n).sqrt
+
+def logmean(x, y, *, field=None):
+    """
+    Returns the logarithmic mean of 'x' and 'y': (x - y) / ln(x / y)
+    """
+    if field is None:
+        if lits.field is None:
+            raise RuntimeError("specify a field using 'lits'")
+        field = lits.field
+    Mat = Single[field]
+    if isinstance(x, Matrix):
+        Mat = type(x)
+    elif isinstance(y, Matrix):
+        Mat = type(y)
+    if not isinstance(y, Matrix):
+        y = Mat.cast(y)
+    if not isinstance(x, Matrix):
+        x = Mat.cast(x)
+    f = lambda a, b: a if (a == b) else (a - b) / (a / b).ln
+    return x.apply(f, y)
 
 
 
@@ -1838,7 +2113,6 @@ class series:
         dfv = float(100 * (1 - mi/ma))
         s += f"\n  diff ... {ma - mi} (^ {dfu:.3g}%) (v {dfv:.3g}%)"
         return s
-
 
 
 
@@ -1869,10 +2143,9 @@ def mhelp():
     print_attr("M.field", "Cell type.")
     print_attr("M.shape", "(row count, column count)")
 
-    cls = Matrix[Field, (1, 1)]
-    attrs = [(name, attr) for name, attr in vars(cls).items()
+    Mat = Single[Field]
+    attrs = [(name, attr) for name, attr in Mat.__dict__.items()
             if attr.__doc__ is not None
-            # and not name.startswith("_")
             and name != "__module__"
             and name != "__doc__"
             and name != "template"
@@ -1913,32 +2186,44 @@ def mhelp():
         "__matmul__": "@",
     }
     for name, attr in attrs:
+        m = "m"
+        if isinstance(attr, (classmethod, _classconst)):
+            m = "M"
+        isclassmethod = isinstance(attr, classmethod)
+        isinstmethod = False
+        if not isclassmethod:
+            isinstmethod = callable(attr)
+            isinstmethod &= not isinstance(attr, (_classconst, _instconst))
+
         if name in func_ops:
-            name = f"{func_ops[name]}(m)"
+            expr = f"{func_ops[name]}({m})"
         elif name in un_ops:
-            name = f"{un_ops[name]}m"
+            expr = f"{un_ops[name]}{m}"
         elif name in bin_ops:
-            name = f"m {bin_ops[name]} m"
+            expr = f"{m} {bin_ops[name]} {m}"
         elif name == "__xor__":
-            name = "m ^ exp"
+            expr = f"{m} ^ exp"
         elif name == "sub":
-            name = "m.sub[rows, cols]"
+            expr = f"{m}.sub[rows, cols]"
         elif name == "__getattr__":
-            name = "m.attr"
-        elif callable(attr):
-            sig = _inspect.signature(attr)
+            expr = f"{m}.attr"
+        elif isclassmethod or isinstmethod:
+            if isclassmethod:
+                sig = _inspect.signature(attr.__func__)
+            else:
+                sig = _inspect.signature(attr)
             sig = str(sig)
             sig = sig[1:-1]
             sig = sig[sig.index(",") + 1:].strip() if "," in sig else ""
             if name == "__getitem__":
-                name = f"m[{sig}]"
+                expr = f"{m}[{sig}]"
             elif name == "__call__":
-                name = f"m({sig})"
+                expr = f"{m}({sig})"
             else:
-                name = f"m.{name}({sig})"
+                expr = f"{m}.{name}({sig})"
         else:
-            name = f"m.{name}"
-        print_attr(name, attr.__doc__)
+            expr = f"{m}.{name}"
+        print_attr(expr, attr.__doc__)
 
     # also chuck the other functions in this file.
     funcs = []
@@ -1955,6 +2240,10 @@ def mhelp():
         funcs.append(obj)
 
     for func in funcs:
+        # Print `Single` just before `single()`.
+        if func is single:
+            print_attr("Single[field]", Single.__doc__)
+
         sig = _inspect.signature(func)
         sig = str(sig)
         sig = sig[1:-1]
@@ -1962,5 +2251,7 @@ def mhelp():
             sig = sig[:-len(", *, field=None")]
         elif sig.endswith(", field=None"):
             sig = sig[:-len(", field=None")]
+        elif sig.endswith(", *, space=None"):
+            sig = sig[:-len(", *, space=None")]
         name = f"{func.__name__}({sig})"
         print_attr(name, func.__doc__)

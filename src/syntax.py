@@ -20,15 +20,15 @@ import matrix as _matrix
 #       cast (to get around this, you must wrap it in a matrix literal [1])).
 # - if the entire parse is one expression and is not semi-colon terminated, wrap
 #       it in a print-if-non-none.
+# - override 'lits' to give the current space.
 
 
 def _literal(x):
     if _matrix.lits.field is None:
-        raise RuntimeError("specify a field using `lits`")
+        raise RuntimeError("specify a field using 'lits'")
     if isinstance(x, _matrix.Matrix):
         return x
-    Mat = _matrix.Matrix[_matrix.lits.field, (1, 1)]
-    return Mat._cast(x)
+    return _matrix.Single[_matrix.lits.field].cast(x)
 
 def _hstack(xs):
     return _matrix.hstack(*xs)
@@ -47,13 +47,9 @@ def _is_hvstack(node):
     func = node.func
     if not isinstance(func, _ast.Attribute):
         return False
-    # if not isinstance(func.ctx, _ast.Load):
-    #     return False
     mod = func.value
     if not isinstance(mod, _ast.Name):
         return False
-    # if not isinstance(mod.ctx, _ast.Load):
-    #     return False
     if mod.id != "_syntax":
         return False
     name = func.attr
@@ -118,7 +114,7 @@ class _Transformer(_ast.NodeTransformer):
 
         # Ensure keywords aren't modified.
         if not isinstance(node.ctx, _ast.Load):
-            if _is_name(node, self.keywords):
+            if _is_named(node, self.keywords):
                 raise SyntaxError(f"cannot modify keyword {repr(kw)} attrs")
         return node
 
@@ -171,6 +167,35 @@ class _Transformer(_ast.NodeTransformer):
         assert what == "subscript"
         return node
 
+    def visit_Call(self, node):
+        # Transform args.
+        node = self.generic_visit(node)
+
+        # See if it's a `lits` call.
+        if not _is_named(node.func, {"lits"}):
+            return node
+
+        # Ensure theres only one arg given (and it is field).
+        for kw in node.keywords:
+            if kw.arg != "field":
+                raise SyntaxError("lits() got an unexpected keyword argument: "
+                        f"{repr(kw.arg)}")
+        if len(node.args) > 1:
+            raise SyntaxError("lits() takes 1 positional argument but "
+                    f"{len(node.args)} were given")
+        if node.args and node.keywords:
+            raise SyntaxError("lits() got multiple values for argument 'field'")
+        if not node.args and not node.keywords:
+            raise SyntaxError("lits() missing 1 required positional argument: "
+                    "'field'")
+
+        # Add the current space as kwarg.
+        space = _ast.Name(id="_space", ctx=_ast.Load())
+        space_kwarg = _ast.keyword(arg="space", value=space)
+        node.keywords.append(space_kwarg)
+
+        return node
+
 def _print_nonnone(x):
     if x is not None:
         print(repr(x))
@@ -192,9 +217,9 @@ def _parse(source, name, feedback):
     module = _ast.fix_missing_locations(module)
     return module
 
-
 def _execute(source, space, feedback=False):
     try:
+        # Transform and compile.
         parsed = _parse(source, name="<rat>", feedback=feedback)
         compiled = compile(parsed, "<rat>", "exec")
     except Exception as e:
@@ -207,6 +232,12 @@ def _execute(source, space, feedback=False):
             space["_syntax"] = __import__(__name__)
         if space["_syntax"] is not __import__(__name__):
             raise ValueError("reserved '_syntax' set within variable space")
+        # Splice the space into itself.
+        if "_space" not in space:
+            space["_space"] = space
+        if space["_space"] is not space:
+            raise ValueError("reserved '_space' set within variable space")
+        # Execute.
         exec(compiled, space, space)
     except Exception as e:
         print("## ERROR:")
@@ -216,112 +247,57 @@ def _execute(source, space, feedback=False):
 
 
 
-class cli:
-    """ Command-line intepreter (not rly interface lmao). """
+def run_cli(space):
+    """
+    Starts a command-line interface which is basically just an embedded python
+    interpreter. `space` should be a globals()-type dictionary of variables to
+    expose (and it will be modified).
+    """
+    def get_input():
+        source = ""
+        while True:
+            try:
+                line = input(">> " if not source else ".. ")
+            except EOFError:
+                break
+            source += "\n"*(not not source) + line
+            if not line:
+                break
+            try:
+                # dont let the stupid compile command print to stderr.
+                with _warnings.catch_warnings():
+                    _warnings.simplefilter("ignore", SyntaxWarning)
+                    with _contextlib.redirect_stderr(_io.StringIO()):
+                        command = _codeop.compile_command(source)
+            except Exception as e:
+                break
+            if command is not None:
+                break
+        return source
 
-    _commands = {}
-    def command(self, func, name):
-        """
-        Makes a function into a command (callable without brackets if that is the
-        only text in the input, which invokes `func()`).
-        """
-        if name in self._commands:
-            raise ValueError("command already defined under that name")
-        self._commands[name] = func
-
-    _queue = []
-    def enqueue(self, code):
-        """
-        Queues `code` to-be executed as-if it was input when `cli(...)` is
-        entered.
-        """
-        if not isinstance(code, str):
-            raise ValueError("can only enqueue strings")
-        self._queue.append(code)
-
-
-    def start(self, space, msg=""):
-        """
-        Starts a command-line interface which is basically just an embedded
-        python interpreter. `space` should be the `globals()` of the caller,
-        `msg` is displayed upon entering the input loop.
-        """
-        if getattr(self, "_in_cli", False):
-            raise TypeError("cannot enter cli while in cli")
-
-        self._leave = False
-        self._in_cli = True
-        try:
-            self._go(space, msg)
-        finally:
-            self._leave = False
-            self._in_cli = False
-
-    def _go(self, space, msg):
-        def get_input():
-            if self._queue:
-                source = self._queue.pop(0)
-                lines = source.split("\n")
-                print(">>", lines[0])
-                for line in lines[1:]:
-                    print("..", line)
-                return source
-
-            source = ""
-            while True:
-                try:
-                    line = input(">> " if not source else ".. ")
-                except EOFError:
-                    break
-                source += "\n"*(not not source) + line
-                if not line:
-                    break
-                try:
-                    # dont let the stupid compile command print to stderr.
-                    with _warnings.catch_warnings():
-                        _warnings.simplefilter("ignore", SyntaxWarning)
-                        with _contextlib.redirect_stderr(_io.StringIO()):
-                            command = _codeop.compile_command(source)
-                except Exception as e:
-                    break
-                if command is not None:
-                    break
-            return source
-
-        if (msg := str(msg)):
-            print(msg)
-
-        while not self._leave:
-            source = get_input()
-            stripped = source.strip()
-            if not stripped:
-                continue
-            if stripped in self._commands:
-                try:
-                    self._commands[stripped]()
-                except Exception as e:
-                    print("## ERROR:")
-                    _traceback.print_exception(type(e), e, e.__traceback__)
-                    continue
-                continue
-            _execute(source, space, feedback=True)
-        if self._leave:
-            print("-- okie leaving.")
-
-cli = cli()
-
-def _okie_we_leave():
-    cli._leave = True
-cli.command(_okie_we_leave, "quit")
-cli.command(_okie_we_leave, "exit")
-cli.command(_okie_we_leave, "return")
-cli.command(lambda: _os.system("cls"), "cls")
-cli.command(_matrix.mhelp, "mhelp")
-
+    leave = False
+    while not leave:
+        source = get_input()
+        stripped = source.strip()
+        if not stripped:
+            continue
+        if stripped == "quit":
+            leave = True
+            break
+        if stripped == "cls":
+            _os.system("cls")
+            continue
+        _execute(source, space, feedback=True)
+    if leave:
+        print("-- okie leaving.")
 
 
 
 def run_file(path, space):
+    """
+    Executes the file at the given path. `space` should be a globals()-type
+    dictionary of variables to expose (and it will be modified).
+    """
     path = _Path(path)
 
     def esc(path):
@@ -368,5 +344,5 @@ def run_file(path, space):
     # Read and execute the file.
     with path.open("r", encoding="utf-8") as file:
         source = file.read()
-        if not _execute(source, space):
+        if not _execute(source, space, feedback=False):
             quit()

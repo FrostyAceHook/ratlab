@@ -75,6 +75,9 @@ class Rational(matrix.Field):
     def power(cls, a, b):
         raise NotImplementedError("haven don it yet")
     @classmethod
+    def root(cls, a, b):
+        raise NotImplementedError("haven don it yet")
+    @classmethod
     def log(cls, a, b):
         raise NotImplementedError("haven don it yet")
 

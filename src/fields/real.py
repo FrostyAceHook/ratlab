@@ -67,15 +67,27 @@ class Real(matrix.Field):
     def power(cls, a, b):
         return cls(a._v ** b._v)
     @classmethod
+    def root(cls, a, b):
+        return cls(a._v ** (1.0 / b._v))
+    @classmethod
     def log(cls, a, b):
         return cls(math.log(b._v) / math.log(a._v))
 
     @classmethod
     def sin(cls, a):
-        return cls(math.sin(a._v))
+        # cheeky lookup to make some values exact (it just feels nice ok).
+        pi = math.pi
+        lookup = {pi/2: 1.0, -pi/2: -1.0, pi: 0.0, -pi: 0.0, 2*pi: 0.0}
+        sina = lookup.get(a._v, math.sin(a._v))
+        return cls(sina)
+        # return cls(math.sin(a._v))
     @classmethod
     def cos(cls, a):
-        return cls(math.cos(a._v))
+        pi = math.pi
+        lookup = {pi/2: 0.0, -pi/2: 0.0, pi: -1.0, -pi: -1.0, 2*pi: 1.0}
+        cosa = lookup.get(a._v, math.cos(a._v))
+        return cls(cosa)
+        # return cls(math.cos(a._v))
     @classmethod
     def tan(cls, a):
         return cls(math.tan(a._v))
@@ -106,4 +118,7 @@ class Real(matrix.Field):
         return "0" if a._v == 0.0 else f"{a._v:.6g}"
     @classmethod
     def repr_long(cls, a):
-        return "0" if a._v == 0.0 else repr(a._v)
+        s = repr(a._v)
+        if s.endswith(".0"):
+            s = s[:-2]
+        return "0" if a._v == 0.0 else s
