@@ -339,159 +339,220 @@ def _maybe_unpack(xs):
         return xs
     if not _iterable(x):
         return xs
-    return x if isinstance(x, list) else tuple(x)
+    return tuple(x)
 
 
 
-class Shape(tuple):
+class Shape:
     """
-    Tuple of the length of each dimension.
+    Sequence of the length of each dimension, with implicitly infinite trailing
+    1s (or 0s if empty).
     """
 
-    def __new__(cls, shape):
-        try:
-            shape = tuple(shape)
-        except Exception:
-            raise TypeError("shape must be an iterable of the length of each "
-                    "dimension")
-        for s in shape:
-            if not isinstance(s, int):
+    def __init__(s, *lens):
+        lens = _maybe_unpack(lens)
+        for l in lens:
+            if not isinstance(l, int):
                 raise TypeError("dimension lengths must be ints, got "
-                        f"{_tname(type(s))}")
-        if any(s < 0 for s in shape):
-            raise ValueError("dimension lengths cannot be negative, got "
-                    f"{shape}")
+                        f"{_tname(type(l))}")
+        if any(l < 0 for l in lens):
+            raise ValueError(f"dimension lengths cannot be negative, got {lens}")
         # Trim any trailing 1s (note this collapses single to ()).
-        while shape and shape[-1] == 1:
-            shape = shape[:-1]
+        while lens and lens[-1] == 1:
+            lens = lens[:-1]
         # Collapse empty.
-        if _math.prod(shape) == 0:
-            shape = (0, )
-        return super().__new__(cls, shape)
+        if _math.prod(lens) == 0:
+            lens = (0, )
+        s._lens = lens
 
     @_classconst
     def empty(cls):
-        return cls((0, ))
+        return cls(0)
     @_classconst
     def single(cls):
-        return cls(())
+        return cls()
 
     @_instconst
-    def size(self):
-        return _math.prod(self)
+    def size(s):
+        """
+        Number of cells.
+        """
+        return _math.prod(s._lens)
     @_instconst
-    def ndim(self):
-        return -1 if not self else len(self)
+    def ndim(s):
+        """
+        Number of dimensions. Note empty has -1 dimensions and single has 0.
+        """
+        return -1 if not s else len(s)
 
-    def __getitem__(self, axis):
+    @_instconst
+    def isempty(s):
+        """
+        Is empty? (0x0)
+        """
+        return s.size == 0
+    @_instconst
+    def issingle(s):
+        """
+        Is only one cell? (1x1)
+        """
+        return s.size == 1
+    @_instconst
+    def isvec(s):
+        """
+        Has at-most one axis with length >1? (empty and single count as vectors)
+        """
+        return sum(l > 1 for l in s._lens) <= 1
+    @_instconst
+    def iscol(s):
+        """
+        Is column vector? (empty and single count as column vectors)
+        """
+        return s[0] == s.size
+    @_instconst
+    def isrow(s):
+        """
+        Is row vector? (empty and single count as row vectors)
+        """
+        return s[1] == s.size
+    @_instconst
+    def issquare(s):
+        """
+        Is square matrix? (only 2D matrices can be square)
+        """
+        return s.ndim <= 2 and s[0] == s[1]
+
+    def __iter__(s):
+        if not s:
+            raise ValueError("cannot iterate axes of empty")
+        return s._lens.__iter__()
+
+    def __len__(s):
+        if not s:
+            raise ValueError("cannot get length of empty")
+        return s._lens.__len__()
+
+    def __getitem__(s, axis):
+        """
+        Returns the length along the given axis.
+        """
         # Oob dimensions are implicitly 1 (unless empty, in which case 0).
         if not isinstance(axis, int):
             raise TypeError(f"expected an integer axis, got "
                     f"{_tname(type(axis))}")
         if axis < 0:
             raise ValueError(f"axis cannot be negative, got {axis}")
-        if axis >= self.ndim:
-            return 1 if self.size else 0
-        return super().__getitem__(axis)
+        if axis >= s.ndim:
+            return 1 if s.size else 0
+        return s._lens.__getitem__(axis)
 
-    def withaxis(self, axis, length):
-        if self.isempty:
-            return self
-        shape = list(self) + [1] * (axis + 1 - len(self))
+    def withaxis(s, axis, length):
+        """
+        Returns a new shape with the given length along 'axis'.
+        """
+        if s.isempty:
+            return s
+        shape = list(s) + [1] * (axis + 1 - len(s))
         shape[axis] = length
         return Shape(shape)
 
-    def __bool__(self):
-        return self.size > 0
+    def __bool__(s):
+        """
+        Alias for 'not s.isempty'.
+        """
+        return not s.isempty
 
-    def __eq__(self, other):
-        if not isinstance(other, tuple):
+    def __eq__(s, o):
+        """
+        Is same shape?
+        """
+        if isinstance(o, tuple):
+            o = Shape(o)
+        if not isinstance(o, Shape):
             return NotImplemented
-        other = Shape(other)
-        if self.ndim != other.ndim:
-            return False
-        return all(a == b for a, b in zip(self, other))
+        return s._lens == o._lens
 
-    def __hash__(self):
-        return super().__hash__()
+    def __hash__(s):
+        return hash(s._lens)
 
-    @_instconst
-    def isempty(self):
-        return self.size == 0
-    @_instconst
-    def issingle(self):
-        return self.size == 1
-    @_instconst
-    def isvec(self):
-        return sum(s == 1 for s in self) >= self.ndim - 1
-    @_instconst
-    def iscol(self):
-        return self[0] == self.size
-    @_instconst
-    def isrow(self):
-        return self[1] == self.size
-    @_instconst
-    def issquare(self):
-        return len(self) <= 2 and self[0] == self[1]
-
-    def __repr__(self):
+    def __repr__(s):
         # Pad to at-least 2d.
-        shape = tuple(self)
-        if self.ndim < 2:
-            shape = (self[0], self[1])
+        if s.ndim < 2:
+            shape = (s[0], s[1])
+        else:
+            shape = s
         return "x".join(map(str, shape))
 
-    def stride(self, axis):
+    def stride(s, axis):
+        """
+        Returns the element-offset between consequentive elements along the given
+        axis, when stored in canon flattened format.
+        """
+        if s.isempty:
+            raise ValueError("cannot find stride of empty")
         if not isinstance(axis, int):
             raise TypeError(f"expected an integer axis, got "
                     f"{_tname(type(axis))}")
         if axis < 0:
             raise ValueError(f"axis cannot be negative, got {axis}")
-        if self.isempty:
-            raise ValueError("cannot find stride of empty")
-        axis = min(axis, self.ndim)
-        return _math.prod(tuple(self)[:axis])
+        axis = min(axis, s.ndim)
+        return _math.prod(s._lens[:axis])
 
 
-    def offset(self, *ijk):
-        if self.isempty:
-            raise ValueError("cannot index empty")
-        ijk = _maybe_unpack(ijk)
-        for ii, i in enumerate(ijk):
-            if not isinstance(i, int):
-                raise TypeError("expected an integer index, got "
-                        f"{_tname(type(i))} at index {ii}")
-        ijk = [i + (i < 0) * self[ii] for ii, i in enumerate(ijk)]
-        for ii, i in enumerate(ijk):
-            if i not in range(self[ii]):
-                raise IndexError(f"index {i} out-of-bounds for axis {ii} with "
-                        f"length {self[ii]}")
-        return sum(i * self.stride(ii) for ii, i in enumerate(ijk))
-
-    def offsets(self):
-        if self.isempty:
+    def indices(s):
+        """
+        Returns an iterable of all indices for this shape. An index is a tuple of
+        per-axis offsets.
+        """
+        if s.isempty:
             raise ValueError("cannot iterate empty")
-        return range(self.size)
+        slices = [range(l) for l in s]
+        revidxs = _itertools.product(*reversed(slices))
+        return (tuple(reversed(revidx)) for revidx in revidxs)
 
-    def index(self, offset):
-        if self.isempty:
+    def offsets(s):
+        """
+        Returns an iterable of all offsets for this shape. An offset is an
+        integer which indexes a canon flattened array of this shape.
+        """
+        if s.isempty:
+            raise ValueError("cannot iterate empty")
+        return range(s.size)
+
+
+    def index(s, offset):
+        """
+        Returns the index for the given offset.
+        """
+        if s.isempty:
             raise ValueError("cannot index empty")
         if not isinstance(offset, int):
             raise TypeError(f"expected an integer offset, got "
                     f"{_tname(type(offset))}")
         if offset < 0:
             raise ValueError(f"offset cannot be negative, got {offset}")
-        if offset >= self.size:
+        if offset >= s.size:
             raise IndexError(f"offset {offset} out-of-bounds for size "
-                    f"{self.size}")
-        return tuple(offset % self.stride(ii) for ii in range(self.ndim))
+                    f"{s.size}")
+        return tuple(offset % s.stride(ii) for ii in range(s.ndim))
 
-    def indices(self):
-        if self.isempty:
-            raise ValueError("cannot iterate empty")
-        slices = [range(s) for s in self]
-        revidxs = _itertools.product(*reversed(slices))
-        return (tuple(reversed(revidx)) for revidx in revidxs)
+    def offset(s, *ijk):
+        """
+        Returns the offset for the given index.
+        """
+        if s.isempty:
+            raise ValueError("cannot index empty")
+        ijk = _maybe_unpack(ijk)
+        for ii, i in enumerate(ijk):
+            if not isinstance(i, int):
+                raise TypeError("expected an integer index, got "
+                        f"{_tname(type(i))} at index {ii}")
+        ijk = [i + (i < 0) * s[ii] for ii, i in enumerate(ijk)]
+        for ii, i in enumerate(ijk):
+            if i not in range(s[ii]):
+                raise IndexError(f"index {i} out-of-bounds for axis {ii} with "
+                        f"length {s[ii]}")
+        return sum(i * s.stride(ii) for ii, i in enumerate(ijk))
 
 
 
@@ -524,7 +585,7 @@ def Matrix(field, shape):
     def _need(cls, method, extra=""):
         if extra:
             extra = f" ({extra})"
-        if not hasattr(field, method):
+        if not hasattr(cls.field, method):
             thing = {
                 "from_int": "cannot cast from int",
                 "from_float": "cannot cast from float",
@@ -565,16 +626,16 @@ def Matrix(field, shape):
                 "repr_short": "cannot short string represent",
                 "repr_long": "cannot long string represent",
             }
-            msg = f"{thing[method]} over field {_tname(field)}{extra}"
+            msg = f"{thing[method]} over field {_tname(cls.field)}{extra}"
             raise NotImplementedError(msg)
 
     @classmethod
     def _f(cls, method):
         cls._need(method)
-        return getattr(field, method)
+        return getattr(cls.field, method)
 
 
-    def __init__(self, cells):
+    def __init__(s, cells):
         # `cells` is a flattened iterable of each cell, progressing through the
         # matrix in the order of shape (so col-major for 2d).
         if not _iterable(cells):
@@ -582,23 +643,23 @@ def Matrix(field, shape):
 
         # Often when a function returns from a new field, its not appropriately
         # wrapped, but we only make this exemption for non-field types.
-        if issubclass(field, GenericField):
+        if issubclass(s.field, GenericField):
             cells = list(cells)
             for i in range(len(cells)):
-                if isinstance(cells[i], field.T):
-                    cells[i] = field(cells[i])
+                if isinstance(cells[i], s.field.T):
+                    cells[i] = s.field(cells[i])
 
         cells = tuple(cells)
-        for i in range(len(cells)):
-            if not isinstance(cells[i], field):
-                raise TypeError(f"expected cells of type {_tname(field)}, got "
-                        f"{_tname(type(cells[i]))} (occured at index {i}, had "
-                        f"value {cells[i]})")
+        for i, cell in enumerate(cells):
+            if not isinstance(cell, s.field):
+                raise TypeError(f"expected cells of type {_tname(s.field)}, got "
+                        f"{_tname(type(cell))} (occured at index {i}, had "
+                        f"value: {cell})")
         if len(cells) != shape.size:
-            raise TypeError("cells must match flattened shape (expected "
-                    f"{shape}={shape.size}, got {len(cells)})")
+            raise TypeError(f"expected {shape.size} cells to matched flattened "
+                    f"size of {shape}, got {len(cells)}")
 
-        self._cells = cells
+        s._cells = cells
 
 
     @_classconst
@@ -607,10 +668,10 @@ def Matrix(field, shape):
         Identity matrix.
         """
         if not cls.issquare:
-            raise TypeError("only square matricies have an identity (got size "
-                    f"{_size_str})")
-        cells = [cls._f("zero")] * shape.size if shape else ()
-        n = shape[0]
+            raise TypeError("only square matricies have an identity matrix, got "
+                    f"{cls.shape}")
+        cells = [cls._f("zero")] * cls.shape.size if cls.shape else ()
+        n = cls.shape[0]
         for i in range(n):
             cells[i*n + i] = cls._f("one")
         return cls(cells)
@@ -619,14 +680,14 @@ def Matrix(field, shape):
         """
         Zero-filled matrix.
         """
-        cells = (cls._f("zero"), ) * shape.size if shape else ()
+        cells = (cls._f("zero"), ) * cls.shape.size if cls.shape else ()
         return cls(cells)
     @_classconst
     def ones(cls):
         """
         One-filled matrix.
         """
-        cells = (cls._f("one"), ) * shape.size if shape else ()
+        cells = (cls._f("one"), ) * cls.shape.size if cls.shape else ()
         return cls(cells)
 
     @_classconst
@@ -634,85 +695,85 @@ def Matrix(field, shape):
         """
         Single zero.
         """
-        return single(cls._f("zero"), field=field)
+        return single(cls._f("zero"), field=cls.field)
     @_classconst
     def one(cls):
         """
         Single one.
         """
-        return single(cls._f("one"), field=field)
+        return single(cls._f("one"), field=cls.field)
     @_classconst
     def e(cls):
         """
         Single euler's number.
         """
-        if "e" in field.consts:
-            e = field.consts["e"]
+        if "e" in cls.field.consts:
+            e = cls.field.consts["e"]
         else:
             cls._need("from_float", "to represent e")
             e = cls._f("from_float")(_math.e)
-        return single(e, field=field)
+        return single(e, field=cls.field)
     @_classconst
     def pi(cls):
         """
         Single pi.
         """
-        if "pi" in field.consts:
-            pi = field.consts["pi"]
+        if "pi" in cls.field.consts:
+            pi = cls.field.consts["pi"]
         else:
             cls._need("from_float", "to represent pi")
             pi = cls._f("from_float")(_math.pi)
-        return single(pi, field=field)
+        return single(pi, field=cls.field)
 
     @_classconst
-    def size(s):
+    def size(cls):
         """
         Number of cells.
         """
-        return shape.size
+        return cls.shape.size
     @_classconst
-    def ndim(s):
+    def ndim(cls):
         """
         Number of dimensions. Note empty has -1 dimensions and single has 0.
         """
-        return shape.ndim
+        return cls.shape.ndim
 
     @_classconst
     def isempty(cls):
         """
-        Is empty matrix? (0x0)
+        Is empty? (0x0)
         """
-        return shape.isempty
+        return cls.shape.isempty
     @_classconst
     def issingle(cls):
         """
         Is only one cell? (1x1)
         """
-        return shape.issingle
+        return cls.shape.issingle
     @_classconst
     def isvec(cls):
         """
         Has at-most one axis with length >1? (empty and single count as vectors)
         """
-        return shape.isvec
+        return cls.shape.isvec
     @_classconst
     def iscol(cls):
         """
         Is column vector? (empty and single count as column vectors)
         """
-        return shape.iscol
+        return cls.shape.iscol
     @_classconst
     def isrow(cls):
         """
         Is row vector? (empty and single count as row vectors)
         """
-        return shape.isrow
+        return cls.shape.isrow
     @_classconst
     def issquare(cls):
         """
-        Is square matrix?
+        Is square matrix? (only 2D matrices can be square)
         """
-        return shape.issquare
+        return cls.shape.issquare
 
 
     @classmethod
@@ -724,24 +785,23 @@ def Matrix(field, shape):
         """
         xs = _maybe_unpack(xs)
         if not xs:
-            raise ValueError("cannot cast no objects")
+            return xs
 
         def conv(x):
             if isinstance(x, Matrix):
+                if cls.field != x.field:
+                    raise TypeError("cannot operate on matrices of different "
+                            f"fields, got {_tname(cls.field)} and "
+                            f"{_tname(x.field)}")
                 return x
             convs = {bool: "from_bool", int: "from_int", float: "from_float",
                     complex: "from_complex", str: "from_str"}
             if type(x) not in convs.keys():
                 raise TypeError(f"{_tname(type(x))} cannot operate with "
-                        f"{_tname(field)}")
+                        f"{_tname(cls.field)}")
             x = cls._f(convs[type(x)])(x)
-            return single(x, field=field)
+            return single(x, field=cls.field)
         xs = [conv(x) for x in xs]
-
-        if not all(field == x.field for x in xs):
-            if field != o.field:
-                raise TypeError("cannot operate on matrices of different fields "
-                        f"({_tname(field)} vs {_tname(o.field)})")
 
         # Handle empties.
         if all(x.isempty for x in xs):
@@ -759,7 +819,7 @@ def Matrix(field, shape):
         ndim = max(x.ndim for x in xs)
         shape = Shape(max(x.shape[i] for x in xs) for i in range(ndim))
         def broadcast(x):
-            xshape = x.shape + (1, ) * (ndim - len(x.shape))
+            xshape = tuple(x.shape) + (1, ) * (ndim - len(x.shape))
             if not all(a == b or a == 1 for a, b in zip(xshape, shape)):
                 raise TypeError(f"cannot broadcast {x.shape} to {shape}")
             return x.rep(y // x for x, y in zip(xshape, shape))
@@ -777,10 +837,10 @@ def Matrix(field, shape):
             if not ijk:
                 return empty(s.field)
             if s.isempty:
-                raise ValueError("cannot index empty matrix")
+                raise ValueError("cannot index empty")
             def process(i, ii):
                 if isinstance(i, slice):
-                    return tuple(range(*i.indices(shape[ii])))
+                    return tuple(range(*i.indices(s.shape[ii])))
                 if _iterable(i):
                     return i
                 if isinstance(i, int):
@@ -797,7 +857,7 @@ def Matrix(field, shape):
             slices = slices[:s.ndim]
             revidxs = _itertools.product(*reversed(slices))
             cells = tuple(s._at(*reversed(revidx)) for revidx in revidxs)
-            return Matrix[field, tuple(map(len, slices))](cells)
+            return Matrix[s.field, tuple(map(len, slices))](cells)
     @_instconst
     def at(s):
         """
@@ -806,7 +866,7 @@ def Matrix(field, shape):
         return _At(s)
 
     def _at(s, *ijk):
-        return s._cells[shape.offset(ijk)]
+        return s._cells[s.shape.offset(ijk)]
 
 
     @_instconst
@@ -814,9 +874,9 @@ def Matrix(field, shape):
         """
         Vector of cells in natural iteration order (sequential axes).
         """
-        if shape[0] == shape.size:
+        if s.shape[0] == s.shape.size:
             return s # skip type checks and such.
-        return Matrix[field, (shape.size, )](s._cells)
+        return Matrix[s.field, (s.shape.size, )](s._cells)
 
 
     def along(s, *axes):
@@ -829,11 +889,10 @@ def Matrix(field, shape):
             if not isinstance(axis, int):
                 raise TypeError(f"expected integer axis, got "
                         f"{_tname(type(axis))}")
-        for axis in axes:
-            if axis < 0:
-                raise ValueError(f"cannot have negative axis, got {axis}")
+        if any(axis < 0 for axis in axes):
+            raise ValueError(f"cannot have negative axes, got: {axes}")
         if len(set(axes)) != len(axes):
-            raise ValueError(f"cannot duplicate axes, got {axes}")
+            raise ValueError(f"cannot duplicate axes, got: {axes}")
         # Empty is empty.
         if s.isempty:
             return ()
@@ -849,7 +908,7 @@ def Matrix(field, shape):
             idx = [slice(None)] * s.ndim
             idx[axis] = j
             return tuple(idx)
-        return tuple(s.at[idx(j)] for j in range(shape[axis]))
+        return tuple(s.at[idx(j)] for j in range(s.shape[axis]))
 
 
     def permute(s, *order):
@@ -860,11 +919,10 @@ def Matrix(field, shape):
             if not isinstance(axis, int):
                 raise TypeError(f"expected integer axis, got "
                         f"{_tname(type(axis))}")
-        for axis in order:
-            if axis < 0:
-                raise ValueError(f"cannot have negative axis, got {axis}")
+        if any(axis < 0 for axis in order):
+            raise ValueError(f"cannot have negative axes, got: {order}")
         if len(set(order)) != len(order):
-            raise ValueError(f"cannot duplicate axes, got {order}")
+            raise ValueError(f"cannot duplicate axes, got: {order}")
         if max(order) != len(order) - 1:
             raise ValueError(f"missing axis for swap, axis {max(order)} is "
                     "dangling")
@@ -874,7 +932,7 @@ def Matrix(field, shape):
         order += tuple(range(s.ndim))[len(order):]
         while len(order) > s.ndim and order[-1] == len(order) - 1:
             order = order[:-1]
-        newshape = Shape(shape[axis] for axis in order)
+        newshape = Shape(s.shape[axis] for axis in order)
         if s.isvec:
             # Vector has only one memory format.
             cells = s._cells
@@ -885,7 +943,7 @@ def Matrix(field, shape):
                 invorder[i] = ii
             remap = lambda ri: [ri[invorder[axis]] for axis in range(s.ndim)]
             cells = (s._at(*remap(idx)) for idx in idxs)
-        return Matrix[field, newshape](cells)
+        return Matrix[s.field, newshape](cells)
 
 
     def rep(s, *counts):
@@ -896,22 +954,21 @@ def Matrix(field, shape):
         for count in counts:
             if not isinstance(count, int):
                 raise TypeError("expected an integer count, got "
-                        f"{_tname(type(rows))}")
-        for count in counts:
-            if count < 0:
-                raise ValueError(f"count cannot be negative, got {count}")
+                        f"{_tname(type(count))}")
+        if any(count < 0 for count in counts):
+            raise ValueError(f"cannot have negative counts, got: {counts}")
         mul = counts + (1, ) * (s.ndim - len(counts))
-        shp = tuple(shape) + (1, ) * (len(counts) - s.ndim)
+        shp = tuple(s.shape) + (1, ) * (len(counts) - s.ndim)
         newshape = Shape(a * b for a, b in zip(shp, mul))
         if newshape.size == 0:
-            return Matrix[field, (0, )](())
+            return Matrix[s.field, (0, )](())
         if newshape.size == 1:
             return s
         cells = [0] * newshape.size
         for new in newshape.indices():
             old = tuple(a % b for a, b in zip(new, shp))
-            cells[newshape.offset(new)] = s._cells[shape.offset(old)]
-        return Matrix[field, newshape](cells)
+            cells[newshape.offset(new)] = s._cells[s.shape.offset(old)]
+        return Matrix[s.field, newshape](cells)
 
     def repalong(s, axis, count):
         """
@@ -920,7 +977,7 @@ def Matrix(field, shape):
         if not isinstance(axis, int):
             raise TypeError(f"expected an integer axis, got {_tname(type(axis))}")
         if axis < 0:
-            raise ValueError(f"axis cannot be negative, got {axis}")
+            raise ValueError(f"axis cannot be negative, got: {axis}")
         return s.rep((1, )*axis + (count, ))
 
 
@@ -929,29 +986,29 @@ def Matrix(field, shape):
         Vector-only cell iterate.
         """
         if not s.isvec:
-            raise TypeError(f"only vectors have bare iteration, got {shape} "
-                    "(use .along and friends for matrix iterate)")
-        return (single(x, field=field) for x in s._cells)
+            raise TypeError(f"only vectors have bare iteration, got {s.shape} "
+                    "(use .along or .ravel for matrix iterate)")
+        return (single(x, field=s.field) for x in s._cells)
 
     def __getitem__(s, i):
         """
         Vector-only cell access.
         """
         if not s.isvec:
-            raise TypeError(f"only vectors have bare getitem, got {shape} (use "
-                    ".at for matrix cell access)")
+            raise TypeError(f"only vectors have bare getitem, got {s.shape} "
+                    "(use .at for matrix cell access)")
         xs = s._cells.__getitem__(i)
         if not isinstance(xs, tuple):
             xs = (xs, )
-        shp = (len(xs), ) if shape[1] == 1 else (1, len(xs))
-        return Matrix[field, shp](xs)
+        shp = (len(xs), ) if s.shape[1] == 1 else (1, len(xs))
+        return Matrix[s.field, shp](xs)
 
     def __len__(s):
         """
         Vector-only cell count.
         """
         if not s.isvec:
-            raise TypeError(f"only vectors have bare length, got {shape} (use "
+            raise TypeError(f"only vectors have bare length, got {s.shape} (use "
                     ".size for matrix cell count)")
         return len(s._cells)
 
@@ -961,7 +1018,7 @@ def Matrix(field, shape):
         Tuple of column vectors
         """
         if s.ndim > 2:
-            raise TypeError(f"only 2D matrices have .cols, got {shape} (use "
+            raise TypeError(f"only 2D matrices have .cols, got {s.shape} (use "
                     ".along for other matrices)")
         return s.along(0)
     @_instconst
@@ -970,7 +1027,7 @@ def Matrix(field, shape):
         Tuple of row vectors.
         """
         if s.ndim > 2:
-            raise TypeError(f"only 2D matrices have .rows, got {shape} (use "
+            raise TypeError(f"only 2D matrices have .rows, got {s.shape} (use "
                     ".along for other matrices)")
         return s.along(1)
     @_instconst
@@ -979,8 +1036,8 @@ def Matrix(field, shape):
         Vector of cells in column-major order.
         """
         if s.ndim > 2:
-            raise TypeError(f"only 2D matrices have .colmajor, got {shape} (use "
-                    ".ravel (maybe with .permute) for other matrices)")
+            raise TypeError(f"only 2D matrices have .colmajor, got {s.shape} "
+                    "(use .ravel (maybe with .permute) for other matrices)")
         return s.ravel
     @_instconst
     def rowmajor(s):
@@ -988,8 +1045,8 @@ def Matrix(field, shape):
         Vector of cells in row-major order.
         """
         if s.ndim > 2:
-            raise TypeError(f"only 2D matrices have .rowmajor, got {shape} (use "
-                    ".ravel (maybe with .permute) for other matrices)")
+            raise TypeError(f"only 2D matrices have .rowmajor, got {s.shape} "
+                    "(use .ravel (maybe with .permute) for other matrices)")
         return s.T.ravel
 
 
@@ -1006,12 +1063,12 @@ def Matrix(field, shape):
         Inverse matrix, for square 2D matrices.
         """
         if not s.issquare:
-            raise TypeError(f"cannot invert a non-square matrix, got {shape}")
+            raise TypeError(f"cannot invert a non-square matrix, got {s.shape}")
         if s.det == s.zero:
             raise ValueError("cannot invert a non-invertible matrix, got det=0")
         aug = hstack(s, s.eye)
         aug = aug.rref
-        return aug.at[:, shape[0]:]
+        return aug.at[:, s.shape[0]:]
 
     @_instconst
     def diag(s):
@@ -1019,9 +1076,9 @@ def Matrix(field, shape):
         Vector of diagonal elements, for 2D matrices.
         """
         if s.ndim > 2:
-            raise TypeError(f"only 2D matrices have .diag, got {shape}")
-        cells = (s._at(i, i) for i in range(min(shape)))
-        return Matrix[field, (min(shape), )](cells)
+            raise TypeError(f"only 2D matrices have .diag, got {s.shape}")
+        cells = (s._at(i, i) for i in range(min(s.shape)))
+        return Matrix[s.field, (min(s.shape), )](cells)
 
 
     @_instconst
@@ -1030,11 +1087,11 @@ def Matrix(field, shape):
         Is diagonal matrix? (square, and only diagonal is non-zero)
         """
         if s.ndim > 2:
-            raise TypeError(f"only 2D matrices have .isdiag, got {shape}")
+            raise TypeError(f"only 2D matrices have .isdiag, got {s.shape}")
         if not s.issquare:
             return False
-        for i in range(shape[0]):
-            for j in range(shape[1]):
+        for i in range(s.shape[0]):
+            for j in range(s.shape[1]):
                 if i == j:
                     continue
                 if s.at[i, j] != s.zero:
@@ -1047,10 +1104,10 @@ def Matrix(field, shape):
         Is upper-triangular matrix? (square, and below diagonal is zero)
         """
         if s.ndim > 2:
-            raise TypeError(f"only 2D matrices have .isuppertri, got {shape}")
+            raise TypeError(f"only 2D matrices have .isuppertri, got {s.shape}")
         if not s.issquare:
             return False
-        for i in range(shape[0]):
+        for i in range(s.shape[0]):
             for j in range(i):
                 if s.at[i, j] != s.zero:
                     return False
@@ -1062,7 +1119,7 @@ def Matrix(field, shape):
         Is lower-triangular matrix? (square, and above diagonal is zero)
         """
         if s.ndim > 2:
-            raise TypeError(f"only 2D matrices have .islowertri, got {shape}")
+            raise TypeError(f"only 2D matrices have .islowertri, got {s.shape}")
         return s.T.isuppertri
 
     @_instconst
@@ -1071,7 +1128,8 @@ def Matrix(field, shape):
         Is orthogonal matrix? (transpose == inverse)
         """
         if s.ndim > 2:
-            raise TypeError(f"only 2D matrices have .isorthogonal, got {shape}")
+            raise TypeError("only 2D matrices have .isorthogonal, got "
+                    f"{s.shape}")
         return bool(s.T == s.inv)
 
     @_instconst
@@ -1080,10 +1138,11 @@ def Matrix(field, shape):
         Is symmetric matrix? (square, and below diagonal = above diagonal)
         """
         if s.ndim > 2:
-            raise TypeError(f"only 2D matrices have .issymmetric, got {shape}")
+            raise TypeError("only 2D matrices have .issymmetric, got "
+                    f"{s.shape}")
         if not s.issquare:
             return False
-        for i in range(shape[0]):
+        for i in range(s.shape[0]):
             for j in range(i):
                 if s.at[i, j] != s.at[j, i]:
                     return False
@@ -1096,10 +1155,10 @@ def Matrix(field, shape):
         Determinant, for 2D square matrices.
         """
         if s.ndim > 2:
-            raise TypeError(f"only 2D matrices have determinants, got {shape}")
+            raise TypeError(f"only 2D matrices have determinants, got {s.shape}")
         if not s.issquare:
             raise TypeError("only square matrices have determinants, got "
-                    f"{shape}")
+                    f"{s.shape}")
 
         if s.isempty:
             return 1 # det([]) defined as 1.
@@ -1126,7 +1185,7 @@ def Matrix(field, shape):
                     det += cells[j] * subdet
             return det
 
-        return determinant(s._cells, shape[0])
+        return determinant(s._cells, s.shape[0])
 
     @_instconst
     def trace(s):
@@ -1134,11 +1193,11 @@ def Matrix(field, shape):
         Sum of diagonal elements, for 2D square matrices.
         """
         if s.ndim > 2:
-            raise TypeError(f"only 2D matrices have traces, got {shape}")
+            raise TypeError(f"only 2D matrices have traces, got {s.shape}")
         if not s.issquare:
-            raise TypeError(f"only square matrices have traces, got {shape}")
+            raise TypeError(f"only square matrices have traces, got {s.shape}")
         trace = s.zero
-        for i in range(shape[0]):
+        for i in range(s.shape[0]):
             trace += s.at[i, i]
         return trace
 
@@ -1148,7 +1207,7 @@ def Matrix(field, shape):
         Euclidean distance, for vectors.
         """
         if not s.isvec:
-            raise TypeError(f"only vectors have a magnitude, got {shape}")
+            raise TypeError(f"only vectors have a magnitude, got {s.shape}")
         return (s & s).sqrt
 
 
@@ -1158,7 +1217,7 @@ def Matrix(field, shape):
         Reduced row echelon form, for 2D matrices.
         """
         if s.ndim > 2:
-            raise TypeError(f"only 2D matrices can be rrefed, got {shape}")
+            raise TypeError(f"only 2D matrices can be rrefed, got {s.shape}")
 
         eqz = lambda x: s._f("eq")(x, s._f("zero"))
         eqo = lambda x: s._f("eq")(x, s._f("one"))
@@ -1189,7 +1248,7 @@ def Matrix(field, shape):
 
         cells = list(s._cells)
 
-        rows, cols = shape[0], shape[1]
+        rows, cols = s.shape[0], s.shape[1]
         lead = 0
         for r in range(rows):
             if lead >= cols:
@@ -1205,15 +1264,15 @@ def Matrix(field, shape):
                         break
             if lead == cols:
                 break
-            row_swap(shape, cells, i, r)
+            row_swap(s.shape, cells, i, r)
 
             pivot_value = cells[cols*r + lead]
             if not eqz(pivot_value):
-                row_mul(shape, cells, r, rec(pivot_value))
+                row_mul(s.shape, cells, r, rec(pivot_value))
             # Check its 1.
             pivot_value = cells[cols*r + lead]
             if not eqo(pivot_value):
-                raise ValueError(f"could not make cell =one, cell is "
+                raise ValueError(f"could not make cell =one, cell is: "
                         f"{pivot_value}")
 
             for i in range(rows):
@@ -1221,16 +1280,16 @@ def Matrix(field, shape):
                     idx = cols*i + lead
                     row_lead_value = cells[cols*i + lead]
                     if not eqz(row_lead_value):
-                        row_add(shape, cells, r, neg(row_lead_value), i)
+                        row_add(s.shape, cells, r, neg(row_lead_value), i)
                     # Check its 0.
                     row_lead_value = cells[cols*i + lead]
                     if not eqz(row_lead_value):
-                        raise ValueError("could not make cell =zero, cell is "
+                        raise ValueError("could not make cell =zero, cell is: "
                                 f"{row_lead_value}")
 
             lead += 1
 
-        return Matrix[field, shape](cells)
+        return Matrix[s.field, s.shape](cells)
 
     @_instconst
     def pivots(s):
@@ -1247,7 +1306,7 @@ def Matrix(field, shape):
         """
         Tuple of RREF non-pivot column indices.
         """
-        return tuple(j for j in range(shape[1]) if j not in s.pivots)
+        return tuple(j for j in range(s.shape[1]) if j not in s.pivots)
 
 
     @_instconst
@@ -1278,22 +1337,23 @@ def Matrix(field, shape):
                 if s._f("eq")(x, s._f("one")):
                     return i
             return None
-        pivotat = tuple(find_first_one(sys.rows[i]) for i in range(shape[0]))
-        basis = [[s._f("zero")]*shape[1] for _ in sys.nonpivots]
+        pivotat = tuple(find_first_one(sys.rows[i]) for i in range(s.shape[0]))
+        basis = [[s._f("zero")]*s.shape[1] for _ in sys.nonpivots]
         for n, j in enumerate(sys.nonpivots):
-            for i in range(shape[0]):
+            for i in range(s.shape[0]):
                 if pivotat[i] is None or pivotat[i] > j:
                     basis[n][j] = 1
                     break
                 basis[n][pivotat[i]] = -sys.at[i, j]
-        return tuple(Matrix[field, (shape[1], )](x) for x in basis)
+        return tuple(Matrix[s.field, (s.shape[1], )](x) for x in basis)
 
 
-    def _reprfr(s, width, ndim, allow_flat=False):
-        assert field is GenericField[str]
+    def _reprfr(s, islong, width, ndim, allow_flat=False):
+        assert s.field is GenericField[str]
 
         if ndim > 2:
-            layers = (x._reprfr(width, ndim - 1) for x in s.along(ndim - 1))
+            along = s.along(ndim - 1)
+            layers = [x._reprfr(islong, width, ndim - 1) for x in along]
             def encapsulate(r):
                 r = r.split("\n")
                 s = r[0] + "".join(f"\n  {line}" for line in r[1:])
@@ -1305,17 +1365,17 @@ def Matrix(field, shape):
 
         # Print col vecs as rows with "'", if allowed.
         suffix = ""
-        height = shape[0]
+        height = s.shape[0]
         if allow_flat and s.iscol:
             suffix = "'"
-            height = shape[1]
+            height = s.shape[1]
         cols = []
         for i, r in enumerate(s._cells):
             if not i % height:
                 cols.append([])
             cols[-1].append(f"{r.obj:>{width}}")
         rows = list(zip(*cols))
-        padded = (width > 3)
+        padded = islong or (width > 3)
         join = lambda x: "  ".join(x) if padded else " ".join(x)
         wrap = lambda x: f"[ {x} ]" if padded else f"[{x}]"
         str_rows = (wrap(join(row)) for row in rows)
@@ -1325,29 +1385,30 @@ def Matrix(field, shape):
         if s.isempty:
             return "my boy "*islong + "M.T."
 
-        rep = s._f("repr_long" if islong else "repr_short")
+        field_rep = s._f("repr_long" if islong else "repr_short")
 
         if s.issingle:
-            return rep(s._cells[0])
+            return field_rep(s._cells[0])
 
         if not islong and not s.isvec:
             # Shorten elements of zero to a single dot.
-            rep_ = rep
             def rep(x):
                 if rep.can_eq_zero and s._f("eq")(x, s._f("zero")):
                     return "."
-                return rep_(x)
+                return field_rep(x)
             rep.can_eq_zero = True
             try:
                 s._need("eq")
                 s._need("zero")
             except NotImplementedError:
                 rep.can_eq_zero = False
+        else:
+            rep = field_rep
 
         # cheeky matrix of the reps to make access easy.
-        reps = Matrix[GenericField[str], shape](rep(x) for x in s._cells)
+        reps = Matrix[GenericField[str], s.shape](rep(x) for x in s._cells)
         width = max(len(r.obj) for r in reps._cells)
-        return reps._reprfr(width, s.ndim, allow_flat=True)
+        return reps._reprfr(islong, width, s.ndim, allow_flat=True)
 
     @_instconst
     def repr_short(s):
@@ -1367,8 +1428,6 @@ def Matrix(field, shape):
     @classmethod
     def _eltwise(cls, func, *xs, rtype=None, pierce=True):
         # Cast me.
-        if not xs:
-            raise ValueError("cannot operate on no matrices")
         xs = cls.cast(xs)
 
         # Apply me.
@@ -1386,12 +1445,14 @@ def Matrix(field, shape):
                 raise TypeError(f"expected {_tname(rtype)} typed return from "
                         f"'func' for consistency, got {_tname(type(ret))})")
             return ret
-        zipped = zip(*(x._cells for x in xs))
+        elts = zip(*(x._cells for x in xs))
         if pierce:
             # need these in tuple to eval now and find rtype.
-            cells = tuple(f(y) for y in zipped)
+            cells = tuple(f(y) for y in elts)
         else:
-            cells = tuple(f(single(z, field=field) for z in y) for y in zipped)
+            cells = tuple(f(single(z, field=cls.field) for z in y) for y in elts)
+        if not cells and rtype is None:
+            rtype = cls.field
         return Matrix[rtype, xs[0].shape](cells)
 
     @classmethod
@@ -1608,17 +1669,19 @@ def Matrix(field, shape):
         """
         o, = s.cast(o)
         if not s.isvec or not o.isvec:
-            raise TypeError(f"can only dot product vectors (got sizes "
-                    f"{s._size_str} and {o._size_str})")
-        if len(s) != len(o):
-            raise TypeError(f"can only dot product same-size vectors (got sizes "
-                    f"{s._size_str} and {o._size_str})")
+            raise TypeError(f"only vectors have a dot product, got {s.shape} "
+                    f"and {o.shape}")
+        if s.size != o.size:
+            raise TypeError("only equal-length vectors have a dot product, "
+                    f"got {s.shape} and {o.shape}")
+        dot = s._f("zero")
+        if not s.shape:
+            return single(dot, field=s.field)
         mul = s._f("mul")
         add = s._f("add")
-        dot = s._f("zero")
         for a, b in zip(s._cells, o._cells):
             dot = add(dot, mul(a, b))
-        return single(dot, field=field)
+        return single(dot, field=s.field)
     def __rand__(s, o):
         o, = s.cast(o)
         return o.__and__(s)
@@ -1629,17 +1692,13 @@ def Matrix(field, shape):
         """
         o, = s.cast(o)
         if not s.isvec or not o.isvec:
-            raise TypeError(f"can only cross product vectors (got sizes "
-                    f"{s._size_str} and {o._size_str})")
-        if len(s) != 3 or len(o) != 3:
-            raise TypeError(f"can only cross product 3-element vectors (got "
-                    f"sizes {s._size_str} and {o._size_str})")
-        shp = (3, 1) # column vector takes precedence.
-        if lhs.shape == (1, 3) and rhs.shape == (1, 3):
-            # but keep row vector if both are.
-            shp = hstack
-        ax, ay, az = lhs._cells
-        bx, by, bz = rhs._cells
+            raise TypeError(f"only vectors have a cross product, got {s.shape} "
+                    f"and {o.shape}")
+        if s.size != 3 or o.size != 3:
+            raise TypeError("only 3-element vectors have a cross product, got "
+                    f"{s.shape} and {o.shape}")
+        ax, ay, az = s._cells
+        bx, by, bz = o._cells
         mul = s._f("mul")
         sub = s._f("sub")
         cells = (
@@ -1647,7 +1706,11 @@ def Matrix(field, shape):
             sub(mul(az, bx), mul(ax, bz)),
             sub(mul(ax, by), mul(ay, bx)),
         )
-        return Matrix[field, shp](cells)
+        newshape = Shape((3, 1)) # column vector takes precedence.
+        if s.isrow and o.isrow:
+            # but keep row vector if both are.
+            newshape = Shape((1, 3))
+        return Matrix[s.field, newshape](cells)
     def __ror__(s, o):
         o, = s.cast(o)
         return o.__or__(s)
@@ -1656,25 +1719,30 @@ def Matrix(field, shape):
         """
         Matrix multiplication.
         """
+        if s.ndim > 2 or o.ndim > 2:
+            raise TypeError(f"only 2D matrices have matrix multiplication, got "
+                    f"{s.shape} and {o.shape}")
         o, = s.cast(o)
         if s.shape[1] != o.shape[0]:
-            raise TypeError("incorrect size for matrix multiplication "
-                    f"({s._size_str} times {o._size_str})")
-        shp = s.shape[0], o.shape[1]
+            raise TypeError("need equal inner dimension lengths for matrix "
+                    f"multiplication, got {s.shape} @ {o.shape}")
+        newshape = Shape([s.shape[0], o.shape[1]])
+        if not newshape:
+            return empty(s.field)
         mul = s._f("mul")
         add = s._f("add")
-        cells = [s._f("zero")] * _prod(shp)
+        cells = [s._f("zero")] * newshape.size
         # blazingly fast new matrix multiplication algorithm scientists are
         # dubbing the "naive method" (i think it means really smart).
         for i in range(s.shape[0]):
             for j in range(o.shape[1]):
+                r_off = newshape.offset(i, j)
                 for k in range(s.shape[1]):
-                    s_idx = s.shape[1]*i + k
-                    o_idx = o.shape[1]*k + j
-                    r_idx = shp[1]*i + j
-                    prod = mul(s._cells[s_idx], o._cells[o_idx])
-                    cells[r_idx] = add(cells[r_idx], prod)
-        return Matrix[field, shp](cells)
+                    s_off = s.shape.offset(i, k)
+                    o_off = o.shape.offset(k, j)
+                    prod = mul(s._cells[s_off], o._cells[o_off])
+                    cells[r_off] = add(cells[r_off], prod)
+        return Matrix[s.field, newshape](cells)
     def __rmatmul__(s, o):
         o, = s.cast(o)
         return o.__matmul__(s)
@@ -1684,14 +1752,14 @@ def Matrix(field, shape):
         Matrix power (repeated self matrix multiplication, with possible
         inverse).
         """
-        if isinstance(exp, field):
-            exp = s._f("to_int")(exp)
+        if isinstance(exp, Matrix) and exp.issingle:
+            exp = int(exp)
         if not isinstance(exp, int):
-            raise TypeError("can only raise a matrix to an integer power (got "
-                    f"{_tname(type(exp))})")
+            raise TypeError("expected an integer exponent, got "
+                    f"{_tname(type(exp))}")
         if not s.issquare:
-            raise TypeError("can only raise square matrices to a power (got "
-                    f"{s._size_str})")
+            raise TypeError("only square matrices have exponentiation, got "
+                    f"{s.shape})")
         if exp < 0:
             return s.inv ^ (-exp)
         power = s.eye
@@ -1710,40 +1778,52 @@ def Matrix(field, shape):
         """
         True iff any elements are non-zero (or non-one if field has no zero).
         """
-        if hasattr(field, "zero"):
+        if hasattr(s.field, "zero"):
             return not all(s._f("eq")(x, s._f("zero")) for x in s._cells)
-        if hasattr(field, "one"):
+        if hasattr(s.field, "one"):
             return not all(s._f("eq")(x, s._f("one")) for x in s._cells)
         raise NotImplementedError("no zero or one element in field "
-                f"{_tname(field)}, must specify an element to compare to")
+                f"{_tname(s.field)}, must specify an element to compare to")
 
     def __int__(s):
         """
         Cast a single to int.
         """
         if not s.issingle:
-            raise TypeError(f"cannot cast {s._size_str} matrix to int (requires "
-                    "1x1)")
-        return s._f("to_int")(s._cells[0])
+            raise TypeError("expected single matrix for scalar cast, got "
+                    f"{s.shape}")
+        x = s._f("to_int")(s._cells[0])
+        if not isinstance(x, int):
+            raise TypeError("expected 'to_int' to return an int, got "
+                    f"{_tname(type(x))}")
+        return x
     def __float__(s):
         """
         Cast a single to float.
         """
         if not s.issingle:
-            raise TypeError(f"cannot cast {s._size_str} matrix to float "
-                    "(requires 1x1)")
-        return s._f("to_float")(s._cells[0])
+            raise TypeError("expected single matrix for scalar cast, got "
+                    f"{s.shape}")
+        x = s._f("to_float")(s._cells[0])
+        if not isinstance(x, float):
+            raise TypeError("expected 'to_float' to return a float, got "
+                    f"{_tname(type(x))}")
+        return x
     def __complex__(s):
         """
         Cast a single to complex.
         """
         if not s.issingle:
-            raise TypeError(f"cannot cast {s._size_str} matrix to complex "
-                    "(requires 1x1)")
-        return s._f("to_complex")(s._cells[0])
+            raise TypeError("expected single matrix for scalar cast, got "
+                    f"{s.shape}")
+        x = s._f("to_complex")(s._cells[0])
+        if not isinstance(x, complex):
+            raise TypeError("expected 'to_complex' to return a complex, got "
+                    f"{_tname(type(x))}")
+        return x
 
     def __hash__(s):
-        return hash(tuple(s._f("hashed")(x) for x in s._cells))
+        return hash((s.shape, ) + tuple(s._f("hashed")(x) for x in s._cells))
 
     def __repr__(s):
         """
@@ -1780,12 +1860,10 @@ def Matrix(field, shape):
                     bad = False # giv up.
         if bad:
             raise AttributeError(f"{_tname(type(s))} object has no attribute "
-                    f"{repr(attr)} (and neither do the {_tname(field)} "
+                    f"{repr(attr)} (and neither do the {_tname(s.field)} "
                     "elements)")
-        if not cells:
-            if rtype is None:
-                rtype = field
-            return empty(rtype)
+        if not cells and rtype is None:
+            rtype = s.field
         if rtype is None:
             rtype = type(cells[0])
         for cell in cells:
@@ -1793,7 +1871,7 @@ def Matrix(field, shape):
                 raise TypeError(f"expected {_tname(rtype)} typed return from "
                         f"'.__getattr__({repr(attr)})' for consistency, got "
                         f"{_tname(type(cell))})")
-        return Matrix[rtype, shape](cells)
+        return Matrix[rtype, s.shape](cells)
 
 
 
@@ -1802,13 +1880,13 @@ class Single:
         return Matrix[field, Shape.single]
 Single = Single()
 Single.__doc__ = """
-Refers to the single matrix (1x1) over the given field. Note this is not a proper
-templated class, only a thin wrapper.
+Refers to the single (1x1) matrix type over the given field. Note this is not a
+proper templated class, only a thin wrapper.
 """
 
 def single(x, *, field=None):
     """
-    Returns the given object as a single matrix (1x1).
+    Returns a single (1x1) matrix of the given object.
     """
     if field is None:
         field = type(x)
@@ -1826,13 +1904,13 @@ class Empty:
         return Matrix[field, Shape.empty]
 Empty = Empty()
 Empty.__doc__ = """
-Refers to the empty matrix (0x0) over the given field. Note this is not a proper
-templated class, only a thin wrapper.
+Refers to the empty (0x0) matrix type over the given field. Note this is not a
+proper templated class, only a thin wrapper.
 """
 
 def empty(field):
     """
-    Returns an empty matrix (0x0) instance over the given field.
+    Returns an empty (0x0) matrix over the given field.
     """
     return Empty[field](())
 
@@ -1997,12 +2075,12 @@ def long(a):
 
 def stack(axis, *xs, field=None):
     """
-    Stacks the given arrays along the given axis.
+    Stacks the given matrices along the given axis.
     """
     field = _get_field(field)
     xs = _maybe_unpack(xs)
     if not xs:
-        raise ValueError("cannot stack no matrices")
+        return empty(field)
     xs = Single[field].cast(xs, broadcast=False)
 
     if not isinstance(axis, int):
@@ -2021,8 +2099,8 @@ def stack(axis, *xs, field=None):
     newshape = perpshape.withaxis(axis, sum(x.shape[axis] for x in xs))
     for x in xs:
         if x.shape.withaxis(axis, 1) != perpshape:
-            raise TypeError(f"expected {perpshape} perpendicular shape for "
-                    f"stacking, got {x.shape})")
+            raise TypeError(f"expected a perpendicular shape of {perpshape} for "
+                    f"stacking, got {x.shape}")
     # Get lookups.
     offset = [0] * len(xs)
     for i, x in enumerate(xs[:-1]):
@@ -2113,26 +2191,48 @@ def diag(*xs, field=None):
 
 def eye(n, *, field=None):
     """
-    Identity matrix, of the given size.
+    2D identity matrix, of the given size.
     """
     field = _get_field(field)
+    if not isinstance(n, int):
+        raise TypeError(f"expected an integer size, got {_tname(type(n))}")
+    if n < 0:
+        raise ValueError(f"cannot have negative size, got: {n}")
     return Matrix[field, (n, n)].eye
 
-def zeros(rows, cols=None, *, field=None):
+def zeros(*counts, field=None):
     """
-    Zero-filled matrix, defaulting to square if only one size given.
+    Zero-filled matrix of the given size, defaulting to square if only one axis
+    length is given.
     """
     field = _get_field(field)
-    cols = rows if cols is None else cols
-    return Matrix[field, (rows, cols)].zeros
+    counts = _maybe_unpack(counts)
+    for count in counts:
+        if not isinstance(count, int):
+            raise TypeError("expected an integer count, got "
+                    f"{_tname(type(count))}")
+    if any(count < 0 for count in counts):
+        raise ValueError(f"cannot have negative counts, got: {counts}")
+    if len(counts) == 1:
+        counts *= 2
+    return Matrix[field, counts].zeros
 
-def ones(rows, cols=None, *, field=None):
+def ones(*counts, field=None):
     """
-    One-filled matrix, defaulting to square if only one size given.
+    One-filled matrix of the given size, defaulting to square if only one axis
+    length is given.
     """
     field = _get_field(field)
-    cols = rows if cols is None else cols
-    return Matrix[field, (rows, cols)].ones
+    counts = _maybe_unpack(counts)
+    for count in counts:
+        if not isinstance(count, int):
+            raise TypeError("expected an integer count, got "
+                    f"{_tname(type(count))}")
+    if any(count < 0 for count in counts):
+        raise ValueError(f"cannot have negative counts, got: {counts}")
+    if len(counts) == 1:
+        counts *= 2
+    return Matrix[field, counts].ones
 
 
 
@@ -2327,7 +2427,7 @@ def mhelp():
     def printme(name, long):
         name = "  " + name
         print(name, end="")
-        s = long.strip().replace("\n", " ")
+        s = " ".join(long.split())
         w = 0
         while s:
             if w:
@@ -2340,22 +2440,35 @@ def mhelp():
             print(line)
             s = s[len(line):].lstrip()
 
-    def print_attr(name, desc):
+    def print_entry(name, desc):
         s = f"{name} .."
         s += "." * (18 - len(s)) + " "
         printme(s, desc)
 
-    printme("Matrix - ", Matrix.__doc__)
-    print_attr("M.field", "Cell type.")
-    print_attr("M.shape", "Tuple of the size of each dimension.")
-
     Mat = Single[Field]
-    attrs = [(name, attr) for name, attr in vars(Mat).items()
+    attrs = {name: attr for name, attr in vars(Mat).items()
             if attr.__doc__ is not None
             and name != "__module__"
             and name != "__doc__"
-            and name != "template"
-            and name not in Matrix.params]
+            and name != "template"}
+
+    # also chuck the other functions in this file.
+    this_func = _inspect.currentframe().f_code.co_name
+    funcs = {name: obj for name, obj in globals().items()
+            if obj.__doc__ is not None
+            and _inspect.isfunction(obj)
+            and obj.__module__ == __name__
+            and obj.__name__ != this_func}
+
+    # Explicitly print a couple.
+    printme("Matrix - ", Matrix.__doc__)
+    print_entry("lits(field)", lits.__doc__)
+    print_entry("M.field", "Cell type.")
+    print_entry("M.shape", "Sizes for each dimension.")
+    funcs.pop("lits", None)
+    attrs.pop("field", None)
+    attrs.pop("shape", None)
+
 
     func_ops = {
         "__bool__": "bool",
@@ -2391,7 +2504,7 @@ def mhelp():
         "__ge__": ">=",
         "__matmul__": "@",
     }
-    for name, attr in attrs:
+    for name, attr in attrs.items():
         m = "m"
         if isinstance(attr, (classmethod, _classconst)):
             m = "M"
@@ -2429,26 +2542,16 @@ def mhelp():
                 expr = f"{m}.{name}({sig})"
         else:
             expr = f"{m}.{name}"
-        print_attr(expr, attr.__doc__)
+        print_entry(expr, attr.__doc__)
 
-    # also chuck the other functions in this file.
-    funcs = []
-    this_func = _inspect.currentframe().f_code.co_name
-    for obj in globals().values():
-        if not _inspect.isfunction(obj):
-            continue
-        if obj.__module__ != __name__: # must be in this file.
-            continue
-        if obj.__name__ == this_func: # mustnt be this func.
-            continue
-        if obj.__doc__ is None:
-            continue
-        funcs.append(obj)
-
-    for func in funcs:
+    for name, func in funcs.items():
         # Print `Single` just before `single()`.
         if func is single:
-            print_attr("Single[field]", Single.__doc__)
+            print_entry("Single[field]", Single.__doc__)
+        # Print `Empty` just before `empty()`.
+        if func is empty:
+            print_entry("Empty[field]", Empty.__doc__)
+
 
         sig = _inspect.signature(func)
         sig = str(sig)
@@ -2459,5 +2562,5 @@ def mhelp():
             sig = sig[:-len(", field=None")]
         elif sig.endswith(", *, space=None"):
             sig = sig[:-len(", *, space=None")]
-        name = f"{func.__name__}({sig})"
-        print_attr(name, func.__doc__)
+        expr = f"{name}({sig})"
+        print_entry(expr, func.__doc__)

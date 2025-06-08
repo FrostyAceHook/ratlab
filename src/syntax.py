@@ -123,6 +123,14 @@ class _Transformer(_ast.NodeTransformer):
 
         # All list literals are matrices.
         self.wrap_lits = True
+        # If it's immediately wrapped in a tuple, unpack it to have the same
+        # behaviour as subscripting:
+        #  [1,2][(3,4)] == [1 2][3 4]
+        #  [(1,2)][(3,4)] == error typically
+        if len(node.elts) == 1 and isinstance(node.elts[0], _ast.Tuple):
+            tpl = node.elts[0]
+            if isinstance(tpl.ctx, _ast.Load): # ig check its load?
+                node.elts = tpl.elts
         # Transform elements.
         node = self.generic_visit(node)
         # Make it a matrix.

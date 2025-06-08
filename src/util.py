@@ -154,12 +154,15 @@ def iterable(obj):
     return False
 
 
-def tname(t):
+def tname(t, namespaced=False):
     if not isinstance(t, type):
         raise TypeError(f"expected type, got {tname(type(t))}")
-    m = str(t.__module__)
-    m = "" if m == "__main__" or m == "builtins" else m + "."
-    return f"'{m}{t.__name__}'"
+    name = t.__name__
+    if not namespaced:
+        return f"'{name}'"
+    namespace = t.__module__ + "."
+    namespace *= namespace not in {"__main__", "builtins"}
+    return f"'{namespace}{name}'"
 
 
 def immutable(cls):
