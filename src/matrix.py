@@ -313,7 +313,7 @@ def lits(field, *, space=None):
                 return
             try:
                 space[name] = getattr(NewMat, name)
-            except NotImplementedError:
+            except Exception:
                 pass
         inject("e")
         inject("pi")
@@ -796,10 +796,18 @@ def Matrix(field, shape):
                 return x
             convs = {bool: "from_bool", int: "from_int", float: "from_float",
                     complex: "from_complex", str: "from_str"}
-            if type(x) not in convs.keys():
+            cell = None
+            if isinstance(x, cls.field):
+                cell = x
+            elif issubclass(cls.field, GenericField):
+                # the things i do for GenericField...
+                if isinstance(x, cls.field.T):
+                    cell = cls.field(x)
+            elif type(x) in convs.keys():
+                cell = cls._f(convs[type(x)])(x)
+            if cell is None:
                 raise TypeError(f"{_tname(type(x))} cannot operate with "
                         f"{_tname(cls.field)}")
-            x = cls._f(convs[type(x)])(x)
             return single(x, field=cls.field)
         xs = [conv(x) for x in xs]
 
