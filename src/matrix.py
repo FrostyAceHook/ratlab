@@ -787,7 +787,7 @@ def Matrix(field, shape):
         """
         Attempts to cast each object to a matrix over 'field', all with the same
         size. Note that the shape of this class is ignored. If 'broadcast' is
-        false, no shape altering will be performed.
+        false, shapes will be left unchanged.
         """
         xs = _maybe_unpack(xs)
         if not xs:
@@ -2415,6 +2415,23 @@ def logmean(x, y, *, field=None):
     f = lambda a, b: a if (a == b) else (a - b) / (a / b).ln
     return x.apply(f, y)
 
+
+def torad(degrees, *, field=None):
+    """
+    Converts degrees to radians.
+    """
+    field = _get_field(field)
+    x, = Single[field].cast(degrees)
+    # maybe preverse largest subproducts.
+    return x / (180 / x.pi)
+
+def todeg(radians, *, field=None):
+    """
+    Converts radians to degrees.
+    """
+    field = _get_field(field)
+    x, = Single[field].cast(radians)
+    return x * (180 / x.pi)
 
 
 
