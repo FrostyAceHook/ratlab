@@ -51,6 +51,8 @@ def _main():
 
     # If no files, default to cli.
     if not args:
+        # And set an initial field.
+        lits(Real)
         args = ["-"]
 
     # Read and execute each input file, treating "-" as a cli.

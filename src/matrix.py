@@ -636,7 +636,12 @@ def Matrix(field, shape):
         return getattr(cls.field, method)
 
 
-    def __init__(s, cells):
+    def __init__(s, cells, _checkme=True):
+        # living on the edge.
+        if not _checkme:
+            s._cells = cells
+            return
+
         # `cells` is a flattened iterable of each cell, progressing through the
         # matrix in the order of shape (so col-major for 2d).
         if not _iterable(cells):
@@ -867,7 +872,8 @@ def Matrix(field, shape):
             slices = slices[:s.ndim]
             revidxs = _itertools.product(*reversed(slices))
             cells = tuple(s._at(*reversed(revidx)) for revidx in revidxs)
-            return Matrix[s.field, tuple(map(len, slices))](cells)
+            newshape = Shape(map(len, slices))
+            return Matrix[s.field, newshape](cells, _checkme=False)
     @_instconst
     def at(s):
         """
@@ -884,34 +890,20 @@ def Matrix(field, shape):
         """
         Vector of cells in natural iteration order (sequential axes).
         """
-        if s.shape[0] == s.shape.size:
-            return s # skip type checks and such.
-        return Matrix[s.field, (s.shape.size, )](s._cells)
+        return Matrix[s.field, (s.shape.size, )](s._cells, _checkme=False)
 
 
-    def along(s, *axes):
+    def along(s, axis):
         """
-        Tuple of perpendicular matrices along the given axis. When given multiple
-        axes, recursively traverses those axes for each matrix along the previous
-        traversals and returns them flattened.
+        Tuple of perpendicular matrices along the given axis.
         """
-        for axis in axes:
-            if not isinstance(axis, int):
-                raise TypeError(f"expected integer axis, got "
-                        f"{_tname(type(axis))}")
-        if any(axis < 0 for axis in axes):
-            raise ValueError(f"cannot have negative axes, got: {axes}")
-        if len(set(axes)) != len(axes):
-            raise ValueError(f"cannot duplicate axes, got: {axes}")
+        if not isinstance(axis, int):
+            raise TypeError(f"expected integer axis, got {_tname(type(axis))}")
+        if axis < 0:
+            raise ValueError(f"cannot have negative axis, got: {axis}")
         # Empty is empty.
         if s.isempty:
             return ()
-        # Recurse until only along 1 axis.
-        if len(axes) > 1:
-            return tuple(y for x in s.along(axes[0]) for y in x.along(axes[1:]))
-        if not axes:
-            return (s, )
-        axis = axes[0]
         if axis >= s.ndim:
             return (s, )
         def idx(j):
@@ -953,7 +945,7 @@ def Matrix(field, shape):
                 invorder[i] = ii
             remap = lambda ri: [ri[invorder[axis]] for axis in range(s.ndim)]
             cells = (s._at(*remap(idx)) for idx in idxs)
-        return Matrix[s.field, newshape](cells)
+        return Matrix[s.field, newshape](cells, _checkme=False)
 
 
     def rep(s, *counts):
@@ -978,7 +970,7 @@ def Matrix(field, shape):
         for new in newshape.indices():
             old = tuple(a % b for a, b in zip(new, shp))
             cells[newshape.offset(new)] = s._cells[s.shape.offset(old)]
-        return Matrix[s.field, newshape](cells)
+        return Matrix[s.field, newshape](cells, _checkme=False)
 
     def repalong(s, axis, count):
         """
@@ -1021,8 +1013,13 @@ def Matrix(field, shape):
         xs = s._cells.__getitem__(i)
         if not isinstance(xs, tuple):
             xs = (xs, )
-        shp = (len(xs), ) if s.shape[1] == 1 else (1, len(xs))
-        return Matrix[s.field, shp](xs)
+        if not xs:
+            return empty(s.field)
+        if s.issingle:
+            newshape = Shape(len(xs))
+        else:
+            newshape = s.shape.withaxis(s.ndim - 1, len(xs))
+        return Matrix[s.field, newshape](xs, _checkme=False)
 
     def __len__(s):
         """

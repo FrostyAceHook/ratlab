@@ -143,15 +143,11 @@ class instcached:
 
 
 def iterable(obj):
-    if isinstance(obj, _GeneratorType):
-        return True
     try:
         obj.__iter__()
-        obj.__len__()
         return True
     except Exception:
-        pass
-    return False
+        return False
 
 
 def tname(t, namespaced=False):
