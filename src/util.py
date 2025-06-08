@@ -7,30 +7,99 @@ from pathlib import Path as _Path
 from types import GeneratorType as _GeneratorType
 
 
+
+def incremental(func):
+    """
+    Allows the function to have its arguments specified incrementally. The
+    function will be invoked as soon as it can be (i.e. after all mandatory
+    arguments are specified).
+    - function decorator.
+    """
+    sig = _inspect.signature(func)
+    @_functools.wraps(func)
+    def wrapper(*args, **kwargs):
+        try:
+            sig.bind(*args, **kwargs)
+        except TypeError:
+            @_functools.wraps(func)
+            def wrapper_next(*args_next, **kwargs_next):
+                return wrapper(*(args + args_next), **(kwargs | kwargs_next))
+            return wrapper_next
+        return func(*args, **kwargs)
+    return wrapper
+
+
+
+class _Cached:
+    def __init__(self, func, sig):
+        self.cache = {}
+        self.func = func
+        self.sig = sig
+        _functools.update_wrapper(self, func)
+
+    def keyof(self, *args, **kwargs):
+        bound_args = self.sig.bind(*args, **kwargs)
+        bound_args.apply_defaults()
+        return tuple(bound_args.arguments.items())
+
+    def __contains__(self, args):
+        if not isinstance(args, tuple):
+            args = (args, )
+        return self.iscached(*args)
+
+    def iscached(self, *args, **kwargs):
+        key = self.keyof(*args, **kwargs)
+        return key in self.cache
+
+    @property
+    def values(self):
+        return tuple(self.cache.values())
+
+    def __call__(self, *args, **kwargs):
+        key = self.keyof(*args, **kwargs)
+        if key not in self.cache:
+            self.cache[key] = self.func(*args, **kwargs)
+        return self.cache[key]
+
+@incremental
+def cached(func, forwards_to=None):
+    """
+    Caches returns from a function, so any identical-inputs will return the same
+    object (and potentially be faster who knows).
+    - paramed function decorator.
+    """
+    if forwards_to is None:
+        sig = _inspect.signature(func)
+    else:
+        sig = _inspect.signature(forwards_to)
+    return _Cached(func, sig)
+
+
+
 class classconst:
     """
-    Makes the given method a cached class property.
+    Makes the given method a class property.
     - method decorator.
     """
     def __init__(self, fget):
         self._fget = fget
-        self._cache = {}
         _functools.update_wrapper(self, fget)
 
     def __get__(self, instance, owner):
-        if owner not in self._cache:
-            self._cache[owner] = self._fget(owner)
-        return self._cache[owner]
+        return self._fget(owner)
+
 
 class instconst:
     """
-    Makes the given method a cached instance property.
+    Makes the given method an instance property.
     - method decorator.
     """
     def __init__(self, fget):
         self._fget = fget
-        self._attr_name = f"_cached_{fget.__name__}"
         _functools.update_wrapper(self, fget)
+
+    def __set_name__(self, owner, name):
+        self._cache_name = f"_cached_{name}"
 
     def __get__(self, instance, owner):
         if instance is None:
@@ -38,9 +107,38 @@ class instconst:
         return self(instance)
 
     def __call__(self, instance):
-        if not hasattr(instance, self._attr_name):
-            setattr(instance, self._attr_name, self._fget(instance))
-        return getattr(instance, self._attr_name)
+        return self._fget(instance)
+
+
+class instcached:
+    """
+    Makes the given method a cached instance method.
+    - method decorator.
+    """
+    def __init__(self, fget):
+        self._fget = fget
+        _functools.update_wrapper(self, fget)
+
+    def __set_name__(self, owner, name):
+        self._cache_name = f"_cached_{name}"
+
+    def __get__(self, instance, owner):
+        if instance is None:
+            return self
+
+        if not hasattr(instance, self._cache_name):
+            # Get the signature without the first arg.
+            sig = _inspect.signature(self._fget)
+            params = list(sig.parameters.values())
+            params = params[1:]
+            sig = sig.replace(parameters=params)
+            # Wrap to auto-include instance.
+            @_functools.wraps(self._fget)
+            def wrapper(*args, **kwargs):
+                return self._fget(instance, *args, **kwargs)
+            cache = _Cached(wrapper, sig)
+            setattr(instance, self._cache_name, cache)
+        return getattr(instance, self._cache_name)
 
 
 
@@ -67,7 +165,8 @@ def tname(t):
 def immutable(cls):
     """
     Make the given class immutable (outside the `__init__` method), however
-    allows the creation of new underscore attributes. When a class inherits from this, it will be mutable except for the members which were assigned during
+    allows the creation of new underscore attributes. When a class inherits from
+    this, it will be mutable except for the members which were assigned during
     the immutable classes `__init__`.
     - class decorator.
     """
@@ -117,76 +216,8 @@ def immutable(cls):
     return cls
 
 
-def incremental(func):
-    """
-    Allows the function to have its arguments specified incrementally. The
-    function will be invoked as soon as it can be (i.e. after all mandatory
-    arguments are specified).
-    - function decorator.
-    """
-    sig = _inspect.signature(func)
-    @_functools.wraps(func)
-    def wrapper(*args, **kwargs):
-        try:
-            sig.bind(*args, **kwargs)
-        except TypeError:
-            @_functools.wraps(func)
-            def wrapper_next(*args_next, **kwargs_next):
-                return wrapper(*(args + args_next), **(kwargs | kwargs_next))
-            return wrapper_next
-        return func(*args, **kwargs)
-    return wrapper
 
-
-
-@immutable
-class _Cached:
-    def __init__(self, func, sig):
-        self.cache = {}
-        self.func = func
-        self.sig = sig
-        _functools.update_wrapper(self, func)
-
-    def keyof(self, *args, **kwargs):
-        bound_args = self.sig.bind(*args, **kwargs)
-        bound_args.apply_defaults()
-        return tuple(bound_args.arguments.items())
-
-    def __contains__(self, args):
-        if not isinstance(args, tuple):
-            args = (args, )
-        return self.iscached(*args)
-
-    def iscached(self, *args, **kwargs):
-        key = self.keyof(*args, **kwargs)
-        return key in self.cache
-
-    @property
-    def values(self):
-        return tuple(self.cache.values())
-
-    def __call__(self, *args, **kwargs):
-        key = self.keyof(*args, **kwargs)
-        if key not in self.cache:
-            self.cache[key] = self.func(*args, **kwargs)
-        return self.cache[key]
-
-@incremental
-def cached(func, forwards_to=None):
-    """
-    Caches returns from a function, so any identical-inputs will return the same
-    object (and potentially be faster who knows).
-    - paramed function decorator.
-    """
-    if forwards_to is None:
-        sig = _inspect.signature(func)
-    else:
-        sig = _inspect.signature(forwards_to)
-    return _Cached(func, sig)
-
-
-
-def get_locals(func, /, *args, **kwargs):
+def get_locals(func, *args, **kwargs):
     """
     Returns `func_ret, func_locals`, where locals is a dict of all the locals
     variables on return from `func`.

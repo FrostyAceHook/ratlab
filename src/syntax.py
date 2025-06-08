@@ -24,13 +24,11 @@ import matrix as _matrix
 
 
 def _literal(x):
-    if _matrix.lits.field is None:
-        raise RuntimeError("specify a field using 'lits'")
-    if isinstance(x, _matrix.Matrix):
-        return x
-    return _matrix.Single[_matrix.lits.field].cast(x)
+    field = _matrix._get_field(None)
+    [x] = _matrix.Single[field].cast(x)
+    return x
 
-def _hstack(xs):
+def _hstack(*xs):
     return _matrix.hstack(*xs)
 
 def _vstack(mat, idx):
@@ -38,7 +36,7 @@ def _vstack(mat, idx):
         raise TypeError("cannot use slices as matrix elements")
     if not isinstance(idx, tuple):
         idx = (idx, )
-    newrow = _hstack(idx)
+    newrow = _hstack(*idx)
     return _matrix.vstack(mat, newrow)
 
 def _is_hvstack(node):
@@ -119,14 +117,16 @@ class _Transformer(_ast.NodeTransformer):
         return node
 
     def visit_List(self, node):
+        # Only transform loads into matrices.
+        if not isinstance(node.ctx, _ast.Load):
+            return self.generic_visit(node)
+
         # All list literals are matrices.
         self.wrap_lits = True
-
         # Transform elements.
         node = self.generic_visit(node)
-
         # Make it a matrix.
-        return _ast_call("_hstack", node)
+        return _ast_call("_hstack", *node.elts)
 
     def visit_Subscript(self, node):
         what = "subscript"
