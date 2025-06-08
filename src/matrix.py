@@ -808,7 +808,7 @@ def Matrix(field, shape):
             if cell is None:
                 raise TypeError(f"{_tname(type(x))} cannot operate with "
                         f"{_tname(cls.field)}")
-            return single(x, field=cls.field)
+            return single(cell, field=cls.field)
         xs = [conv(x) for x in xs]
 
         # Handle empties.
