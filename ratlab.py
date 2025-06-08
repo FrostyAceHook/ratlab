@@ -29,11 +29,20 @@ import syntax as _syntax
 
 
 def _main():
-    print(
-        ",--------------------------,\n"
-        "|    RATLAB® Stuart Inc.   |\n"
-        "'--------------------------'\n"
-    )
+    # Print big beautiful logo (the creation of which put Stuart Inc. trillions
+    # of dollars further into debt).
+    # gradient from cyan to gold to cyan.
+    col = [   51,   80, 121, 114, 155,  190,  226,  220]
+    top = [",--", "--", "-", "-", "-", "--", "--", "--"]
+    bot = ["'--", "--", "-", "-", "-", "--", "--", "--"]
+    rat = ["|", " ", " ", " ", " ", "RAT", "LAB", "® S",
+           "tua", "rt ", "Inc", ".", " ", " ", " ", "|"]
+    col += col[::-1]
+    top += [x[::-1] for x in top[::-1]]
+    bot += [x[::-1] for x in bot[::-1]]
+    print(_syntax.coloured(col, top))
+    print(_syntax.coloured(col, rat))
+    print(_syntax.coloured(col, bot))
 
     # Public globals as initial variable space.
     space = {k: v for k, v in globals().items() if not k.startswith("_")}

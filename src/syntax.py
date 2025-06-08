@@ -1,13 +1,52 @@
 import ast as _ast
 import codeop as _codeop
 import contextlib as _contextlib
+import linecache as _linecache
 import io as _io
+import itertools as _itertools
 import os as _os
+import re as _re
 import traceback as _traceback
 import warnings as _warnings
 from pathlib import Path as _Path
 
 import matrix as _matrix
+from util import tname as _tname
+
+
+def coloured(cols, txts):
+    """
+    When given the colour 'cols' and text 'txts' arrays, prints each element of
+    the text as its corresponding colour. Colour codes can be found at:
+    https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
+    """
+    if isinstance(cols, int):
+        cols = (cols, )
+    if isinstance(txts, str):
+        txts = (txts, )
+    if len(cols) != len(txts):
+        raise TypeError("must give one colour for each piece of text, got "
+                f"{len(cols)} colours and {len(txts)} texts")
+    for col in cols:
+        if not isinstance(col, int):
+            raise TypeError("expected integer color code, got "
+                    f"{_tname(type(col))}")
+    for txt in txts:
+        if not isinstance(txt, str):
+            raise TypeError(f"expected string text, got {_tname(type(txt))}")
+    def colour(c, t):
+        if c < 0:
+            return t
+        if not t:
+            return t
+        return f"\x1B[38;5;{c}m{t}"
+    segs = "".join(colour(c, t) for c, t in zip(cols, txts)) # funny
+    return segs + "\x1B[0m" if segs else ""
+
+# Hack to enable console escape codes.
+_os.system("")
+
+
 
 # Overview of syntax changes:
 # - added 'lst' "keyword" to create list literals via `lst[1,2,3]`
@@ -208,9 +247,9 @@ def _print_nonnone(x):
     if x is not None:
         print(repr(x))
 
-def _parse(source, name, feedback):
+def _parse(source, filename, feedback):
     # Parse the code.
-    module = _ast.parse(source, name)
+    module = _ast.parse(source, filename)
     module = _Transformer().visit(module)
 
     # If requested, and a print-if-nonnone if the entire thing is an expression.
@@ -225,31 +264,103 @@ def _parse(source, name, feedback):
     module = _ast.fix_missing_locations(module)
     return module
 
-def _execute(source, space, feedback=False):
+def _print_exc(exc, callout, tb=False):
+    def colour(line):
+        if not line.strip():
+            # Blank.
+            return ""
+        elif line.startswith("Traceback "):
+            # "Traceback (most recent call last):".
+            return coloured(203, line)
+        elif all(c in set(" ~^") for c in line):
+            # Markings.
+            txts = ["".join(g) for _, g in _itertools.groupby(line)]
+            cols = [{" ": -1, "~": 55, "^": 93}[x[0]] for x in txts]
+            return coloured(cols, txts)
+        elif line.startswith("  File"):
+            # Traceback file+line.
+            if False and line.endswith(", in <module>"):
+                # not a big fan of "in <module>", mostly bc it inconsistently
+                # shows up, but ig leave it in for now.
+                line = line[:len(", in <module>")]
+            # regex me.
+            with_in = r'(\s*File )(".*?")(, line )(\d+)(, in )(\S+)'
+            without_in = r'(\s*File )(".*?")(, line )(\d+)'
+            match = _re.match(with_in, line)
+            if match is not None:
+                txts = list(match.groups())
+                cols = [7, 244, 255, 244, 7, 165, 7, 34]
+            else:
+                match = _re.match(without_in, line)
+                if match is None:
+                    return line
+                txts = list(match.groups())
+                cols = [7, 244, 255, 244, 7, 165]
+            fname = txts.pop(1)
+            if fname[:2] == '"<' and fname[-2:] == '>"':
+                txts.insert(1, fname)
+                cols.pop(3)
+                cols.pop(2)
+            elif _os.sep not in fname:
+                txts.insert(1, fname[0])
+                txts.insert(2, fname[1:-1])
+                txts.insert(3, fname[-1])
+            else:
+                folder, file = fname.rsplit(_os.sep, 1)
+                txts.insert(1, folder + _os.sep)
+                txts.insert(2, file[:-1])
+                txts.insert(3, file[-1])
+            return coloured(cols, txts)
+        elif _re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*:', line) is not None:
+            # Specific exception and its message.
+            txts = line.split(":", 1)
+            txts[0] += ":"
+            return coloured([163, 171], txts)
+        # otherwise assume source code or something.
+        # actually the "During handling of the ..." line also falls here.
+        return line
+    if not tb:
+        etb = None
+    else:
+        etb = exc.__traceback__
+        if etb is not None:
+            # Cut the `exec` call from the traceback.
+            etb = etb.tb_next
+    tbe = _traceback.TracebackException(type(exc), exc, etb)
+    old = "".join(tbe.format())
+    new = "\n".join(colour(line) for line in old.splitlines())
+    print(coloured(124, f"## {callout}"))
+    print(new)
+
+
+def _execute(source, space, filename="<rat>", feedback=True):
+    # Store cli source for nice error printing.
+    if filename == "<rat>":
+        lines = [line + "\n" for line in source.splitlines()]
+        _linecache.cache[filename] = (len(source), None, lines, filename)
     try:
         # Transform and compile.
-        parsed = _parse(source, name="<rat>", feedback=feedback)
-        compiled = compile(parsed, "<rat>", "exec")
+        parsed = _parse(source, filename=filename, feedback=feedback)
+        compiled = compile(parsed, filename=filename, mode="exec")
     except Exception as e:
-        print("## TYPO:")
-        _traceback.print_exception(type(e), e, None)
+        _print_exc(e, "TYPO", tb=False)
         return False
     try:
         # Splice _syntax into this bitch.
         if "_syntax" not in space:
             space["_syntax"] = __import__(__name__)
         if space["_syntax"] is not __import__(__name__):
-            raise ValueError("reserved '_syntax' set within variable space")
+            raise RuntimeError("reserved '_syntax' set within variable space")
         # Splice the space into itself.
         if "_space" not in space:
             space["_space"] = space
         if space["_space"] is not space:
-            raise ValueError("reserved '_space' set within variable space")
-        # Execute.
-        exec(compiled, space, space)
+            raise RuntimeError("reserved '_space' set within variable space")
+        # Execute. i dont remember now lmao but past me had issues when `locals`
+        # wasnt also set to the global space. probably some shitting bug idk.
+        exec(compiled, locals=space, globals=space)
     except Exception as e:
-        print("## ERROR:")
-        _traceback.print_exception(type(e), e, e.__traceback__)
+        _print_exc(e, "ERROR", tb=True)
         return False
     return True
 
@@ -265,7 +376,8 @@ def run_cli(space):
         source = ""
         while True:
             try:
-                line = input(">> " if not source else ".. ")
+                print(coloured(73, ".. " if source else ">> "), end="")
+                line = input()
             except EOFError:
                 break
             source += "\n"*(not not source) + line
@@ -295,9 +407,9 @@ def run_cli(space):
         if stripped == "cls":
             _os.system("cls")
             continue
-        _execute(source, space, feedback=True)
+        _execute(source, space)
     if leave:
-        print("-- okie leaving.")
+        print(coloured([73, 80], ["-- ", "okie leaving."]))
 
 
 
@@ -321,36 +433,66 @@ def run_file(path, space):
         s = s.replace("\\", "\\\\")
         return quote + s + quote
 
-    def query(msg):
-        msg = f"{msg} (y/n/a): "
-        if query.all:
-            print(msg + "y")
-            return True
+    def coloured_esc(path):
+        cols = [244, 255, 244]
+        string = esc(path)
+        if "/" not in string:
+            txts = [string[0], string[1:-1], string[-1]]
+        else:
+            pre, aft = string.rsplit("/", 1)
+            txts = [pre + "/", aft[:-1], aft[-1]]
+        return cols, txts
+
+    def query(before, path, after=""):
+        if before:
+            before = before + " "
+        if after:
+            after = " " + after
+        txts = [before, after, ", ignore?", " (y/n): "]
+        cols = [   203,   203,         203,        210]
+        pcols, ptxts = coloured_esc(path)
+        txts[1:1] = ptxts
+        cols[1:1] = pcols
+        msg = coloured(cols, txts)
         while True:
             response = input(msg).strip().casefold()
             if not response:
                 continue
-            if response in "yna":
-                query.all = (response == "a")
+            if response in "yn":
                 return response != "n"
-    query.all = False
+
+    def error(before, path, after=""):
+        if before:
+            before = before + " "
+        if after:
+            after = " " + after
+        txts = ["ratlab: error: ", before, after]
+        cols = [              124,    203,   203]
+        pcols, ptxts = coloured_esc(path)
+        txts[2:2] = ptxts
+        cols[2:2] = pcols
+        print(coloured(cols, txts))
+        quit()
+
 
     # Handle missing/invalid paths.
     bad = False
     if not path.exists():
         bad = True
-        ignore = query(f"file {esc(path)} doesn't exist, ignore?")
+        ignore = query("file", path, "doesn't exist")
     elif not path.is_file():
         bad = True
-        ignore = query(f"path {esc(path)} is not a file, ignore?")
+        ignore = query("path", path, "is not a file")
     if bad:
         if not ignore:
-            print("ratlab: error: missing file", esc(path))
-            quit()
+            error("missing file", path)
         return
 
     # Read and execute the file.
     with path.open("r", encoding="utf-8") as file:
         source = file.read()
-        if not _execute(source, space, feedback=False):
-            quit()
+        if not _execute(source, space, filename=str(path), feedback=False):
+            ignore = query("exception in file", path)
+            if not ignore:
+                error("exception in file", path)
+            return
