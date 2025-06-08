@@ -11,40 +11,7 @@ import warnings as _warnings
 from pathlib import Path as _Path
 
 import matrix as _matrix
-from util import tname as _tname
-
-
-def coloured(cols, txts):
-    """
-    When given the colour 'cols' and text 'txts' arrays, prints each element of
-    the text as its corresponding colour. Colour codes can be found at:
-    https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
-    """
-    if isinstance(cols, int):
-        cols = (cols, )
-    if isinstance(txts, str):
-        txts = (txts, )
-    if len(cols) != len(txts):
-        raise TypeError("must give one colour for each piece of text, got "
-                f"{len(cols)} colours and {len(txts)} texts")
-    for col in cols:
-        if not isinstance(col, int):
-            raise TypeError("expected integer color code, got "
-                    f"{_tname(type(col))}")
-    for txt in txts:
-        if not isinstance(txt, str):
-            raise TypeError(f"expected string text, got {_tname(type(txt))}")
-    def colour(c, t):
-        if c < 0:
-            return t
-        if not t:
-            return t
-        return f"\x1B[38;5;{c}m{t}"
-    segs = "".join(colour(c, t) for c, t in zip(cols, txts)) # funny
-    return segs + "\x1B[0m" if segs else ""
-
-# Hack to enable console escape codes.
-_os.system("")
+from util import tname as _tname, coloured as _coloured
 
 
 
@@ -271,12 +238,12 @@ def _print_exc(exc, callout, tb=False):
             return ""
         elif line.startswith("Traceback "):
             # "Traceback (most recent call last):".
-            return coloured(203, line)
+            return _coloured(203, line)
         elif all(c in set(" ~^") for c in line):
             # Markings.
             txts = ["".join(g) for _, g in _itertools.groupby(line)]
             cols = [{" ": -1, "~": 55, "^": 93}[x[0]] for x in txts]
-            return coloured(cols, txts)
+            return _coloured(cols, txts)
         elif line.startswith("  File"):
             # Traceback file+line.
             if False and line.endswith(", in <module>"):
@@ -310,12 +277,12 @@ def _print_exc(exc, callout, tb=False):
                 txts.insert(1, folder + _os.sep)
                 txts.insert(2, file[:-1])
                 txts.insert(3, file[-1])
-            return coloured(cols, txts)
+            return _coloured(cols, txts)
         elif _re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*:', line) is not None:
             # Specific exception and its message.
             txts = line.split(":", 1)
             txts[0] += ":"
-            return coloured([163, 171], txts)
+            return _coloured([163, 171], txts)
         # otherwise assume source code or something.
         # actually the "During handling of the ..." line also falls here.
         return line
@@ -329,7 +296,7 @@ def _print_exc(exc, callout, tb=False):
     tbe = _traceback.TracebackException(type(exc), exc, etb)
     old = "".join(tbe.format())
     new = "\n".join(colour(line) for line in old.splitlines())
-    print(coloured(124, f"## {callout}"))
+    print(_coloured(124, f"## {callout}"))
     print(new)
 
 
@@ -376,7 +343,7 @@ def run_cli(space):
         source = ""
         while True:
             try:
-                print(coloured(73, ".. " if source else ">> "), end="")
+                print(_coloured(73, ".. " if source else ">> "), end="")
                 line = input()
             except EOFError:
                 break
@@ -409,11 +376,11 @@ def run_cli(space):
             continue
         _execute(source, space)
     if leave:
-        print(coloured([73, 80], ["-- ", "okie leaving."]))
+        print(_coloured([73, 80], ["-- ", "okie leaving."]))
 
 
 
-def run_file(path, space):
+def run_file(space, path, has_next):
     """
     Executes the file at the given path. `space` should be a globals()-type
     dictionary of variables to expose (and it will be modified).
@@ -453,7 +420,7 @@ def run_file(path, space):
         pcols, ptxts = coloured_esc(path)
         txts[1:1] = ptxts
         cols[1:1] = pcols
-        msg = coloured(cols, txts)
+        msg = _coloured(cols, txts)
         while True:
             response = input(msg).strip().casefold()
             if not response:
@@ -471,7 +438,7 @@ def run_file(path, space):
         pcols, ptxts = coloured_esc(path)
         txts[2:2] = ptxts
         cols[2:2] = pcols
-        print(coloured(cols, txts))
+        print(_coloured(cols, txts))
         quit()
 
 
@@ -491,8 +458,10 @@ def run_file(path, space):
     # Read and execute the file.
     with path.open("r", encoding="utf-8") as file:
         source = file.read()
-        if not _execute(source, space, filename=str(path), feedback=False):
-            ignore = query("exception in file", path)
-            if not ignore:
-                error("exception in file", path)
+    if not _execute(source, space, filename=str(path), feedback=False):
+        if not has_next:
             return
+        ignore = query("exception in file", path)
+        if not ignore:
+            error("exception in file", path)
+        print(_coloured([73, 80], ["-- ", "okie continuing."]))

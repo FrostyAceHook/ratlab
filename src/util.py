@@ -161,6 +161,39 @@ def tname(t, namespaced=False):
     return f"'{namespace}{name}'"
 
 
+def coloured(cols, txts):
+    """
+    When given the colour 'cols' and text 'txts' arrays, prints each element of
+    the text as its corresponding colour. Colour codes can be found at:
+    https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
+    """
+    if isinstance(cols, int):
+        cols = (cols, )
+    if isinstance(txts, str):
+        txts = (txts, )
+    if len(cols) != len(txts):
+        raise TypeError("must give one colour for each piece of text, got "
+                f"{len(cols)} colours and {len(txts)} texts")
+    for col in cols:
+        if not isinstance(col, int):
+            raise TypeError("expected integer color code, got "
+                    f"{_tname(type(col))}")
+    for txt in txts:
+        if not isinstance(txt, str):
+            raise TypeError(f"expected string text, got {_tname(type(txt))}")
+    def colour(c, t):
+        if c < 0:
+            return t
+        if not t:
+            return t
+        return f"\x1B[38;5;{c}m{t}"
+    segs = "".join(colour(c, t) for c, t in zip(cols, txts)) # funny
+    return segs + "\x1B[0m" if segs else ""
+
+# Hack to enable console escape codes.
+_os.system("")
+
+
 def immutable(cls):
     """
     Make the given class immutable (outside the `__init__` method), however
@@ -353,57 +386,3 @@ def templated(creator, parents=(), decorators=(), metaclass=type):
     _functools.update_wrapper(Creator, creator)
     return Creator
     # not confusing at all
-
-
-
-class MISSING:
-    def __enter__(self):
-        return self
-    def __exit__(self, etype, evalue, traceback):
-        return False
-MISSING = MISSING()
-
-def readfile(path):
-    path = _Path(path)
-
-    def esc(path):
-        s = str(path)
-        # Always use forward slash separators for paths.
-        if _os.name == "nt":
-            s = s.replace("\\", "/")
-        # Escape any control codes, using repr and trimming its quotes.
-        for i in _itertools.chain(range(0x00, 0x20), range(0x7F, 0xA0)):
-            s = s.replace(chr(i), repr(chr(i))[1:-1])
-        quote = "\"" if ("'" in s) else "'"
-        s = s.replace(quote, "\\" + quote)
-        s = s.replace("\\", "\\\\")
-        return quote + s + quote
-
-    def query(msg):
-        msg = f"{msg} (y/n/a): "
-        if query.all:
-            print(msg + "y")
-            return True
-        while True:
-            response = input(msg).strip().casefold()
-            if not response:
-                continue
-            if response in "yna":
-                query.all = (response == "a")
-                return response != "n"
-    query.all = False
-
-    bad = False
-    if not path.exists():
-        bad = True
-        ignore = query(f"file {esc(path)} doesn't exist, ignore?")
-    elif not path.is_file():
-        bad = True
-        ignore = query(f"path {esc(path)} is not a file, ignore?")
-    if bad:
-        if not ignore:
-            print("ratlab: error: missing file", esc(path))
-            quit()
-        return None
-
-    return path.open("r", encoding="utf-8")

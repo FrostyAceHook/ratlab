@@ -40,9 +40,9 @@ def _main():
     col += col[::-1]
     top += [x[::-1] for x in top[::-1]]
     bot += [x[::-1] for x in bot[::-1]]
-    print(_syntax.coloured(col, top))
-    print(_syntax.coloured(col, rat))
-    print(_syntax.coloured(col, bot))
+    print(util.coloured(col, top))
+    print(util.coloured(col, rat))
+    print(util.coloured(col, bot))
 
     # Public globals as initial variable space.
     space = {k: v for k, v in globals().items() if not k.startswith("_")}
@@ -56,11 +56,11 @@ def _main():
         args = ["-"]
 
     # Read and execute each input file, treating "-" as a cli.
-    for path in args:
+    for i, path in enumerate(args):
         if path.strip() == "-":
             _syntax.run_cli(space)
         else:
-            _syntax.run_file(path, space)
+            _syntax.run_file(space, path, i < len(args) - 1)
 
 if __name__ == "__main__":
     _main()
