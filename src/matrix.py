@@ -1454,8 +1454,8 @@ def Matrix(field, shape):
             ret = func(*y)
             if isinstance(ret, Matrix):
                 if not ret.issingle:
-                    raise TypeError("expected 'func' to return a single matrix, "
-                            f"got {ret.shape}")
+                    raise TypeError("expected 'func' to return a single, got "
+                            f"{ret.shape}")
                 ret = ret._cells[0]
             if rtype is None:
                 rtype = type(ret)
@@ -2143,13 +2143,13 @@ def vstack(*xs, field=None):
     """
     Vertically concatenates the given matrices.
     """
-    return stack(0, xs, field=field)
+    return stack(0, *xs, field=field)
 
 def hstack(*xs, field=None):
     """
     Horizontally concatenates the given matrices.
     """
-    return stack(1, xs, field=field)
+    return stack(1, *xs, field=field)
 
 def ravel(*xs, field=None):
     """
@@ -2170,7 +2170,7 @@ def rep(x, *counts, field=None):
     """
     field = _get_field(field)
     x, = Single[field].cast(x)
-    return x.rep(counts)
+    return x.rep(*counts)
 
 def repalong(x, axis, count, *, field=None):
     """
@@ -2181,12 +2181,14 @@ def repalong(x, axis, count, *, field=None):
     return x.repalong(axis, count)
 
 
-# def mat(*xs, field=None):
-#     """
-#     Returns a matrix from the given iterables.
-#     """
-#     stack = []
-#     while stack:
+def mat(*xs, field=None):
+    """
+    Returns a column vector of the given elements, unpacking if given one
+    iterable.
+    """
+    field = _get_field(field)
+    xs = _maybe_unpack(xs)
+    return vstack(Single[field].cast(xs, broadcast=False))
 
 
 def diag(*xs, field=None):
