@@ -532,7 +532,7 @@ class Shape:
         if offset < 0:
             raise ValueError(f"offset cannot be negative, got {offset}")
         if offset >= s.size:
-            raise IndexError(f"offset {offset} out-of-bounds for size "
+            raise IndexError(f"offset {offset} out of bounds for size "
                     f"{s.size}")
         return tuple(offset % s.stride(ii) for ii in range(s.ndim))
 
@@ -547,11 +547,12 @@ class Shape:
             if not isinstance(i, int):
                 raise TypeError("expected an integer index, got "
                         f"{_tname(type(i))} at index {ii}")
+        oldijk = ijk
         ijk = [i + (i < 0) * s[ii] for ii, i in enumerate(ijk)]
         for ii, i in enumerate(ijk):
             if i not in range(s[ii]):
-                raise IndexError(f"index {i} out-of-bounds for axis {ii} with "
-                        f"length {s[ii]}")
+                raise IndexError(f"index {oldijk[ii]} out of bounds for axis "
+                        f"{ii} with length {s[ii]}")
         return sum(i * s.stride(ii) for ii, i in enumerate(ijk))
 
 
@@ -848,20 +849,21 @@ def Matrix(field, shape):
                 raise ValueError("cannot index empty")
             def process(i, ii):
                 if isinstance(i, slice):
-                    return tuple(range(*i.indices(s.shape[ii])))
+                    return list(range(*i.indices(s.shape[ii])))
                 if _iterable(i):
-                    return i
+                    return list(i)
                 if isinstance(i, int):
-                    return (i, )
+                    return [i]
                 raise TypeError("expected an integer or slice access, got "
                         f"{_tname(type(i))} for axis {ii}")
             ijk += (slice(None), ) * (s.ndim - len(ijk))
             slices = [process(i, ii) for ii, i in enumerate(ijk)]
-            for ii, slc in enumerate(slices[s.ndim:]):
-                for i in slc:
-                    if i != 0:
-                        raise IndexError(f"index {i} out-of-bounds for axis "
-                                f"{s.ndim + ii} with length 1")
+            for axis, idxs in enumerate(slices):
+                for ii, i in enumerate(idxs):
+                    idxs[ii] += s.shape[axis] * (i < 0)
+                    if idxs[ii] not in range(s.shape[axis]):
+                        raise IndexError(f"index {i} out of bounds for axis "
+                                f"{axis} with length {s.shape[axis]}")
             slices = slices[:s.ndim]
             revidxs = _itertools.product(*reversed(slices))
             cells = tuple(s._at(*reversed(revidx)) for revidx in revidxs)
@@ -983,7 +985,8 @@ def Matrix(field, shape):
         Repeats this matrix 'count' times along 'axis'.
         """
         if not isinstance(axis, int):
-            raise TypeError(f"expected an integer axis, got {_tname(type(axis))}")
+            raise TypeError(f"expected an integer axis, got "
+                    f"{_tname(type(axis))}")
         if axis < 0:
             raise ValueError(f"axis cannot be negative, got: {axis}")
         return s.rep((1, )*axis + (count, ))
@@ -1005,6 +1008,16 @@ def Matrix(field, shape):
         if not s.isvec:
             raise TypeError(f"only vectors have bare getitem, got {s.shape} "
                     "(use .at for matrix cell access)")
+        if isinstance(i, int):
+            i += s.size * (i < 0)
+            if i not in range(s.size):
+                raise IndexError(f"index {i} out of bounds for size {s.size}")
+        elif isinstance(i, slice):
+            # all slices are valid indexers.
+            pass
+        else:
+            raise TypeError("expected integer or slice to index vector, got "
+                    f"{_tname(type(i))}")
         xs = s._cells.__getitem__(i)
         if not isinstance(xs, tuple):
             xs = (xs, )
