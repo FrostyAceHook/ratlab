@@ -1,39 +1,36 @@
 import math
 
 import matrix
-from fields.real import Real
-from util import classconst, immutable
-from matrix import Single, single
+from util import classconst, immutable, tname
 
 
 @immutable
 class Complex(matrix.Field):
-    def __init__(self, re=single(Real()), im=single(Real()), *, isnan=False):
-        if not isinstance(re, Single[Real]):
-            raise TypeError("real value must be a Real")
-        if not isinstance(im, Single[Real]):
-            raise TypeError("imaginary value must be a Real")
+    def __init__(self, re=0.0, im=0.0, *, isnan=False):
+        if not isinstance(re, float):
+            raise TypeError(f"expected float for re, got {tname(type(re))}")
+        if not isinstance(im, float):
+            raise TypeError(f"expected float for im, got {tname(type(im))}")
         if not isinstance(isnan, bool):
-            raise TypeError("isnan must be a bool")
-        if re.isnan or im.isnan:
+            raise TypeError(f"expected bool for isnan, got {tname(type(isnan))}")
+        if isnan or re != re or im != im:
             isnan = True
+            re = float("nan")
+            im = float("nan")
         self.isnan = isnan
-        if not isnan:
-            self.re = re
-            self.im = im
+        self.re = re
+        self.im = im
 
 
     @classmethod
     def from_int(cls, x):
-        return cls(Single[Real].cast(x))
+        return cls(float(x))
     @classmethod
     def from_float(cls, x):
-        return cls(Single[Real].cast(x))
+        return cls(x)
     @classmethod
     def from_complex(cls, x):
-        re = Single[Real].cast(x.real)
-        im = Single[Real].cast(x.imag)
-        return cls(re, im)
+        return cls(x.real, x.imag)
 
     @classmethod
     def to_int(cls, a):
@@ -59,23 +56,31 @@ class Complex(matrix.Field):
 
     @classconst
     def zero(cls):
-        return cls(single(Real(0.0)))
+        return cls(0.0)
     @classconst
     def one(cls):
-        return cls(single(Real(1.0)))
+        return cls(1.0)
 
     @classmethod
     def add(cls, a, b):
+        if a.isnan or b.isnan:
+            return cls(isnan=True)
         return cls(a.re + b.re, a.im + b.im)
     @classmethod
     def sub(cls, a, b):
+        if a.isnan or b.isnan:
+            return cls(isnan=True)
         return cls(a.re - b.re, a.im - b.im)
     @classmethod
     def absolute(cls, a):
-        return cls((a.re * a.re + a.im * a.im).sqrt)
+        if a.isnan:
+            return cls(isnan=True)
+        return cls(math.sqrt(a.re * a.re + a.im * a.im))
 
     @classmethod
     def mul(cls, a, b):
+        if a.isnan or b.isnan:
+            return cls(isnan=True)
         # (a.re + i a.im)(b.re + i b.im)
         # = a.re b.re - a.im b.im + i (a.im b.re + a.re b.im)
         re = a.re * b.re - a.im * b.im
@@ -83,6 +88,8 @@ class Complex(matrix.Field):
         return cls(re, im)
     @classmethod
     def div(cls, a, b):
+        if a.isnan or b.isnan:
+            return cls(isnan=True)
         # (a.re + i a.im)/(b.re + i b.im)
         #
         #   (a.re b.re + a.im b.im) + i (a.im b.re - a.re b.im)
@@ -97,35 +104,47 @@ class Complex(matrix.Field):
 
     @classmethod
     def power(cls, a, b):
+        if a.isnan or b.isnan:
+            return cls(isnan=True)
         def exp(x):
             # e^(a.re + i a.im)
-            # = e^a.re * e^(i a.im)
-            # = e^a.re * (cos(a.im) + i sin(a.im))
-            re = x.re.exp * x.im.cos
-            im = x.re.exp * x.im.sin
+            # = e^a.re e^(i a.im)
+            # = e^a.re (cos(a.im) + i sin(a.im))
+            re = math.exp(x.re) * math.cos(x.im)
+            im = math.exp(x.re) * math.sin(x.im)
             return cls(re, im)
-        # a^b = e^(ln(a) * b)
-        return exp(a.ln * b)
+        # a^b = e^(ln(a) b)
+        lna = cls.log(cls(math.e), a)
+        return exp(cls.mul(lna, b))
     @classmethod
     def root(cls, a, b):
+        if a.isnan or b.isnan:
+            return cls(isnan=True)
         return cls.power(a, cls.div(cls.one, b))
     @classmethod
     def log(cls, a, b):
+        if a.isnan or b.isnan:
+            return cls(isnan=True)
         def ln(x):
             # ln(a)
             # = ln(mag(a)) + i arg(a)  [principal branch]
+            # = 0.5 ln(mag(a)^2) + i arg(a)
             sqrmag = x.re * x.re + x.im * x.im
-            re = 0.5 * sqrmag.ln
-            im = Real.atan2(x.im, x.re)
+            re = 0.5 * math.log(sqrmag)
+            im = math.atan2(x.im, x.re)
             return cls(re, im)
         # log_a(b) = ln(b) / ln(a)
-        return ln(b) / ln(a)
+        return cls.div(ln(b), ln(a))
 
     @classmethod
     def eq(cls, a, b):
+        if a.isnan or b.isnan:
+            return a.isnan == b.isnan
         return a.re == b.re and a.im == b.im
     @classmethod
     def lt(cls, a, b):
+        if a.isnan or b.isnan:
+            return a.isnan < b.isnan
         if a.im or b.im: # complex is unorderable.
             raise NotImplementedError()
         return a.re < b.re
@@ -134,12 +153,20 @@ class Complex(matrix.Field):
     def hashed(cls, a):
         return hash((a.re, a.im))
 
-    def _repr(self, islong):
-        if self.isnan:
+    @classmethod
+    def rep(cls, a, short):
+        if a.isnan:
             return "nan"
-        re = self.re
-        im = self.im
-        rep = Single[Real].repr_long if islong else Single[Real].repr_short
+        re = a.re
+        im = a.im
+        if short:
+            rep = lambda v: "0" if v == 0.0 else f"{v:.6g}"
+        else:
+            def rep(v):
+                s = repr(v)
+                if s.endswith(".0"):
+                    s = s[:-2]
+                return "0" if v == 0.0 else s
 
         sep = "+"
 
@@ -156,8 +183,7 @@ class Complex(matrix.Field):
                 im_s = rep(-im)
             else:
                 im_s = rep(im)
-            is_digits = all(map(str.isdigit, im_s))
-            im_s = f"{im_s}i" if is_digits else f"i∙{im_s}"
+            im_s = f"{im_s}i"
 
         if re == 0.0:
             re_s = ""
@@ -175,11 +201,6 @@ class Complex(matrix.Field):
                 sep = ""
             return f"{sep}{im_s}"
 
-        return f"{re_s} {sep} {im_s}"
-
-    @classmethod
-    def repr_short(cls, a):
-        return a._repr(False)
-    @classmethod
-    def repr_long(cls, a):
-        return a._repr(True)
+        if not short:
+            sep = f" {sep} "
+        return f"{re_s}{sep}{im_s}"

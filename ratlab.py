@@ -46,13 +46,13 @@ def _main():
 
     # Public globals as initial variable space.
     space = {k: v for k, v in globals().items() if not k.startswith("_")}
+    # And set an initial field.
+    lits(Complex, space=space)
 
     args = _sys.argv[1:]
 
     # If no files, default to cli.
     if not args:
-        # And set an initial field.
-        lits(Real, space=space)
         args = ["-"]
 
     # Read and execute each input file, treating "-" as a cli.

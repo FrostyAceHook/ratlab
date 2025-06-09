@@ -256,6 +256,7 @@ def get_locals(func, *args, **kwargs):
     """
     top_frame = None
     lcls = None
+    prev_trace = _sys.gettrace()
     def catch_locals(frame, event, arg):
         nonlocal top_frame, lcls
         # Remember the top-level frame.
@@ -268,7 +269,7 @@ def get_locals(func, *args, **kwargs):
             # idk if this should be a deepcopy, but u run into pickling errors if
             # u try, and so far (skul lemoji) the shallow copy hasnt had issues.
             lcls = frame.f_locals.copy()
-            return None # no need to keep calling this trace.
+            return prev_trace # pop back to old trace.
         return catch_locals
 
     # wrapper to know this is the top-level return.
@@ -280,7 +281,7 @@ def get_locals(func, *args, **kwargs):
         ret = call()
     finally:
         # don leak the trace.
-        _sys.settrace(None)
+        _sys.settrace(prev_trace)
 
     return ret, lcls
 

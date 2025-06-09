@@ -52,8 +52,7 @@ class Field:
                     f"zero ('{repr(cls.zero)}')")
 
     def __repr__(s):
-        rep = s.repr_short if hasattr(s, "repr_short") else s.repr_long
-        return rep(s)
+        return s.rep(s, False)
 
 
 
@@ -171,10 +170,9 @@ class ExampleField(Field):
         return hash(0)
 
     @classmethod
-    def repr_short(cls, a): # repr(a)
-        return "d ... j"
-    @classmethod
-    def repr_long(cls, a): # long(a)
+    def rep(cls, a, short): # repr(a), with short+long form.
+        if short:
+            return "d ... j"
         return "dujjdujj"
 
 
@@ -269,14 +267,10 @@ def GenericField(T):
         return hash(a.obj)
 
     @classmethod
-    def repr_short(cls, a):
+    def rep(cls, a, short):
         if T is bool:
-            return "Y" if a.obj else "N"
-        return repr(a.obj)
-    @classmethod
-    def repr_long(cls, a):
-        if T is bool:
-            return "yeagh" if a.obj else "nogh"
+            # most pythonic python ever written?
+            return ["yeagh", "nogh", "Y", "N"][a.obj + 2*short]
         return repr(a.obj)
 
 
@@ -338,6 +332,8 @@ def _maybe_unpack(xs):
     if isinstance(x, Matrix):
         return xs
     if not _iterable(x):
+        return xs
+    if isinstance(x, str): # dont unpack strings lmao.
         return xs
     return tuple(x)
 
@@ -588,9 +584,11 @@ def Matrix(field, shape):
             extra = f" ({extra})"
         if not hasattr(cls.field, method):
             thing = {
+                "from_bool": "cannot cast from bool",
                 "from_int": "cannot cast from int",
                 "from_float": "cannot cast from float",
                 "from_complex": "cannot cast from complex",
+                "from_str": "cannot cast from string",
 
                 "to_int": "cannot cast to int",
                 "to_float": "cannot cast to float",
@@ -624,8 +622,7 @@ def Matrix(field, shape):
 
                 "hashed": "cannot hash",
 
-                "repr_short": "cannot short string represent",
-                "repr_long": "cannot long string represent",
+                "rep": "cannot string represent",
             }
             msg = f"{thing[method]} over field {_tname(cls.field)}{extra}"
             raise NotImplementedError(msg)
@@ -796,9 +793,8 @@ def Matrix(field, shape):
         def conv(x):
             if isinstance(x, Matrix):
                 if cls.field != x.field:
-                    raise TypeError("cannot operate on matrices of different "
-                            f"fields, got {_tname(cls.field)} and "
-                            f"{_tname(x.field)}")
+                    raise TypeError("cannot cast matrices to different fields, "
+                            f"got {_tname(cls.field)} and {_tname(x.field)}")
                 return x
             convs = {bool: "from_bool", int: "from_int", float: "from_float",
                     complex: "from_complex", str: "from_str"}
@@ -812,7 +808,7 @@ def Matrix(field, shape):
             elif type(x) in convs.keys():
                 cell = cls._f(convs[type(x)])(x)
             if cell is None:
-                raise TypeError(f"{_tname(type(x))} cannot operate with "
+                raise TypeError(f"{_tname(type(x))} cannot be cast to "
                         f"{_tname(cls.field)}")
             return single(cell, field=cls.field)
         xs = [conv(x) for x in xs]
@@ -1180,30 +1176,36 @@ def Matrix(field, shape):
 
         if s.isempty:
             return 1 # det([]) defined as 1.
+        if s.issingle:
+            return s # det(x) = x.
 
-        def submatrix(cells, size, row, col):
-            return [cells[i*size + j]
+        zero = s._f("zero")
+        mul = s._f("mul")
+        add = s._f("add")
+        sub = s._f("sub")
+
+        def submatrix(cells, size, row):
+            return [cells[i + j*size]
+                    for j in range(1, size)
                     for i in range(size)
-                    for j in range(size)
-                    if (i != row and j != col)]
+                    if i != row]
 
         def determinant(cells, size):
-            if size == 1:
-                return cells[0]
-            if size == 2: # for speed only.
-                return cells[0]*cells[3] - cells[1]*cells[2]
-            det = s.zero
-            for j in range(size):
-                subcells = submatrix(cells, size, 0, j)
+            if size == 2:
+                a, c, b, d = cells
+                return sub(mul(a, d), mul(b, c))
+            det = zero
+            for row in range(size):
+                subcells = submatrix(cells, size, row)
                 subsize = size - 1
                 subdet = determinant(subcells, subsize)
-                if j & 1:
-                    det -= cells[j] * subdet
+                if row & 1:
+                    det = sub(det, mul(cells[row], subdet))
                 else:
-                    det += cells[j] * subdet
+                    det = add(det, mul(cells[row], subdet))
             return det
 
-        return determinant(s._cells, s.shape[0])
+        return single(determinant(s._cells, s.shape[0]), field=s.field)
 
     @_instconst
     def trace(s):
@@ -1365,82 +1367,6 @@ def Matrix(field, shape):
                 basis[n][pivotat[i]] = -sys.at[i, j]
         return tuple(Matrix[s.field, (s.shape[1], )](x) for x in basis)
 
-
-    def _reprfr(s, islong, width, ndim, allow_flat=False):
-        assert s.field is GenericField[str]
-
-        if ndim > 2:
-            along = s.along(ndim - 1)
-            layers = [x._reprfr(islong, width, ndim - 1) for x in along]
-            def encapsulate(r):
-                r = r.split("\n")
-                s = r[0] + "".join(f"\n  {line}" for line in r[1:])
-                return "[ " + s + " ]"
-            layers = (encapsulate(r) for r in layers)
-            return "\n".join(layers)
-
-        # 2d print.
-
-        # Print col vecs as rows with "'", if allowed.
-        suffix = ""
-        height = s.shape[0]
-        if allow_flat and s.iscol:
-            suffix = "'"
-            height = s.shape[1]
-        cols = []
-        for i, r in enumerate(s._cells):
-            if not i % height:
-                cols.append([])
-            cols[-1].append(f"{r.obj:>{width}}")
-        rows = list(zip(*cols))
-        padded = islong or (width > 3)
-        join = lambda x: "  ".join(x) if padded else " ".join(x)
-        wrap = lambda x: f"[ {x} ]" if padded else f"[{x}]"
-        str_rows = (wrap(join(row)) for row in rows)
-        return "\n".join(str_rows) + suffix
-
-    def _repr(s, islong, width=None):
-        if s.isempty:
-            return "my boy "*islong + "M.T."
-
-        field_rep = s._f("repr_long" if islong else "repr_short")
-
-        if s.issingle:
-            return field_rep(s._cells[0])
-
-        if not islong and not s.isvec:
-            # Shorten elements of zero to a single dot.
-            def rep(x):
-                if rep.can_eq_zero and s._f("eq")(x, s._f("zero")):
-                    return "."
-                return field_rep(x)
-            rep.can_eq_zero = True
-            try:
-                s._need("eq")
-                s._need("zero")
-            except NotImplementedError:
-                rep.can_eq_zero = False
-        else:
-            rep = field_rep
-
-        # cheeky matrix of the reps to make access easy.
-        reps = Matrix[GenericField[str], s.shape](rep(x) for x in s._cells)
-        width = max(len(r.obj) for r in reps._cells)
-        return reps._reprfr(islong, width, s.ndim, allow_flat=True)
-
-    @_instconst
-    def repr_short(s):
-        """
-        Short string representation.
-        """
-        return s._repr(False)
-
-    @_instconst
-    def repr_long(s):
-        """
-        Long string representation.
-        """
-        return s._repr(True)
 
 
     @classmethod
@@ -1843,13 +1769,73 @@ def Matrix(field, shape):
     def __hash__(s):
         return hash((s.shape, ) + tuple(s._f("hashed")(x) for x in s._cells))
 
-    def __repr__(s):
+    def __repr__(s, short=True):
         """
-        Short string representation (use 'long' or '.repr_long' for a long
-        string).
+        String representation, shortened by default or full if not 'short'.
         """
-        return s.repr_short
+        if s.isempty:
+            return "my boy "*(not short) + "M.T."
 
+        field_rep = lambda x: s._f("rep")(x, short)
+
+        if s.issingle:
+            return field_rep(s._cells[0])
+
+        if short and not s.isvec:
+            # Shorten elements of zero to a single dot.
+            def rep(x):
+                if rep.can_eq_zero and s._f("eq")(x, s._f("zero")):
+                    return "."
+                return field_rep(x)
+            rep.can_eq_zero = True
+            try:
+                s._need("eq")
+                s._need("zero")
+            except NotImplementedError:
+                rep.can_eq_zero = False
+        else:
+            rep = field_rep
+
+        # cheeky matrix of the reps to make access easy.
+        reps = Matrix[GenericField[str], s.shape](rep(x) for x in s._cells)
+        width = max(len(r.obj) for r in reps._cells)
+        return reps._repr_str(short, width, s.ndim, allow_flat=True)
+
+    def _repr_str(s, short, width, ndim, allow_flat=False):
+        # this method is a helper, and is only defined for matrices over the
+        # GenericField[str].
+
+        if ndim > 2:
+            along = s.along(ndim - 1)
+            layers = [x._repr_str(short, width, ndim - 1) for x in along]
+            def encapsulate(r):
+                r = r.split("\n")
+                s = r[0] + "".join(f"\n  {line}" for line in r[1:])
+                return "[ " + s + " ]"
+            layers = (encapsulate(r) for r in layers)
+            return "\n".join(layers)
+
+        # 2d print.
+
+        # Print col vecs as rows with "'", if allowed.
+        suffix = ""
+        height = s.shape[0]
+        if allow_flat and s.iscol:
+            suffix = "'"
+            height = s.shape[1]
+        cols = []
+        for i, r in enumerate(s._cells):
+            if not i % height:
+                cols.append([])
+            cols[-1].append(f"{r.obj:>{width}}")
+        rows = list(zip(*cols))
+        padded = (not short) or (width > 3)
+        join = lambda x: "  ".join(x) if padded else " ".join(x)
+        wrap = lambda x: f"[ {x} ]" if padded else f"[{x}]"
+        str_rows = (wrap(join(row)) for row in rows)
+        return "\n".join(str_rows) + suffix
+    if field is not GenericField[str]:
+        del _repr_str
 
 
     # Its so dangerous bruh.
@@ -1944,24 +1930,24 @@ def sqrt(x, *, field=None):
     """
     Alias for 'x.sqrt'.
     """
-    field = _get_field(field)
     if not isinstance(x, Matrix):
+        field = _get_field(field)
         x, = Single[field].cast(x)
     return x.sqrt
 def cbrt(x, *, field=None):
     """
     Alias for 'x.cbrt'.
     """
-    field = _get_field(field)
     if not isinstance(x, Matrix):
+        field = _get_field(field)
         x, = Single[field].cast(x)
     return x.cbrt
 def root(base, x, *, field=None):
     """
     Alias for 'x.root(base)'.
     """
-    field = _get_field(field)
     if not isinstance(x, Matrix):
+        field = _get_field(field)
         x, = Single[field].cast(x)
     return x.root(base)
 
@@ -1969,24 +1955,24 @@ def exp(x, *, field=None):
     """
     Alias for 'x.exp'.
     """
-    field = _get_field(field)
     if not isinstance(x, Matrix):
+        field = _get_field(field)
         x, = Single[field].cast(x)
     return x.exp
 def exp2(x, *, field=None):
     """
     Alias for 'x.exp2'.
     """
-    field = _get_field(field)
     if not isinstance(x, Matrix):
+        field = _get_field(field)
         x, = Single[field].cast(x)
     return x.exp2
 def exp10(x, *, field=None):
     """
     Alias for 'x.exp10'.
     """
-    field = _get_field(field)
     if not isinstance(x, Matrix):
+        field = _get_field(field)
         x, = Single[field].cast(x)
     return x.exp10
 
@@ -1994,80 +1980,80 @@ def ln(x, *, field=None):
     """
     Alias for 'x.ln'.
     """
-    field = _get_field(field)
     if not isinstance(x, Matrix):
+        field = _get_field(field)
         x, = Single[field].cast(x)
     return x.ln
 def log2(x, *, field=None):
     """
     Alias for 'x.log2'.
     """
-    field = _get_field(field)
     if not isinstance(x, Matrix):
+        field = _get_field(field)
         x, = Single[field].cast(x)
     return x.log2
 def log10(x, *, field=None):
     """
     Alias for 'x.log10'.
     """
-    field = _get_field(field)
     if not isinstance(x, Matrix):
+        field = _get_field(field)
         x, = Single[field].cast(x)
     return x.log10
 def log(base, x, *, field=None):
     """
     Alias for 'x.log(base)'.
     """
-    field = _get_field(field)
     if not isinstance(x, Matrix):
+        field = _get_field(field)
         x, = Single[field].cast(x)
     return x.log(base)
 def sin(x, *, field=None):
     """
     Alias for 'x.sin'.
     """
-    field = _get_field(field)
     if not isinstance(x, Matrix):
+        field = _get_field(field)
         x, = Single[field].cast(x)
     return x.sin
 def cos(x, *, field=None):
     """
     Alias for 'x.cos'.
     """
-    field = _get_field(field)
     if not isinstance(x, Matrix):
+        field = _get_field(field)
         x, = Single[field].cast(x)
     return x.cos
 def tan(x, *, field=None):
     """
     Alias for 'x.tan'.
     """
-    field = _get_field(field)
     if not isinstance(x, Matrix):
+        field = _get_field(field)
         x, = Single[field].cast(x)
     return x.tan
 def asin(x, *, field=None):
     """
     Alias for 'x.asin'.
     """
-    field = _get_field(field)
     if not isinstance(x, Matrix):
+        field = _get_field(field)
         x, = Single[field].cast(x)
     return x.asin
 def acos(x, *, field=None):
     """
     Alias for 'x.acos'.
     """
-    field = _get_field(field)
     if not isinstance(x, Matrix):
+        field = _get_field(field)
         x, = Single[field].cast(x)
     return x.acos
 def atan(x, *, field=None):
     """
     Alias for 'x.atan'.
     """
-    field = _get_field(field)
     if not isinstance(x, Matrix):
+        field = _get_field(field)
         x, = Single[field].cast(x)
     return x.atan
 
@@ -2075,8 +2061,12 @@ def atan2(y, x, *, field=None):
     """
     Quadrant-aware 'atan(y / x)'.
     """
-    field = _get_field(field)
-    x, y = Single[field].cast(x, y)
+    if not isinstance(y, Matrix) and not isinstance(x, Matrix):
+        field = _get_field(field)
+        cls = Single[field]
+    else:
+        cls = type(y) if isinstance(y, Matrix) else type(x)
+    y, x = cls.cast(y, x)
     return y._eltwise(y._f("atan2"), y, x)
 
 
@@ -2087,7 +2077,7 @@ def long(a):
     """
     if not isinstance(a, Matrix):
         raise TypeError(f"expected matrix, got {_tname(type(a))}")
-    print(a.repr_long)
+    print(a.__repr__(short=False))
 
 
 
