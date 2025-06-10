@@ -1,25 +1,6 @@
 import math as _math
 
 
-def linspace(x0, x1, n):
-    assert n >= 2
-    d = (x1 - x0) / (n - 1)
-    x = [0] * n
-    for i in range(n):
-        x[i] = x0 + d * i
-    return x
-
-def logspace(x0, x1, n):
-    assert n >= 2
-    x0 = _math.log(x0)
-    x1 = _math.log(x1)
-    d = (x1 - x0) / (n - 1)
-    x = [0] * n
-    for i in range(n):
-        x[i] = _math.exp(x0 + (d * i))
-    return x
-
-
 def interp(xs, ys, x, extend=False):
     """
     Using the given data points (xs, ys), returns the linearly interpolated y-

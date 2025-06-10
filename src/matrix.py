@@ -2244,6 +2244,66 @@ def ones(*counts, field=None):
         counts *= 2
     return Matrix[field, counts].ones
 
+def linspace(x0, x1, n, *, field=None):
+    """
+    Returns a vector of 'n' linearly spaced values starting at 'x0' and ending
+    at 'x1'.
+    """
+    if not isinstance(n, int):
+        raise TypeError(f"expected an integer 'n', got {_tname(type(n))}")
+    if n < 0:
+        raise ValueError(f"expected 'n' >= 0, got: {n}")
+    if not isinstance(x0, Matrix) and not isinstance(x1, Matrix):
+        field = _get_field(field)
+        cls = Single[field]
+    else:
+        cls = type(x0) if isinstance(x0, Matrix) else type(x1)
+    x0, x1 = cls.cast(x0, x1)
+    if x0.isempty:
+        raise TypeError("expected non-empty for 'x0'")
+    if x1.isempty:
+        raise TypeError("expected non-empty for 'x1'")
+
+    if n == 0:
+        return empty[x0.field]
+    if n == 1:
+        return x0
+    # Lerp each value.
+    step = (x1 - x0) / (n - 1)
+    x = (x0 + step * i for i in range(n))
+    # Stack these along a new axis.
+    return stack(x0.ndim, x)
+
+def logspace(x0, x1, n, *, field=None):
+    """
+    Returns a vector of 'n' logarithmically spaced values starting at 'x0' and
+    ending at 'x1'.
+    """
+    if not isinstance(n, int):
+        raise TypeError(f"expected an integer 'n', got {_tname(type(n))}")
+    if n < 0:
+        raise ValueError(f"expected 'n' >= 0, got: {n}")
+    if not isinstance(x0, Matrix) and not isinstance(x1, Matrix):
+        field = _get_field(field)
+        cls = Single[field]
+    else:
+        cls = type(x0) if isinstance(x0, Matrix) else type(x1)
+    x0, x1 = cls.cast(x0, x1)
+    if x0.isempty:
+        raise TypeError("expected non-empty for 'x0'")
+    if x1.isempty:
+        raise TypeError("expected non-empty for 'x1'")
+
+    if n == 0:
+        return empty[x0.field]
+    if n == 1:
+        return x0
+    # Just log, do linear, then exp.
+    x0 = x0.ln
+    x1 = x1.ln
+    step = (x1 - x0) / (n - 1)
+    x = ((x0 + step * i).exp for i in range(n))
+    return stack(x0.ndim, x)
 
 
 def summ(*xs, field=None):
