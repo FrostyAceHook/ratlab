@@ -76,8 +76,7 @@ def _is_matrix_literal(node):
     if mod.id != "_syntax":
         return False
     name = func.attr
-    # _list_col will never appear here.
-    return name == "_slice" or name == "_list_row"
+    return name == "_slice" or name == "_list_row" or name == "_list_col"
 
 class _Transformer(_ast.NodeTransformer):
     def __init__(self, source, filename):
@@ -166,7 +165,11 @@ class _Transformer(_ast.NodeTransformer):
         node = self.generic_visit(node)
         # Make it a row vector if this literal is becoming a 2D matrix, otherwise
         # column vector.
-        funcname = "_list_row" if rowme else "_list_col"
+        # NEVERMIND, its kinda ass. mainly for when concating matrices, like:
+        #  x = [1,2]  (x = [1][2])
+        #  [x, x]   (!= [1,1][2,2], it =[1][2][1][2])
+        # funcname = "_list_row" if rowme else "_list_col"
+        funcname = "_list_row"
         new_node = _ast_call(funcname, *node.elts)
         _ast.copy_location(new_node, node)
         return new_node
