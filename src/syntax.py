@@ -325,7 +325,7 @@ def _execute(source, space, filename="<rat>", feedback=True):
             raise RuntimeError("reserved '_space' set within variable space")
         # Execute. i dont remember now lmao but past me had issues when `locals`
         # wasnt also set to the global space. probably some shitting bug idk.
-        exec(compiled, locals=space, globals=space)
+        exec(compiled, space, space)
     except Exception as e:
         _print_exc(e, "ERROR", tb=True)
         return False
