@@ -29,35 +29,8 @@ from util import tname as _tname, coloured as _coloured
 # - override 'lits' to give the current space.
 
 
-def _literal(x):
-    field = _matrix._get_field(None)
-    [x] = _matrix.Single[field].cast(x)
-    return x
-
-def _hstack(*xs):
-    return _matrix.hstack(*xs)
-
-def _vstack(mat, idx):
-    if isinstance(idx, slice):
-        raise TypeError("cannot use slices as matrix elements")
-    if not isinstance(idx, tuple):
-        idx = (idx, )
-    newrow = _hstack(*idx)
-    return _matrix.vstack(mat, newrow)
-
-def _is_hvstack(node):
-    if not isinstance(node, _ast.Call):
-        return False
-    func = node.func
-    if not isinstance(func, _ast.Attribute):
-        return False
-    mod = func.value
-    if not isinstance(mod, _ast.Name):
-        return False
-    if mod.id != "_syntax":
-        return False
-    name = func.attr
-    return name == "_hstack" or name == "_vstack"
+def _is_load(node):
+    return isinstance(node.ctx, _ast.Load)
 
 def _is_named(node, names):
     if not isinstance(node, _ast.Name):
@@ -75,12 +48,58 @@ def _ast_call(name, *args):
         keywords=[],
     )
 
+def _literal(x):
+    field = _matrix._get_field(None)
+    x, = _matrix.Single[field].cast(x)
+    return x
+
+def _list_row(*xs):
+    return _matrix.hstack(*xs)
+
+def _list_col(*xs):
+    return _matrix.vstack(*xs)
+
+def _slice(matrix_literal, *sliced_by):
+    append_me = _matrix.hstack(*sliced_by)
+    return _matrix.vstack(matrix_literal, append_me)
+
+def _is_matrix_literal(node):
+    # strictly helper for subscript handler.
+    if not isinstance(node, _ast.Call):
+        return False
+    func = node.func
+    if not isinstance(func, _ast.Attribute):
+        return False
+    mod = func.value
+    if not isinstance(mod, _ast.Name):
+        return False
+    if mod.id != "_syntax":
+        return False
+    name = func.attr
+    # _list_col will never appear here.
+    return name == "_slice" or name == "_list_row"
+
 class _Transformer(_ast.NodeTransformer):
-    def __init__(self):
+    def __init__(self, source, filename):
         super().__init__()
+        self.source = source
+        self.filename = filename
         self.wrap_lits = False
+        self.row_vector = False
         self.pierce_tuple = False
-        self.keywords = ["lst", "_syntax"]
+        self.keywords = ["lst", "_syntax", "_space"]
+
+    def syntaxerrorme(self, msg, node):
+        exc = SyntaxError(msg)
+        exc.filename = self.filename
+        exc.lineno = node.lineno
+        exc.offset = node.col_offset + 1 # 1-based.
+        if getattr(node, "end_lineno", None) is not None:
+            exc.end_lineno = node.end_lineno
+        if getattr(node, "end_col_offset", None) is not None:
+            exc.end_offset = node.end_col_offset + 1
+        exc.text = self.source.splitlines()[node.lineno - 1]
+        raise exc
 
     def visit(self, node):
         was_wrapping_lits = self.wrap_lits
@@ -94,6 +113,8 @@ class _Transformer(_ast.NodeTransformer):
         if isinstance(node, _ast.Tuple) and not self.pierce_tuple:
             self.wrap_lits = False
         self.pierce_tuple = False
+        if not isinstance(node, _ast.List):
+            self.row_vector = False
 
         new_node = super().visit(node)
 
@@ -108,59 +129,65 @@ class _Transformer(_ast.NodeTransformer):
 
     def visit_Name(self, node):
         # Ensure keywords aren't modified.
-        if not isinstance(node.ctx, _ast.Load):
+        if not _is_load(node):
             if _is_named(node, self.keywords):
-                raise SyntaxError(f"cannot modify keyword {repr(kw)}")
+                self.syntaxerrorme(f"cannot modify keyword {repr(kw)} ", node)
         return node
 
     def visit_Attribute(self, node):
         node = self.generic_visit(node)
 
         # Ensure keywords aren't modified.
-        if not isinstance(node.ctx, _ast.Load):
+        if not _is_load(node):
             if _is_named(node, self.keywords):
-                raise SyntaxError(f"cannot modify keyword {repr(kw)} attrs")
+                self.syntaxerrorme(f"cannot modify keyword {repr(kw)} "
+                        "attributes", node)
         return node
 
     def visit_List(self, node):
         # Only transform loads into matrices.
-        if not isinstance(node.ctx, _ast.Load):
+        if not _is_load(node):
             return self.generic_visit(node)
 
-        # All list literals are matrices.
-        self.wrap_lits = True
         # If it's immediately wrapped in a tuple, unpack it to have the same
         # behaviour as subscripting:
         #  [1,2][(3,4)] == [1 2][3 4]
         #  [(1,2)][(3,4)] == error typically
         if len(node.elts) == 1 and isinstance(node.elts[0], _ast.Tuple):
             tpl = node.elts[0]
-            if isinstance(tpl.ctx, _ast.Load): # ig check its load?
+            if _is_load(tpl): # ig check its load?
                 node.elts = tpl.elts
+        # All list literals are matrices.
+        self.wrap_lits = True
+        # Pop whether to row vector or not.
+        rowme = self.row_vector
+        self.row_vector = False
         # Transform elements.
         node = self.generic_visit(node)
-        # Make it a matrix.
-        return _ast_call("_hstack", *node.elts)
+        # Make it a row vector if this literal is becoming a 2D matrix, otherwise
+        # column vector.
+        funcname = "_list_row" if rowme else "_list_col"
+        new_node = _ast_call(funcname, *node.elts)
+        _ast.copy_location(new_node, node)
+        return new_node
 
     def visit_Subscript(self, node):
-        what = "subscript"
-
-        # Recurse to the object being subscripted.
+        # Handle the thing we subscripting, so we can know if its a matrix
+        # literal.
+        self.row_vector = True
         node.value = self.visit(node.value)
-        val = node.value
 
-        # See if we're trying to create a list.
-        if _is_named(val, {"lst"}):
-            what = "list"
+        # Find what we're doing based on what we're subscripting.
+        if _is_named(node.value, {"lst"}):
+            what = "list" # create a list literal.
+        elif _is_matrix_literal(node.value):
+            what = "matrix" # append a row to a matrix literal.
+        else:
+            what = "normal" # idk normal subscript things.
 
-        # See if we're subscripting a matrix literal.
-        if _is_hvstack(val):
-            what = "matrix"
-
-
-        # Now that we know if this is matrix, we can recurse to slice children.
+        # Now can recurse to the new row/index.
         self.wrap_lits = (what == "matrix")
-        self.pierce_tuple = True # pierce one tuple.
+        self.pierce_tuple = True
         node.slice = self.visit(node.slice)
 
         if what == "list":
@@ -169,16 +196,36 @@ class _Transformer(_ast.NodeTransformer):
                 elts = node.slice.elts[:] # unpack if tuple.
             else:
                 elts = [node.slice]
-            return _ast.List(elts=elts, ctx=node.ctx)
+            for elt in elts:
+                elt.ctx = node.ctx
+            new_node = _ast.List(elts=elts, ctx=node.ctx)
+            _ast.copy_location(new_node, node)
+            return new_node
 
         if what == "matrix":
             # Ensure its a load.
-            if not isinstance(node.ctx, _ast.Load):
-                raise SyntaxError("cannot assign to a matrix literal")
+            if isinstance(node.ctx, _ast.Store):
+                self.syntaxerrorme("cannot assign to a matrix literal", node)
+            if isinstance(node.ctx, _ast.Del):
+                self.syntaxerrorme("cannot delete a matrix literal", node)
+            # Get all the slice elements.
+            elts = node.slice
+            if isinstance(elts, _ast.Tuple):
+                if not _is_load(elts):
+                    self.syntaxerrorme("how have you even done this", elts)
+                elts = elts.elts
+            else:
+                elts = [elts]
+            # Check no slice literals.
+            for elt in elts:
+                if isinstance(elt, _ast.Slice):
+                    self.syntaxerrorme("cannot use slices as elements of a "
+                            "matrix literal", elt)
             # Create a call to concat the row.
-            return _ast_call("_vstack", node.value, node.slice)
+            new_node = _ast_call("_slice", node.value, *elts)
+            _ast.copy_location(new_node, node)
+            return new_node
 
-        assert what == "subscript"
         return node
 
     def visit_Call(self, node):
@@ -192,16 +239,17 @@ class _Transformer(_ast.NodeTransformer):
         # Ensure theres only one arg given (and it is field).
         for kw in node.keywords:
             if kw.arg != "field":
-                raise SyntaxError("lits() got an unexpected keyword argument: "
-                        f"{repr(kw.arg)}")
+                self.syntaxerrorme("lits() got an unexpected keyword argument: "
+                        f"{repr(kw.arg)}", node)
         if len(node.args) > 1:
-            raise SyntaxError("lits() takes 1 positional argument but "
-                    f"{len(node.args)} were given")
+            self.syntaxerrorme("lits() takes 1 positional argument but "
+                    f"{len(node.args)} were given", node)
         if node.args and node.keywords:
-            raise SyntaxError("lits() got multiple values for argument 'field'")
+            self.syntaxerrorme("lits() got multiple values for argument 'field'",
+                    node)
         if not node.args and not node.keywords:
-            raise SyntaxError("lits() missing 1 required positional argument: "
-                    "'field'")
+            self.syntaxerrorme("lits() missing 1 required positional argument: "
+                    "'field'", node)
 
         # Add the current space as kwarg.
         space = _ast.Name(id="_space", ctx=_ast.Load())
@@ -217,7 +265,7 @@ def _print_nonnone(x):
 def _parse(source, filename, feedback):
     # Parse the code.
     module = _ast.parse(source, filename)
-    module = _Transformer().visit(module)
+    module = _Transformer(source, filename).visit(module)
 
     # If requested, and a print-if-nonnone if the entire thing is an expression.
     body = module.body
@@ -228,7 +276,7 @@ def _parse(source, filename, feedback):
             tree = _ast.Expr(value=_ast_call("_print_nonnone", expr_node.value))
             module = _ast.Module(body=[tree], type_ignores=module.type_ignores)
 
-    module = _ast.fix_missing_locations(module)
+    _ast.fix_missing_locations(module)
     return module
 
 def _print_exc(exc, callout, tb=False):

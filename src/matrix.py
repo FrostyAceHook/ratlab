@@ -281,12 +281,12 @@ def lits(field, *, space=None):
     Sets the current/default field to the given field and injects constants such
     as 'e' and 'pi' into the space.
     """
-    if field is not None:
-        if not isinstance(field, type):
-            raise TypeError(f"expected a field class, got {_tname(type(field))}")
-        if not issubclass(field, Field):
-            raise TypeError("expected a field class which inherits from "
-                    f"{_tname(Field)}, got {_tname(field)} (which doesn't)")
+    try:
+        # try create a field out of it.
+        Single[field]
+    except Exception as e:
+        raise TypeError("expected a valid field class, got "
+                f"{_tname(type(field))}") from e
 
     if field is not None and space is not None:
         # Inject constants, but only if they aren't currently overridden.
@@ -2340,8 +2340,8 @@ def prod(*xs, field=None):
 
 def minn(*xs, field=None):
     """
-    Returns the minimum of the given values (first occurrence in the case of
-    ties).
+    Returns the minimum of the given values, using the first occurrence in the
+    case of ties.
     """
     field = _get_field(field)
     xs = _maybe_unpack(xs)
@@ -2360,8 +2360,8 @@ def minn(*xs, field=None):
 
 def maxx(*xs, field=None):
     """
-    Returns the maximum of the given values (first occurrence in the case of
-    ties).
+    Returns the maximum of the given values, using the first occurrence in the
+    case of ties.
     """
     field = _get_field(field)
     xs = _maybe_unpack(xs)
@@ -2460,8 +2460,12 @@ def logmean(x, y, *, field=None):
     """
     Returns the logarithmic mean of 'x' and 'y': (x - y) / ln(x / y)
     """
-    field = _get_field(field)
-    x, y = Single[field].cast(x, y)
+    if not isinstance(y, Matrix) and not isinstance(x, Matrix):
+        field = _get_field(field)
+        cls = Single[field]
+    else:
+        cls = type(y) if isinstance(y, Matrix) else type(x)
+    x, y = cls.cast(x, y)
     f = lambda a, b: a if (a == b) else (a - b) / (a / b).ln
     return x.apply(f, y)
 
