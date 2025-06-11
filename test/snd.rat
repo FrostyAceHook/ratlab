@@ -1,5 +1,0 @@
-class A:
-    pass
-
-lits(matrix.GenericField[A])
-print([A(), A()])

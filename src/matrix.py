@@ -153,6 +153,16 @@ class ExampleField(Field):
     def atan2(cls, y, x): # tan^-1(y / x), but quadrant-aware.
         return cls()
 
+    @classmethod
+    def diff(cls, y, x): # (d/dx)(y)
+        return cls()
+    @classmethod
+    def intt(cls, y, x): # int y dx
+        return cls()
+    @classmethod
+    def def_intt(cls, y, x, a, b): # int_a^b y dx
+        return cls()
+
     # Comparisons don't necessarily have bool returns, they may also return any
     # Field type (including this class). However, when this returned object is
     # cast to bool, it must be true iff the original comparison is always true.
@@ -727,6 +737,17 @@ def Matrix(field, shape):
             cls._need("from_float", "to represent pi")
             pi = cls._f("from_float")(_math.pi)
         return single(pi, field=cls.field)
+    @_classconst
+    def i(cls):
+        """
+        Single imaginary unit.
+        """
+        if "i" in cls.field.consts:
+            i = cls.field.consts["i"]
+        else:
+            cls._need("from_complex", "to represent i")
+            i = cls._f("from_complex")(1j)
+        return single(i, field=cls.field)
 
     @_classconst
     def size(cls):
@@ -1583,6 +1604,29 @@ def Matrix(field, shape):
         return s._eltwise(s._f("atan"), s)
 
 
+    def diff(s, x):
+        """
+        Element-wise derivative with respect to 'x'.
+        """
+        s, x = cls.cast(s, x)
+        return s._eltwise(s._f("diff"), s, x)
+
+    def intt(s, x, *bounds):
+        """
+        Element-wise integral with respect to 'x'. If bounds are provided,
+        evaluates the definite integral.
+        """
+        bounds = _maybe_unpack(bounds)
+        if not bounds:
+            s, x = cls.cast(s, x)
+            return s._eltwise(s._f("intt"), s, x)
+        if len(bounds) != 2:
+            raise TypeError(f"must specify 0 or 2 bounds, got {len(bounds)}")
+        lo, hi = bounds
+        s, x, lo, hi = cls.cast(s, x, lo, hi)
+        return s._eltwise(s._f("def_intt"), x, lo, hi)
+
+
     def __eq__(s, o):
         """
         Element-wise equality (cast return to bool to determine if all pairs are
@@ -1930,144 +1974,139 @@ def sqrt(x, *, field=None):
     """
     Alias for 'x.sqrt'.
     """
-    if not isinstance(x, Matrix):
-        field = _get_field(field)
-        x, = Single[field].cast(x)
+    x, = castall(x, field=field)
     return x.sqrt
 def cbrt(x, *, field=None):
     """
     Alias for 'x.cbrt'.
     """
-    if not isinstance(x, Matrix):
-        field = _get_field(field)
-        x, = Single[field].cast(x)
+    x, = castall(x, field=field)
     return x.cbrt
 def root(base, x, *, field=None):
     """
     Alias for 'x.root(base)'.
     """
-    if not isinstance(x, Matrix):
-        field = _get_field(field)
-        x, = Single[field].cast(x)
+    x, = castall(x, field=field)
     return x.root(base)
 
 def exp(x, *, field=None):
     """
     Alias for 'x.exp'.
     """
-    if not isinstance(x, Matrix):
-        field = _get_field(field)
-        x, = Single[field].cast(x)
+    x, = castall(x, field=field)
     return x.exp
 def exp2(x, *, field=None):
     """
     Alias for 'x.exp2'.
     """
-    if not isinstance(x, Matrix):
-        field = _get_field(field)
-        x, = Single[field].cast(x)
+    x, = castall(x, field=field)
     return x.exp2
 def exp10(x, *, field=None):
     """
     Alias for 'x.exp10'.
     """
-    if not isinstance(x, Matrix):
-        field = _get_field(field)
-        x, = Single[field].cast(x)
+    x, = castall(x, field=field)
     return x.exp10
 
 def ln(x, *, field=None):
     """
     Alias for 'x.ln'.
     """
-    if not isinstance(x, Matrix):
-        field = _get_field(field)
-        x, = Single[field].cast(x)
+    x, = castall(x, field=field)
     return x.ln
 def log2(x, *, field=None):
     """
     Alias for 'x.log2'.
     """
-    if not isinstance(x, Matrix):
-        field = _get_field(field)
-        x, = Single[field].cast(x)
+    x, = castall(x, field=field)
     return x.log2
 def log10(x, *, field=None):
     """
     Alias for 'x.log10'.
     """
-    if not isinstance(x, Matrix):
-        field = _get_field(field)
-        x, = Single[field].cast(x)
+    x, = castall(x, field=field)
     return x.log10
 def log(base, x, *, field=None):
     """
     Alias for 'x.log(base)'.
     """
-    if not isinstance(x, Matrix):
-        field = _get_field(field)
-        x, = Single[field].cast(x)
+    x, = castall(x, field=field)
     return x.log(base)
 def sin(x, *, field=None):
     """
     Alias for 'x.sin'.
     """
-    if not isinstance(x, Matrix):
-        field = _get_field(field)
-        x, = Single[field].cast(x)
+    x, = castall(x, field=field)
     return x.sin
 def cos(x, *, field=None):
     """
     Alias for 'x.cos'.
     """
-    if not isinstance(x, Matrix):
-        field = _get_field(field)
-        x, = Single[field].cast(x)
+    x, = castall(x, field=field)
     return x.cos
 def tan(x, *, field=None):
     """
     Alias for 'x.tan'.
     """
-    if not isinstance(x, Matrix):
-        field = _get_field(field)
-        x, = Single[field].cast(x)
+    x, = castall(x, field=field)
     return x.tan
 def asin(x, *, field=None):
     """
     Alias for 'x.asin'.
     """
-    if not isinstance(x, Matrix):
-        field = _get_field(field)
-        x, = Single[field].cast(x)
+    x, = castall(x, field=field)
     return x.asin
 def acos(x, *, field=None):
     """
     Alias for 'x.acos'.
     """
-    if not isinstance(x, Matrix):
-        field = _get_field(field)
-        x, = Single[field].cast(x)
+    x, = castall(x, field=field)
     return x.acos
 def atan(x, *, field=None):
     """
     Alias for 'x.atan'.
     """
-    if not isinstance(x, Matrix):
-        field = _get_field(field)
-        x, = Single[field].cast(x)
+    x, = castall(x, field=field)
     return x.atan
+def diff(y, x, *, field=None):
+    """
+    Alias for 'y.diff(x)'.
+    """
+    y, x = castall(y, x, field=field)
+    return y.diff(x)
+def intt(y, x, *bounds, field=None):
+    """
+    Alias for 'y.intt(x)'.
+    """
+    bounds = _maybe_unpack(bounds)
+    if not bounds:
+        y, x = castall(y, x, field=field)
+        return y.intt(x)
+    if len(bounds) != 2:
+        raise TypeError(f"must specify 0 or 2 bounds, got {len(bounds)}")
+    lo, hi = bounds
+    y, x, lo, hi = castall(y, x, lo, hi, field=field)
+    return y.intt(x, (lo, hi))
 
 def atan2(y, x, *, field=None):
     """
     Quadrant-aware 'atan(y / x)'.
     """
-    if not isinstance(y, Matrix) and not isinstance(x, Matrix):
-        field = _get_field(field)
-        cls = Single[field]
-    else:
-        cls = type(y) if isinstance(y, Matrix) else type(x)
-    y, x = cls.cast(y, x)
+    y, x = castall(y, x, field=field)
     return y._eltwise(y._f("atan2"), y, x)
+
+
+
+def castall(*xs, broadcast=True, field=None):
+    xs = _maybe_unpack(xs)
+    for x in xs:
+        if isinstance(x, Matrix):
+            Mat = type(x)
+            break
+    else:
+        field = _get_field(field)
+        Mat = Single[field]
+    return Mat.cast(*xs, broadcast=broadcast)
 
 
 

@@ -1,8 +1,7 @@
 import math
 
 import matrix
-from numerical_methods import simplest_ratio
-from util import classconst, immutable
+from util import classconst, immutable, simplest_ratio
 
 
 @immutable

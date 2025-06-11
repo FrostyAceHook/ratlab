@@ -159,14 +159,18 @@ class Complex(matrix.Field):
             return "nan"
         re = a.re
         im = a.im
-        if short:
-            rep = lambda v: "0" if v == 0.0 else f"{v:.6g}"
-        else:
-            def rep(v):
-                s = repr(v)
-                if s.endswith(".0"):
-                    s = s[:-2]
-                return "0" if v == 0.0 else s
+        def repn(n):
+            if n == 0.0:
+                return "0"
+            s = f"{n:.6g}" if short else repr(n)
+            # "xxx.0" -> "xxx"
+            if s.endswith(".0"):
+                s = s[:-2]
+            # "xxx.xe-0y" -> "xxx.xe-y"
+            if "e" in s:
+                if len(s) > 2 and s[-2] == "0":
+                    s = s[:-2] + s[-1]
+            return s
 
         sep = "+"
 
@@ -180,15 +184,15 @@ class Complex(matrix.Field):
                 im_s = ""
             elif im < 0.0:
                 sep = "-"
-                im_s = rep(-im)
+                im_s = repn(-im)
             else:
-                im_s = rep(im)
+                im_s = repn(im)
             im_s = f"{im_s}i"
 
         if re == 0.0:
             re_s = ""
         else:
-            re_s = rep(re)
+            re_s = repn(re)
 
         if not re_s and not im_s:
             return "0"

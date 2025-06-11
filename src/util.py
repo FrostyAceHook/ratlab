@@ -1,6 +1,7 @@
 import functools as _functools
 import inspect as _inspect
 import itertools as _itertools
+import math as _math
 import os as _os
 import sys as _sys
 from pathlib import Path as _Path
@@ -387,3 +388,45 @@ def templated(creator, parents=(), decorators=(), metaclass=type):
     _functools.update_wrapper(Creator, creator)
     return Creator
     # not confusing at all
+
+
+def simplest_ratio(x):
+    """ Returns the simplest ratio `n, d` s.t. `n / d == x`. """
+    if not isinstance(x, float):
+        raise TypeError(f"expected float for 'x', got {tname(type(x))}")
+    if not _math.isfinite(x):
+        raise ValueError(f"expected finite float for 'x', got: {x}")
+
+    # gripped and ripped from fractions module.
+    def limit_denom(numer, denom, max_denom):
+        if denom <= max_denom:
+            return numer, denom
+        n, d = numer, denom
+        p0, q0, p1, q1 = 0, 1, 1, 0
+        while True:
+            a = n//d
+            q2 = q0 + a*q1
+            if q2 > max_denom:
+                break
+            p0, q0, p1, q1 = p1, q1, p0 + a*p1, q2
+            n, d = d, n - a*d
+        k = (max_denom - q0)//q1
+        if 2*d*(q0 + k*q1) <= denom:
+            return p1, q1
+        else:
+            return p0 + k*p1, q0 + k*q1
+
+    if x == 0.0:
+        return 0, 1
+    if x < 0.0:
+        n, d = simplest_ratio(-x)
+        return -n, d
+    n, d = x.as_integer_ratio()
+    for i in range(0, _math.floor(_math.log10(d)) + 1):
+        n0, d0 = limit_denom(n, d, 10 ** i)
+        if n0 / d0 == x:
+            n = n0
+            d = d0
+            break
+    g = _math.gcd(n, d)
+    return n // g, d // g

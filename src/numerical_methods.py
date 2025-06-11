@@ -102,46 +102,6 @@ def rootbi(f, a, b, tol=1e-7, max_iters=100):
     raise ValueError(f"no convergence within {max_iter} iterations.")
 
 
-
-def simplest_ratio(x):
-    """ Returns the simplest ratio `n, d` s.t. `n / d == x`. """
-    x = float(x)
-
-    # gripped and ripped from fractions module.
-    def limit_denom(numer, denom, max_denom):
-        if denom <= max_denom:
-            return numer, denom
-        n, d = numer, denom
-        p0, q0, p1, q1 = 0, 1, 1, 0
-        while True:
-            a = n//d
-            q2 = q0 + a*q1
-            if q2 > max_denom:
-                break
-            p0, q0, p1, q1 = p1, q1, p0 + a*p1, q2
-            n, d = d, n - a*d
-        k = (max_denom - q0)//q1
-        if 2*d*(q0 + k*q1) <= denom:
-            return p1, q1
-        else:
-            return p0 + k*p1, q0 + k*q1
-
-    if x == 0.0:
-        return 0, 1
-    if x < 0.0:
-        n, d = simplest_ratio(-x)
-        return -n, d
-    n, d = x.as_integer_ratio()
-    for i in range(0, _math.floor(_math.log10(d)) + 1):
-        n0, d0 = limit_denom(n, d, 10 ** i)
-        if n0 / d0 == x:
-            n = n0
-            d = d0
-            break
-    g = _math.gcd(n, d)
-    return n // g, d // g
-
-
 def prime_factors(x):
     """
     Returns a tuple of the prime factorisation of `x`. Note this includes
