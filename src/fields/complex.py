@@ -1,4 +1,5 @@
 import math
+import struct
 
 import matrix
 from util import classconst, immutable, tname
@@ -140,7 +141,19 @@ class Complex(matrix.Field):
     def eq(cls, a, b):
         if a.isnan or b.isnan:
             return a.isnan == b.isnan
-        return a.re == b.re and a.im == b.im
+        def iseq(x, y, ulps=5):
+            if math.isinf(x) or math.isinf(y):
+                return x == y
+            # we do tricks around here (c my beloved).
+            def toint(z):
+                u, = struct.unpack("=q", struct.pack("=d", z))
+                return u ^ (u >> 63)
+            ux = toint(abs(x))
+            uy = toint(abs(y))
+            if (x < 0.0) != (y < 0.0):
+                return ux + uy <= ulps
+            return abs(ux - uy) <= ulps
+        return iseq(a.re, b.re) and iseq(a.im, b.im)
     @classmethod
     def lt(cls, a, b):
         if a.isnan or b.isnan:

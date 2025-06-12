@@ -50,7 +50,7 @@ def _ast_call(name, *args):
 
 def _literal(x):
     field = _matrix._get_field(None)
-    x, = _matrix.castall([x], field=field)
+    x, = _matrix.castall([x], _field=field)
     return x
 
 def _list_row(*xs):
@@ -256,7 +256,7 @@ class _Transformer(_ast.NodeTransformer):
 
         # Add the current space as kwarg.
         space = _ast.Name(id="_space", ctx=_ast.Load())
-        space_kwarg = _ast.keyword(arg="space", value=space)
+        space_kwarg = _ast.keyword(arg="_space", value=space)
         node.keywords.append(space_kwarg)
 
         return node

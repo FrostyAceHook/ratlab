@@ -43,11 +43,6 @@ def _main():
     print(util.coloured(col, rat))
     print(util.coloured(col, bot))
 
-    # Public globals as initial variable space.
-    space = {k: v for k, v in globals().items() if not k.startswith("_")}
-    # And set an initial field.
-    lits(Complex, space=space)
-
     args = _sys.argv[1:]
 
     # Help msg.
@@ -84,6 +79,11 @@ matrices.
     # If no files, default to cli.
     if not args:
         args = ["-"]
+
+    # Public globals as initial variable space.
+    space = {k: v for k, v in globals().items() if not k.startswith("_")}
+    # And set an initial field.
+    lits(Complex, _space=space)
 
     # Read and execute each input file, treating "-" as a cli.
     for i, path in enumerate(args):
