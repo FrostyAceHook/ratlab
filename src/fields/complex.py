@@ -18,9 +18,9 @@ class Complex(matrix.Field):
             isnan = True
             re = float("nan")
             im = float("nan")
-        self.isnan = isnan
-        self.re = re
-        self.im = im
+        self._isnan = isnan
+        self._re = re
+        self._im = im
 
 
     @classmethod
@@ -35,25 +35,25 @@ class Complex(matrix.Field):
 
     @classmethod
     def to_int(cls, a):
-        if a.isnan:
+        if a._isnan:
             raise NotImplementedError()
-        if a.im:
+        if a._im:
             raise NotImplementedError()
-        if math.isinf(a.re) or a.re != int(a.re):
+        if math.isinf(a._re) or a._re != int(a._re):
             raise NotImplementedError()
-        return int(a.re)
+        return int(a._re)
     @classmethod
     def to_float(cls, a):
-        if a.isnan:
+        if a._isnan:
             return float("nan")
-        if a.im:
+        if a._im:
             raise NotImplementedError()
-        return a.re
+        return a._re
     @classmethod
     def to_complex(cls, a):
-        if a.isnan:
+        if a._isnan:
             return complex("nan+nanj")
-        return complex(a.re, a.im)
+        return complex(a._re, a._im)
 
     @classconst
     def zero(cls):
@@ -64,83 +64,89 @@ class Complex(matrix.Field):
 
     @classmethod
     def add(cls, a, b):
-        if a.isnan or b.isnan:
+        if a._isnan or b._isnan:
             return cls(isnan=True)
-        return cls(a.re + b.re, a.im + b.im)
+        return cls(a._re + b._re, a._im + b._im)
     @classmethod
     def sub(cls, a, b):
-        if a.isnan or b.isnan:
+        if a._isnan or b._isnan:
             return cls(isnan=True)
-        return cls(a.re - b.re, a.im - b.im)
+        return cls(a._re - b._re, a._im - b._im)
     @classmethod
     def absolute(cls, a):
-        if a.isnan:
+        if a._isnan:
             return cls(isnan=True)
-        return cls(math.sqrt(a.re * a.re + a.im * a.im))
+        return cls(math.sqrt(a._re * a._re + a._im * a._im))
 
     @classmethod
     def mul(cls, a, b):
-        if a.isnan or b.isnan:
+        if a._isnan or b._isnan:
             return cls(isnan=True)
         # (a.re + i a.im)(b.re + i b.im)
         # = a.re b.re - a.im b.im + i (a.im b.re + a.re b.im)
-        re = a.re * b.re - a.im * b.im
-        im = a.im * b.re + a.re * b.im
+        re = a._re * b._re - a._im * b._im
+        im = a._im * b._re + a._re * b._im
         return cls(re, im)
     @classmethod
     def div(cls, a, b):
-        if a.isnan or b.isnan:
+        if a._isnan or b._isnan:
             return cls(isnan=True)
         # (a.re + i a.im)/(b.re + i b.im)
         #
         #   (a.re b.re + a.im b.im) + i (a.im b.re - a.re b.im)
         # = ---------------------------------------------------
         #                 (b.re b.re + b.im bim)
-        re = a.re * b.re + a.im * b.im
-        im = a.im * b.re - a.re * b.im
-        den = b.re * b.re + b.im * b.im
+        re = a._re * b._re + a._im * b._im
+        im = a._im * b._re - a._re * b._im
+        den = b._re * b._re + b._im * b._im
         re /= den
         im /= den
         return cls(re, im)
 
     @classmethod
     def power(cls, a, b):
-        if a.isnan or b.isnan:
+        if a._isnan or b._isnan:
             return cls(isnan=True)
         def exp(x):
             # e^(a.re + i a.im)
             # = e^a.re e^(i a.im)
             # = e^a.re (cos(a.im) + i sin(a.im))
-            re = math.exp(x.re) * math.cos(x.im)
-            im = math.exp(x.re) * math.sin(x.im)
+            re = math.exp(x._re) * math.cos(x._im)
+            im = math.exp(x._re) * math.sin(x._im)
             return cls(re, im)
         # a^b = e^(ln(a) b)
         lna = cls.log(cls(math.e), a)
         return exp(cls.mul(lna, b))
     @classmethod
     def root(cls, a, b):
-        if a.isnan or b.isnan:
+        if a._isnan or b._isnan:
             return cls(isnan=True)
         return cls.power(a, cls.div(cls.one, b))
     @classmethod
     def log(cls, a, b):
-        if a.isnan or b.isnan:
+        if a._isnan or b._isnan:
             return cls(isnan=True)
         def ln(x):
             # ln(a)
             # = ln(mag(a)) + i arg(a)  [principal branch]
             # = 0.5 ln(mag(a)^2) + i arg(a)
-            sqrmag = x.re * x.re + x.im * x.im
+            sqrmag = x._re * x._re + x._im * x._im
             re = 0.5 * math.log(sqrmag)
-            im = math.atan2(x.im, x.re)
+            im = math.atan2(x._im, x._re)
             return cls(re, im)
         # log_a(b) = ln(b) / ln(a)
         return cls.div(ln(b), ln(a))
 
     @classmethod
+    def conj(cls, a):
+        if a._isnan:
+            return cls(isnan=True)
+        return cls(a._re, -a._im)
+
+    @classmethod
     def eq(cls, a, b):
-        if a.isnan or b.isnan:
-            return a.isnan == b.isnan
+        if a._isnan or b._isnan:
+            return a._isnan == b._isnan
         def iseq(x, y, ulps=5):
             if math.isinf(x) or math.isinf(y):
                 return x == y
@@ -153,25 +159,25 @@ class Complex(matrix.Field):
             if (x < 0.0) != (y < 0.0):
                 return ux + uy <= ulps
             return abs(ux - uy) <= ulps
-        return iseq(a.re, b.re) and iseq(a.im, b.im)
+        return iseq(a._re, b._re) and iseq(a._im, b._im)
     @classmethod
     def lt(cls, a, b):
-        if a.isnan or b.isnan:
-            return a.isnan < b.isnan
-        if a.im or b.im: # complex is unorderable.
+        if a._isnan or b._isnan:
+            return a._isnan < b._isnan
+        if a._im or b._im: # complex is unorderable.
             raise NotImplementedError()
-        return a.re < b.re
+        return a._re < b._re
 
     @classmethod
     def hashed(cls, a):
-        return hash((a.re, a.im))
+        return hash((a._re, a._im))
 
     @classmethod
     def rep(cls, a, short):
-        if a.isnan:
+        if a._isnan:
             return "nan"
-        re = a.re
-        im = a.im
+        re = a._re
+        im = a._im
         def repn(n):
             if n == 0.0:
                 return "0"

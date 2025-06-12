@@ -163,6 +163,10 @@ class ExampleField(Field):
     def def_intt(cls, y, x, a, b): # int_a^b y dx
         return cls()
 
+    @classmethod
+    def conj(cls, a): # a = x+iy, conj(a) = x-iy
+        return cls()
+
     # Comparisons don't necessarily have bool returns, they may also return any
     # Field type (including this class). However, when this returned object is
     # cast to bool, it must be true iff the original comparison is always true.
@@ -714,6 +718,12 @@ def Matrix(field, shape):
                 "asin": "cannot do asin",
                 "acos": "cannot do acos",
                 "atan": "cannot do atan",
+
+                "diff": "cannot do derivatives",
+                "intt": "cannot do integration",
+                "def_intt": "cannot do (definite) integration",
+
+                "conj": "cannot do complex conjugation",
 
                 "eq": "cannot do equality",
                 "lt": "cannot do ordering",
@@ -1801,6 +1811,26 @@ def Matrix(field, shape):
         return s._apply(s._f("def_intt"), x, lo, hi)
 
 
+    @_instconst
+    def conj(s):
+        """
+        Element-wise complex conjugate.
+        """
+        return s._apply(s._f("conj"), s)
+    @_instconst
+    def real(s):
+        """
+        Element-wise take-real.
+        """
+        return (s + s.conj) / 2
+    @_instconst
+    def imag(s):
+        """
+        Element-wise take-imaginary.
+        """
+        return (s - s.conj) / (2 * s.i)
+
+
     def __eq__(s, o):
         """
         Element-wise equality (cast return to bool to determine if all pairs are
@@ -2453,6 +2483,24 @@ def intt(y, x, *bounds, _field=None):
     lo, hi = bounds
     y, x, lo, hi = castall([y, x, lo, hi], _field=_field)
     return y.intt(x, (lo, hi))
+def conj(x, *, _field=None):
+    """
+    Alias for 'x.conj'.
+    """
+    x, = castall([x], _field=_field)
+    return x.conj
+def real(x, *, _field=None):
+    """
+    Alias for 'x.real'.
+    """
+    x, = castall([x], _field=_field)
+    return x.real
+def imag(x, *, _field=None):
+    """
+    Alias for 'x.imag'.
+    """
+    x, = castall([x], _field=_field)
+    return x.imag
 def summ(x, axis=None, *, _field=None):
     """
     Alias for 'x.summ_along(axis)'.
