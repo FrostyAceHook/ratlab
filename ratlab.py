@@ -50,6 +50,37 @@ def _main():
 
     args = _sys.argv[1:]
 
+    # Help msg.
+    if any(m in args for m in ["-h", "/h", "--help", "?", "-?", "/?"]):
+        txts = ["usage: ", "rat ", "[path | -]..."]
+        cols = [       73,    220,              80]
+        usage = util.coloured(cols, txts)
+        txts = [
+            ">> ", "[", "1", ", ", "2", ", ", "3", "][", "4", ", ", "5", ", ",
+                "6", "]", " # a 2x3 matrix\n",
+            "[", "1 2 3", "]\n",
+            "[", "4 5 6", "]\n",
+            ">> ", "lst", "[", "1", ", ", "2", ", ", "3", "]", " # a list\n",
+            "[", "1", ", ", "2", ", ", "3", "]",
+        ]
+        colf = lambda s: (165 if "".join([x.strip() for x in s]).isdigit() else
+                          161 if s.strip() == "lst" else
+                          73 if s.strip() == ">>" else
+                          245 if s.lstrip().startswith("#") else
+                          7)
+        code = util.coloured(map(colf, txts), txts)
+        print(f"""
+{usage}
+
+Executes the given scripts sequentially and with a shared variable space.
+If '-' is encountered as a path, an interactive console is started (which
+may be exited via 'quit'). If invoked with no arguments, starts a console.
+
+Ratlab is essentially Python with pre-loaded modules and an added
+syntax for matrices.
+{code}""")
+        quit()
+
     # If no files, default to cli.
     if not args:
         args = ["-"]

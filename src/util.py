@@ -170,14 +170,18 @@ def coloured(cols, txts):
     """
     if isinstance(cols, int):
         cols = (cols, )
+    else:
+        cols = list(cols)
     if isinstance(txts, str):
         txts = (txts, )
+    else:
+        txts = list(txts)
     if len(cols) != len(txts):
         raise TypeError("must give one colour for each piece of text, got "
                 f"{len(cols)} colours and {len(txts)} texts")
     for col in cols:
         if not isinstance(col, int):
-            raise TypeError("expected integer color code, got "
+            raise TypeError("expected integer colour code, got "
                     f"{_tname(type(col))}")
     for txt in txts:
         if not isinstance(txt, str):
