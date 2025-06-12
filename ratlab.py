@@ -52,7 +52,7 @@ def _main():
 
     # Help msg.
     if any(m in args for m in ["-h", "/h", "--help", "?", "-?", "/?"]):
-        txts = ["usage: ", "rat ", "[path | -]..."]
+        txts = ["usage: ", "ratlab ", "[path | -]..."]
         cols = [       73,    220,              80]
         usage = util.coloured(cols, txts)
         txts = [
@@ -76,8 +76,8 @@ Executes the given scripts sequentially and with a shared variable space.
 If '-' is encountered as a path, an interactive console is started (which
 may be exited via 'quit'). If invoked with no arguments, starts a console.
 
-Ratlab is essentially Python with pre-loaded modules and an added
-syntax for matrices.
+Ratlab is essentially Python with pre-loaded modules and added syntax for
+matrices.
 {code}""")
         quit()
 

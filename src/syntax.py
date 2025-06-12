@@ -50,7 +50,7 @@ def _ast_call(name, *args):
 
 def _literal(x):
     field = _matrix._get_field(None)
-    x, = _matrix.castall(x)
+    x, = _matrix.castall([x], field=field)
     return x
 
 def _list_row(*xs):

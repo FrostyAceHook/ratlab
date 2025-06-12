@@ -280,7 +280,7 @@ def GenericField(T):
     def rep(cls, a, short):
         if T is bool:
             # most pythonic python ever written?
-            return ["yeagh", "nogh", "Y", "N"][a.obj + 2*short]
+            return ["nogh", "yeagh", "N", "Y"][a.obj + 2*short]
         return repr(a.obj)
 
 
@@ -324,18 +324,39 @@ def lits(field, *, space=None):
     lits.field = field
 lits.field = None
 
-
-
-def _get_field(field):
+def _get_field(field, xs=False):
     if field is None:
-        if lits.field is None:
-            raise RuntimeError("specify a field using 'lits'")
-        field = lits.field
+        if xs:
+            field = xs[0].field
+        else:
+            if lits.field is None:
+                raise RuntimeError("specify a field using 'lits'")
+            field = lits.field
     return field
 
 
 
-def _maybe_unpack(xs):
+def castall(xs, broadcast=True, field=None):
+    """
+    When given an sequence of matrices, returns them cast to the same field and
+    optionally broadcast.
+    """
+    if not _iterable(xs):
+        raise TypeError(f"expected iterable for xs, got {_tname(type(xs))}")
+    xs = list(xs)
+    if not xs:
+        return ()
+    for x in xs:
+        if isinstance(x, Matrix):
+            Mat = type(x)
+            break
+    else:
+        Mat = Single[_get_field(field)]
+    return Mat.cast(*xs, broadcast=broadcast)
+
+
+
+def maybe_unpack(xs):
     if len(xs) == 0 or len(xs) > 1:
         return xs
     x = xs[0]
@@ -356,7 +377,7 @@ class Shape:
     """
 
     def __init__(s, *lens):
-        lens = _maybe_unpack(lens)
+        lens = maybe_unpack(lens)
         for l in lens:
             if not isinstance(l, int):
                 raise TypeError("dimension lengths must be ints, got "
@@ -615,7 +636,7 @@ class Shape:
         """
         if s.isempty:
             raise ValueError("cannot index empty")
-        ijk = _maybe_unpack(ijk)
+        ijk = maybe_unpack(ijk)
         for ii, i in enumerate(ijk):
             if not isinstance(i, int):
                 raise TypeError("expected an integer index, got "
@@ -713,6 +734,8 @@ def Matrix(field, shape):
     def __init__(s, cells, _checkme=True):
         # living on the edge.
         if not _checkme:
+            if not isinstance(cells, tuple):
+                raise TypeError("sod off mate enable the checks")
             s._cells = cells
             return
 
@@ -880,9 +903,9 @@ def Matrix(field, shape):
         size. Note that the shape of this class is ignored. If 'broadcast' is
         false, shapes will be left unchanged.
         """
-        xs = _maybe_unpack(xs)
+        xs = maybe_unpack(xs)
         if not xs:
-            return xs
+            return ()
 
         def conv(x):
             if isinstance(x, Matrix):
@@ -1050,7 +1073,7 @@ def Matrix(field, shape):
         """
         Repeats this matrix the given number of times along each dimension.
         """
-        counts = _maybe_unpack(counts)
+        counts = maybe_unpack(counts)
         for count in counts:
             if not isinstance(count, int):
                 raise TypeError("expected an integer count, got "
@@ -1068,7 +1091,7 @@ def Matrix(field, shape):
         for new in newshape.indices:
             old = tuple(a % b for a, b in zip(new, shp))
             cells[newshape.offset(new)] = s._cells[s.shape.offset(old)]
-        return Matrix[s.field, newshape](cells, _checkme=False)
+        return Matrix[s.field, newshape](tuple(cells), _checkme=False)
 
     def repalong(s, axis, count):
         """
@@ -1472,11 +1495,16 @@ def Matrix(field, shape):
 
 
     @classmethod
-    def _eltwise(cls, func, *xs, rtype=None, over_field=True):
+    def _apply(cls, func, *xs, rtype=None, over_field=True):
         # `over_field` is for a non-matrix returning func which operates directly
         # on the field elements, not on them wrapped in a single matrix.
 
-        # Apply me.
+        # Cast me.
+        if not xs:
+            return empty(cls.field if rtype is None else rtype)
+        xs = cls.cast(*xs)
+
+        # Wrap me.
         def f(y):
             nonlocal rtype
             ret = func(*y)
@@ -1492,13 +1520,8 @@ def Matrix(field, shape):
                         f"'func' for consistency, got {_tname(type(ret))})")
             return ret
 
-        # Cast me.
-        if not xs:
-            return empty(cls.field if rtype is None else rtype)
-        xs = cls.cast(xs)
-
+        # Do me.
         elts = zip(*(x._cells for x in xs))
-
         rshape = xs[0].shape
         if over_field:
             # Eval the points now to find rtype and chuck it in a matrix.
@@ -1520,20 +1543,73 @@ def Matrix(field, shape):
         return Matrix[rtype, rshape](cells)
 
     @classmethod
-    def eltwise(cls, func, *xs, rtype=None):
+    def applyto(cls, func, *xs, rtype=None):
         """
         Constructs a matrix from the results of 'func(a, b, ...)' for all zipped
         elements in '*xs'. If 'rtype' is non-none, hints/enforces the return type
         from 'func'. If 'func' returns a non-single matrix, the shape of the
         return will have these elements appended into new axes.
         """
-        return cls._eltwise(func, *xs, rtype=rtype, over_field=False)
+        if not callable(func):
+            raise TypeError("expected callable 'func', got "
+                    f"{_tname(type(func))}")
+        if rtype is not None and isinstance(rtype, type):
+            raise TypeError("expected none or type for 'rtype', got "
+                    f"{_tname(type(rtype))}")
+        return cls._apply(func, *xs, rtype=rtype, over_field=False)
 
     def apply(s, func, *os, rtype=None):
         """
-        Alias for 'M.eltwise(func, s, *os, rtype=rtype)'.
+        Alias for 'M.applyto(func, s, *os, rtype=rtype)'.
         """
-        return s.eltwise(func, s, *os, rtype=rtype)
+        return type(s).applyto(func, s, *os, rtype=rtype)
+
+
+    def _fold(s, func, seed, axis, right=False, over_field=True):
+        # `over_field` is for a field returning func which operates directly
+        # on the field elements, not on them wrapped in a single matrix.
+
+        if right:
+            f = func
+            order = reversed
+        else:
+            def f(a, b):
+                return func(b, a)
+            order = lambda x: x
+
+        if axis is None:
+            rawcells = order(s._cells)
+            cells = rawcells if over_field else map(single, rawcells)
+            for x in cells:
+                seed = f(x, seed)
+            return single(seed) if over_field else seed
+        for x in order(s.along(axis)):
+            seed = x._apply(f, x, seed, over_field=over_field)
+        return seed
+
+    def fold(s, func, seed, axis=None, right=False):
+        """
+        Constructs a matrix from the results of sequentially evaluating 'func'
+        with the running value and the next value. Looks like:
+            'func( ... func(func(seed, m[0]), m[1]), ... m[-1])'
+        Or if 'right':
+            'func(m[0], ... func(m[-2], func(m[-1], seed)) ... )'
+        If 'axis' is none, this folding is performed along the ravelled array,
+        otherwise it is performed along that axis in parallel. 'seed' may be
+        anything which satisfies the function, and it may be a matrix of the
+        correct perpendicular size to seed a fold along an axis with different
+        values for each run.
+        """
+        if not callable(func):
+            raise TypeError("expected callable 'func', got "
+                    f"{_tname(type(func))}")
+        if axis is not None:
+            if not isinstance(axis, int):
+                raise TypeError("expected an integer axis, got "
+                        f"{_tname(type(axis))}")
+            if axis < 0:
+                raise ValueError(f"axis cannot be negative, got {axis}")
+        return s._fold(func, seed, axis, right, over_field=False)
 
 
     def __pos__(s):
@@ -1546,48 +1622,48 @@ def Matrix(field, shape):
         Element-wise negation.
         """
         f = lambda x: s._f("sub")(s._f("zero"), x)
-        return s._eltwise(f, s)
+        return s._apply(f, s)
     def __abs__(s):
         """
         Element-wise absolution.
         """
-        return s._eltwise(s._f("absolute"), s)
+        return s._apply(s._f("absolute"), s)
 
     def __add__(s, o):
         """
         Element-wise addition.
         """
-        return s._eltwise(s._f("add"), s, o)
+        return s._apply(s._f("add"), s, o)
     def __radd__(s, o):
-        return s._eltwise(lambda a, b: s._f("add")(b, a), s, o)
+        return s._apply(lambda a, b: s._f("add")(b, a), s, o)
     def __sub__(s, o):
         """
         Element-wise subtraction.
         """
-        return s._eltwise(s._f("sub"), s, o)
+        return s._apply(s._f("sub"), s, o)
     def __rsub__(s, o):
-        return s._eltwise(lambda a, b: s._f("sub")(b, a), s, o)
+        return s._apply(lambda a, b: s._f("sub")(b, a), s, o)
     def __mul__(s, o):
         """
         Element-wise multiplication (use '@' for matrix multiplication).
         """
-        return s._eltwise(s._f("mul"), s, o)
+        return s._apply(s._f("mul"), s, o)
     def __rmul__(s, o):
-        return s._eltwise(lambda a, b: s._f("mul")(b, a), s, o)
+        return s._apply(lambda a, b: s._f("mul")(b, a), s, o)
     def __truediv__(s, o):
         """
         Element-wise division.
         """
-        return s._eltwise(s._f("div"), s, o)
+        return s._apply(s._f("div"), s, o)
     def __rtruediv__(s, o):
-        return s._eltwise(lambda a, b: s._f("div")(b, a), s, o)
+        return s._apply(lambda a, b: s._f("div")(b, a), s, o)
     def __pow__(s, o):
         """
         Element-wise power.
         """
-        return s._eltwise(s._f("power"), s, o)
+        return s._apply(s._f("power"), s, o)
     def __rpow__(s, o):
-        return s._eltwise(lambda a, b: s._f("power")(b, a), s, o)
+        return s._apply(lambda a, b: s._f("power")(b, a), s, o)
 
     @_instconst
     def sqrt(s):
@@ -1596,7 +1672,7 @@ def Matrix(field, shape):
         """
         s._need("from_int", "to represent 2")
         two = s._f("from_int")(2)
-        return s._eltwise(lambda x: s._f("root")(x, two), s)
+        return s._apply(lambda x: s._f("root")(x, two), s)
     @_instconst
     def cbrt(s):
         """
@@ -1604,13 +1680,13 @@ def Matrix(field, shape):
         """
         s._need("from_int", "to represent 3")
         three = s._f("from_int")(3)
-        return s._eltwise(lambda x: s._f("root")(x, three), s)
+        return s._apply(lambda x: s._f("root")(x, three), s)
 
     def root(s, n):
         """
         Element-wise nth root.
         """
-        return s._eltwise(s._f("root"), s, n)
+        return s._apply(s._f("root"), s, n)
 
     @_instconst
     def exp(s):
@@ -1618,7 +1694,7 @@ def Matrix(field, shape):
         Element-wise natural exponential.
         """
         base = s.e._cells[0]
-        return s._eltwise(lambda x: s._f("power")(base, x), s)
+        return s._apply(lambda x: s._f("power")(base, x), s)
     @_instconst
     def exp2(s):
         """
@@ -1626,7 +1702,7 @@ def Matrix(field, shape):
         """
         s._need("from_int", "to represent 2")
         base = s._f("from_int")(2)
-        return s._eltwise(lambda x: s._f("power")(base, x), s)
+        return s._apply(lambda x: s._f("power")(base, x), s)
     @_instconst
     def exp10(s):
         """
@@ -1634,7 +1710,7 @@ def Matrix(field, shape):
         """
         s._need("from_int", "to represent 10")
         base = s._f("from_int")(10)
-        return s._eltwise(lambda x: s._f("power")(base, x), s)
+        return s._apply(lambda x: s._f("power")(base, x), s)
 
     @_instconst
     def ln(s):
@@ -1642,7 +1718,7 @@ def Matrix(field, shape):
         Element-wise natural logarithm.
         """
         base = s.e._cells[0]
-        return s._eltwise(lambda x: s._f("log")(base, x), s)
+        return s._apply(lambda x: s._f("log")(base, x), s)
     @_instconst
     def log2(s):
         """
@@ -1650,7 +1726,7 @@ def Matrix(field, shape):
         """
         s._need("from_int", "to represent 2")
         base = s._f("from_int")(2)
-        return s._eltwise(lambda x: s._f("log")(base, x), s)
+        return s._apply(lambda x: s._f("log")(base, x), s)
     @_instconst
     def log10(s):
         """
@@ -1658,50 +1734,50 @@ def Matrix(field, shape):
         """
         s._need("from_int", "to represent 10")
         base = s._f("from_int")(10)
-        return s._eltwise(lambda x: s._f("log")(base, x), s)
+        return s._apply(lambda x: s._f("log")(base, x), s)
     def log(s, base):
         """
         Element-wise base-specified logarithm.
         """
-        return s._eltwise(lambda a, b: s._f("log")(b, a), s, base)
+        return s._apply(lambda a, b: s._f("log")(b, a), s, base)
 
     @_instconst
     def sin(s):
         """
         Element-wise trigonometric sine.
         """
-        return s._eltwise(s._f("sin"), s)
+        return s._apply(s._f("sin"), s)
     @_instconst
     def cos(s):
         """
         Element-wise trigonometric cosine.
         """
-        return s._eltwise(s._f("cos"), s)
+        return s._apply(s._f("cos"), s)
     @_instconst
     def tan(s):
         """
         Element-wise trigonometric tangent.
         """
-        return s._eltwise(s._f("tan"), s)
+        return s._apply(s._f("tan"), s)
 
     @_instconst
     def asin(s):
         """
         Element-wise trigonometric inverse-sine.
         """
-        return s._eltwise(s._f("asin"), s)
+        return s._apply(s._f("asin"), s)
     @_instconst
     def acos(s):
         """
         Element-wise trigonometric inverse-cosine.
         """
-        return s._eltwise(s._f("acos"), s)
+        return s._apply(s._f("acos"), s)
     @_instconst
     def atan(s):
         """
         Element-wise trigonometric inverse-tangent.
         """
-        return s._eltwise(s._f("atan"), s)
+        return s._apply(s._f("atan"), s)
 
 
     def diff(s, x):
@@ -1709,22 +1785,22 @@ def Matrix(field, shape):
         Element-wise derivative with respect to 'x'.
         """
         s, x = cls.cast(s, x)
-        return s._eltwise(s._f("diff"), s, x)
+        return s._apply(s._f("diff"), s, x)
 
     def intt(s, x, *bounds):
         """
         Element-wise integral with respect to 'x'. If bounds are provided,
         evaluates the definite integral.
         """
-        bounds = _maybe_unpack(bounds)
+        bounds = maybe_unpack(bounds)
         if not bounds:
             s, x = cls.cast(s, x)
-            return s._eltwise(s._f("intt"), s, x)
+            return s._apply(s._f("intt"), s, x)
         if len(bounds) != 2:
             raise TypeError(f"must specify 0 or 2 bounds, got {len(bounds)}")
         lo, hi = bounds
         s, x, lo, hi = cls.cast(s, x, lo, hi)
-        return s._eltwise(s._f("def_intt"), x, lo, hi)
+        return s._apply(s._f("def_intt"), x, lo, hi)
 
 
     def __eq__(s, o):
@@ -1732,23 +1808,23 @@ def Matrix(field, shape):
         Element-wise equality (cast return to bool to determine if all pairs are
         equal).
         """
-        return s._eltwise(s._f("eq"), s, o)
+        return s._apply(s._f("eq"), s, o)
     def __ne__(s, o):
-        return s._eltwise(lambda a, b: not s._f("eq")(a, b), s, o)
+        return s._apply(lambda a, b: not s._f("eq")(a, b), s, o)
     def __lt__(s, o):
         """
         Element-wise ordering (cast return to bool to determine if all pairs are
-        ordered strictly ascending).
+        ordered).
         """
-        return s._eltwise(s._f("lt"), s, o)
+        return s._apply(s._f("lt"), s, o)
     def __le__(s, o):
         f = lambda a, b: s._f("eq")(a, b) or s._f("lt")(a, b)
-        return s._eltwise(f, s, o)
+        return s._apply(f, s, o)
     def __gt__(s, o):
-        return s._eltwise(lambda a, b: s._f("lt")(b, a), s, o)
+        return s._apply(lambda a, b: s._f("lt")(b, a), s, o)
     def __ge__(s, o):
         f = lambda a, b: s._f("eq")(a, b) or s._f("lt")(b, a)
-        return s._eltwise(f, s, o)
+        return s._apply(f, s, o)
 
 
     def __and__(s, o):
@@ -1862,23 +1938,202 @@ def Matrix(field, shape):
         return power
 
 
+    @_instconst
+    def summ(s):
+        """
+        Sum of all elements, alias for 's.summ_along(None)'.
+        """
+        return s.summ_along(None)
+    def summ_along(s, axis):
+        """
+        Additive sum of the values along the given axis. If 'axis' is none,
+        returns the sum over all elements.
+        """
+        zero = s._f("zero")
+        if s.isempty:
+            return zero
+        return s._fold(s._f("add"), zero, axis)
+
+    @_instconst
+    def prod(s):
+        """
+        Product of all elements, alias for 's.prod_along(None)'.
+        """
+        return s.prod_along(None)
+    def prod_along(s, axis):
+        """
+        Multiplicative product of the values along the given axis. If 'axis' is
+        none, returns the product over all elements.
+        """
+        one = s._f("one")
+        if s.isempty:
+            return one
+        return s._fold(s._f("mul"), one, axis)
+
+    @_instconst
+    def minn(s):
+        """
+        Minimum of all elements, alias for 's.minn_along(None)'.
+        """
+        return s.minn_along(None)
+    def minn_along(s, axis):
+        """
+        Minimum of the values along the given axis. If 'axis' is none, returns
+        the minimum over all elements. In the case of ties, the earlier occurence
+        is kept.
+        """
+        if s.isempty:
+            if axis is None:
+                raise TypeError("cannot find minimum of empty")
+            # otherwise they're at-least expecting a matrix return, its vaguely
+            # reasonable to handle an empty.
+            return s
+        lt = s._f("lt")
+        f = lambda a, b: b if lt(b, a) else a
+        if axis is None:
+            seed = s._cells[0]
+        else:
+            seed = s.along(axis)[0]
+        return s._fold(f, seed, axis)
+
+    @_instconst
+    def maxx(s):
+        """
+        Maximum of all elements, alias for 's.maxx_along(None)'.
+        """
+        return s.maxx_along(None)
+    def maxx_along(s, axis):
+        """
+        Maximum of the values along the given axis. If 'axis' is none, returns
+        the maximum over all elements. In the case of ties, the earlier occurence
+        is kept.
+        """
+        if s.isempty:
+            if axis is None:
+                raise TypeError("cannot find maximum of empty")
+            return s
+        lt = s._f("lt")
+        f = lambda a, b: b if lt(a, b) else a
+        if axis is None:
+            seed = s._cells[0]
+        else:
+            seed = s.along(axis)[0]
+        return s._fold(f, seed, axis)
+
+    @_instconst
+    def mean(s):
+        """
+        Arithmetic mean of all elements, alias for 's.mean_along(None)'.
+        """
+        return s.mean_along(None)
+    def mean_along(s, axis):
+        """
+        Arithmetic mean of the values along the given axis. If 'axis' is none,
+        returns the arithmetic mean over all elements.
+        """
+        if s.isempty:
+            if axis is None:
+                raise TypeError("cannot find arithmetic mean of empty")
+            return s
+        n = s.size if axis is None else s.shape[axis]
+        return s.summ_along(axis) / n
+    @_instconst
+    def ave(s):
+        """
+        Alias for 's.mean'.
+        """
+        return s.mean
+    def ave_along(s, axis):
+        """
+        Alias for 's.mean_along(axis)'.
+        """
+        return s.mean_along(axis)
+
+    @_instconst
+    def geomean(s):
+        """
+        Geometric mean of all elements, alias for 's.geomean_along(None)'.
+        """
+        return s.geomean_along(None)
+    def geomean_along(s, axis):
+        """
+        Geometric mean of the values along the given axis. If 'axis' is none,
+        returns the geometric mean over all elements.
+        """
+        if s.isempty:
+            if axis is None:
+                raise TypeError("cannot find geometric mean of empty")
+            return s
+        n = s.size if axis is None else s.shape[axis]
+        return s.prod_along(axis).root(n)
+
+    @_instconst
+    def harmean(s):
+        """
+        Harmonic mean of all elements, alias for 's.harmean_along(None)'.
+        """
+        return s.harmean_along(None)
+    def harmean_along(s, axis):
+        """
+        Harmonic mean of the values along the given axis. If 'axis' is none,
+        returns the harmonic mean over all elements.
+        """
+        if s.isempty:
+            if axis is None:
+                raise TypeError("cannot find harmonic mean of empty")
+            return s
+        n = s.size if axis is None else s.shape[axis]
+        return n / (s.one / s).summ_along(axis)
+
+    @_instconst
+    def quadmean(s):
+        """
+        Quadratic mean (root-mean-square) of all elements, alias for
+        's.quadmean_along(None)'.
+        """
+        return s.quadmean_along(None)
+    def quadmean_along(s, axis):
+        """
+        Quadratic mean (root-mean-square) of the values along the given axis. If
+        'axis' is none, returns the quadratic mean over all elements.
+        """
+        if s.isempty:
+            if axis is None:
+                raise TypeError("cannot find quadratic mean of empty")
+            return s
+        n = s.size if axis is None else s.shape[axis]
+        return ((s * s).summ_along(axis) / n).sqrt
+
+
+    @_instconst
+    def torad(s):
+        """
+        Converts degrees to radians, alias for 's * (180/pi)'.
+        """
+        # maybe preverse largest subproducts.
+        return s / (180 / s.pi)
+    @_instconst
+    def todeg(s):
+        """
+        Converts radians to degrees, alias for 's * (pi/180)'.
+        """
+        return s * (180 / s.pi)
+
+
     def __bool__(s):
         """
-        True iff any elements are non-zero (or non-one if field has no zero).
+        Cast a single to bool, returning true iff it's non-zero.
         """
-        if hasattr(s.field, "zero"):
-            return not all(s._f("eq")(x, s._f("zero")) for x in s._cells)
-        if hasattr(s.field, "one"):
-            return not all(s._f("eq")(x, s._f("one")) for x in s._cells)
-        raise NotImplementedError("no zero or one element in field "
-                f"{_tname(s.field)}, must specify an element to compare to")
-
+        if not s.issingle:
+            raise TypeError("expected single for scalar cast to bool, got "
+                    f"{s.shape}")
+        return not s._f("eq")(s._cells[0], s._f("zero"))
     def __int__(s):
         """
         Cast a single to int.
         """
         if not s.issingle:
-            raise TypeError("expected single matrix for scalar cast, got "
+            raise TypeError("expected single for scalar cast to int, got "
                     f"{s.shape}")
         x = s._f("to_int")(s._cells[0])
         if not isinstance(x, int):
@@ -1890,7 +2145,7 @@ def Matrix(field, shape):
         Cast a single to float.
         """
         if not s.issingle:
-            raise TypeError("expected single matrix for scalar cast, got "
+            raise TypeError("expected single for scalar cast to float, got "
                     f"{s.shape}")
         x = s._f("to_float")(s._cells[0])
         if not isinstance(x, float):
@@ -1902,7 +2157,7 @@ def Matrix(field, shape):
         Cast a single to complex.
         """
         if not s.issingle:
-            raise TypeError("expected single matrix for scalar cast, got "
+            raise TypeError("expected single for scalar cast to complex, got "
                     f"{s.shape}")
         x = s._f("to_complex")(s._cells[0])
         if not isinstance(x, complex):
@@ -2070,104 +2325,120 @@ def isempty(a):
 
 
 
+def dot(x, y, *, field=None):
+    """
+    Dot product, alias for 'x & y'.
+    """
+    x, y = castall([x, y], field=field, broadcast=False)
+    return x & y
+def cross(x, y, *, field=None):
+    """
+    Cross product, alias for 'x | y'.
+    """
+    x, y = castall([x, y], field=field, broadcast=False)
+    return x | y
 def sqrt(x, *, field=None):
     """
     Alias for 'x.sqrt'.
     """
-    x, = castall(x, field=field)
+    x, = castall([x], field=field)
     return x.sqrt
 def cbrt(x, *, field=None):
     """
     Alias for 'x.cbrt'.
     """
-    x, = castall(x, field=field)
+    x, = castall([x], field=field)
     return x.cbrt
 def root(base, x, *, field=None):
     """
     Alias for 'x.root(base)'.
     """
-    x, = castall(x, field=field)
+    x, = castall([x], field=field)
     return x.root(base)
-
 def exp(x, *, field=None):
     """
     Alias for 'x.exp'.
     """
-    x, = castall(x, field=field)
+    x, = castall([x], field=field)
     return x.exp
 def exp2(x, *, field=None):
     """
     Alias for 'x.exp2'.
     """
-    x, = castall(x, field=field)
+    x, = castall([x], field=field)
     return x.exp2
 def exp10(x, *, field=None):
     """
     Alias for 'x.exp10'.
     """
-    x, = castall(x, field=field)
+    x, = castall([x], field=field)
     return x.exp10
-
 def ln(x, *, field=None):
     """
     Alias for 'x.ln'.
     """
-    x, = castall(x, field=field)
+    x, = castall([x], field=field)
     return x.ln
 def log2(x, *, field=None):
     """
     Alias for 'x.log2'.
     """
-    x, = castall(x, field=field)
+    x, = castall([x], field=field)
     return x.log2
 def log10(x, *, field=None):
     """
     Alias for 'x.log10'.
     """
-    x, = castall(x, field=field)
+    x, = castall([x], field=field)
     return x.log10
 def log(base, x, *, field=None):
     """
     Alias for 'x.log(base)'.
     """
-    x, = castall(x, field=field)
+    x, = castall([x], field=field)
     return x.log(base)
 def sin(x, *, field=None):
     """
     Alias for 'x.sin'.
     """
-    x, = castall(x, field=field)
+    x, = castall([x], field=field)
     return x.sin
 def cos(x, *, field=None):
     """
     Alias for 'x.cos'.
     """
-    x, = castall(x, field=field)
+    x, = castall([x], field=field)
     return x.cos
 def tan(x, *, field=None):
     """
     Alias for 'x.tan'.
     """
-    x, = castall(x, field=field)
+    x, = castall([x], field=field)
     return x.tan
 def asin(x, *, field=None):
     """
     Alias for 'x.asin'.
     """
-    x, = castall(x, field=field)
+    x, = castall([x], field=field)
     return x.asin
 def acos(x, *, field=None):
     """
     Alias for 'x.acos'.
     """
-    x, = castall(x, field=field)
+    x, = castall([x], field=field)
     return x.acos
 def atan(x, *, field=None):
     """
     Alias for 'x.atan'.
     """
-    x, = castall(x, field=field)
+    x, = castall([x], field=field)
     return x.atan
+def atan2(y, x, *, field=None):
+    """
+    Quadrant-aware 'atan(y / x)'.
+    """
+    y, x = castall([y, x], field=field)
+    return y._apply(y._f("atan2"), y, x)
 def diff(y, x, *, field=None):
     """
     Alias for 'y.diff(x)'.
@@ -2178,66 +2449,119 @@ def intt(y, x, *bounds, field=None):
     """
     Alias for 'y.intt(x)'.
     """
-    bounds = _maybe_unpack(bounds)
+    bounds = maybe_unpack(bounds)
     if not bounds:
-        y, x = castall(y, x, field=field)
+        y, x = castall([y, x], field=field)
         return y.intt(x)
     if len(bounds) != 2:
         raise TypeError(f"must specify 0 or 2 bounds, got {len(bounds)}")
     lo, hi = bounds
-    y, x, lo, hi = castall(y, x, lo, hi, field=field)
+    y, x, lo, hi = castall([y, x, lo, hi], field=field)
     return y.intt(x, (lo, hi))
-
-def atan2(y, x, *, field=None):
+def summ(x, axis=None, *, field=None):
     """
-    Quadrant-aware 'atan(y / x)'.
+    Alias for 'x.summ_along(axis)'.
     """
-    y, x = castall(y, x, field=field)
-    return y._eltwise(y._f("atan2"), y, x)
-
-
-
-def castall(*xs, broadcast=True, field=None):
-    xs = _maybe_unpack(xs)
-    for x in xs:
-        if isinstance(x, Matrix):
-            Mat = type(x)
-            break
-    else:
-        field = _get_field(field)
-        Mat = Single[field]
-    return Mat.cast(*xs, broadcast=broadcast)
-
-
-
-def long(a):
+    x, = castall([x], field=field)
+    return x.summ_along(axis)
+def prod(x, axis=None, *, field=None):
     """
-    Prints a long string representation of 'a'.
+    Alias for 'x.prod_along(axis)'.
     """
-    if not isinstance(a, Matrix):
-        raise TypeError(f"expected matrix, got {_tname(type(a))}")
-    print(a.__repr__(short=False))
+    x, = castall([x], field=field)
+    return x.prod_along(axis)
+def minn(x, axis=None, *, field=None):
+    """
+    Alias for 'x.minn_along(axis)'.
+    """
+    x, = castall([x], field=field)
+    return x.minn_along(axis)
+def maxx(x, axis=None, *, field=None):
+    """
+    Alias for 'x.maxx_along(axis)'.
+    """
+    x, = castall([x], field=field)
+    return x.maxx_along(axis)
+def mean(x, axis=None, *, field=None):
+    """
+    Alias for 'x.mean_along(axis)'.
+    """
+    x, = castall([x], field=field)
+    return x.mean_along(axis)
+def ave(x, axis=None, *, field=None):
+    """
+    Alias for 'x.mean_along(axis)'.
+    """
+    x, = castall([x], field=field)
+    return x.mean_along(axis)
+def geomean(x, axis=None, *, field=None):
+    """
+    Alias for 'x.geomean_along(axis)'.
+    """
+    x, = castall([x], field=field)
+    return x.geomean_along(axis)
+def harmean(x, axis=None, *, field=None):
+    """
+    Alias for 'x.harmean_along(axis)'.
+    """
+    x, = castall([x], field=field)
+    return x.harmean_along(axis)
+def quadmean(x, axis=None, *, field=None):
+    """
+    Alias for 'x.quadmean_along(axis)'.
+    """
+    x, = castall([x], field=field)
+    return x.quadmean_along(axis)
+def logmean(x, y, *, field=None):
+    """
+    Logarithmic mean of 'x' and 'y': (x - y) / ln(x / y)
+    """
+    x, y = castall([x, y], field=field)
+    f = lambda a, b: a if (a == b) else (a - b) / (a / b).ln
+    return x.apply(f, y)
+def torad(degrees, *, field=None):
+    """
+    Alias for 'degrees.torad'.
+    """
+    x, = castall([degrees], field=field)
+    # maybe preverse largest subproducts.
+    return x.torad
+def todeg(radians, *, field=None):
+    """
+    Alias for 'radians.todeg'.
+    """
+    x, = castall([radians], field=field)
+    return x.todeg
 
+
+def long(x, *, field=None):
+    """
+    Prints a long string representation of 'x'.
+    """
+    x, = castall([x], field=field)
+    print(x.__repr__(short=False))
 
 
 def stack(axis, *xs, field=None):
     """
     Stacks the given matrices along the given axis.
     """
-    field = _get_field(field)
-    xs = _maybe_unpack(xs)
-    if not xs:
-        return empty(field)
-    xs = Single[field].cast(xs, broadcast=False)
-
+    xs = maybe_unpack(xs)
+    xs = castall(xs, field=field, broadcast=False)
+    field = _get_field(field, xs)
     if not isinstance(axis, int):
         raise TypeError(f"expected an integer axis, got {_tname(type(axis))}")
     if axis < 0:
         raise ValueError(f"axis cannot be negative, got {axis}")
 
-    # Stacking empty do NOTHIGN.
+
+    # Stacking empty do NOTHIGN and stacking nothign do EMPTY.
+    if not xs:
+        return empty(field)
     if all(x.isempty for x in xs):
         return empty(field)
+
+    # Huge stack of one item.
     if len(xs) == 1:
         return xs[0]
 
@@ -2282,65 +2606,64 @@ def hstack(*xs, field=None):
 
 def ravel(*xs, field=None):
     """
-    Returns a vector of the cells of all given matrices.
+    Returns a vector of the concatenated cells of all given matrices.
     """
-    field = _get_field(field)
-    xs = _maybe_unpack(xs)
-    xs = Single[field].cast(xs, broadcast=False)
+    xs = maybe_unpack(xs)
+    xs = castall(xs, field=field, broadcast=False)
+    field = _get_field(field, xs)
     size = sum(x.size for x in xs)
-    cells = ()
+    cells = [None] * size
+    off = 0
     for x in xs:
-        cells += x._cells
+        cells[off:off + x.size] = x._cells
+        off += x.size
     return Matrix[field, (size, )](cells)
 
 def rep(x, *counts, field=None):
     """
     Repeats the given matrix the given number of times along each dimension.
     """
-    field = _get_field(field)
-    x, = Single[field].cast(x)
+    x, = castall([x], field=field)
     return x.rep(*counts)
 
 def repalong(x, axis, count, *, field=None):
     """
     Repeats the given matrix 'count' times along 'axis'.
     """
-    field = _get_field(field)
-    x, = Single[field].cast(x)
+    x, = castall([x], field=field)
     return x.repalong(axis, count)
 
-
-def mat(*xs, field=None):
+def tovec(*xs, field=None):
     """
-    Returns a column vector of the given elements, unpacking if given one
-    iterable.
+    Returns a concatenated column vector of the given iterables.
     """
+    # dont maybe unpack xs lmao.
+    cells = []
+    for x in xs:
+        if not _iterable(x):
+            raise TypeError("expected an iterable to concatenate into column, "
+                    f"got {_tname(type(x))}")
+        if isinstance(x, Matrix):
+            cells.extend(x._cells)
+            if field is None:
+                field = x.field
+            continue
+        for x in xs:
+            if not isinstance(x, Matrix):
+                cells.append(x)
+            if not x.issingle:
+                raise TypeError("expected iterable to consist of singles to "
+                        f"concatenate into column, got {x.shape}")
+            if field is None:
+                field = x.field
+            cells.append(x._cells[0])
     field = _get_field(field)
-    xs = _maybe_unpack(xs)
-    return vstack(Single[field].cast(xs, broadcast=False))
-
-
-def diag(*xs, field=None):
-    """
-    Creates a matrix with a diagonal of the given elements and zeros elsewhere.
-    """
-    field = _get_field(field)
-    xs = _maybe_unpack(xs)
-    diagvec = ravel(*xs, field=field)
-    n = len(diagvec)
-    Mat = Matrix[field, (n, n)]
-    if n == 1:
-        cells = diagvec._cells
-    else:
-        cells = [Mat._f("zero")] * (n*n) if n else []
-        for i in range(n):
-            cells[i*n + i] = diagvec._cells[i]
-    return Mat(cells)
+    return Matrix[field, (len(cells), )](cells)
 
 
 def eye(n, *, field=None):
     """
-    2D identity matrix, of the given size.
+    Returns a 2D identity matrix, of the given size.
     """
     field = _get_field(field)
     if not isinstance(n, int):
@@ -2351,11 +2674,11 @@ def eye(n, *, field=None):
 
 def zeros(*counts, field=None):
     """
-    Zero-filled matrix of the given size, defaulting to square if only one axis
-    length is given.
+    Returns a zero-filled matrix of the given size, defaulting to square if only
+    one axis length is given.
     """
     field = _get_field(field)
-    counts = _maybe_unpack(counts)
+    counts = maybe_unpack(counts)
     for count in counts:
         if not isinstance(count, int):
             raise TypeError("expected an integer count, got "
@@ -2368,11 +2691,11 @@ def zeros(*counts, field=None):
 
 def ones(*counts, field=None):
     """
-    One-filled matrix of the given size, defaulting to square if only one axis
-    length is given.
+    Returns a one-filled matrix of the given size, defaulting to square if only
+    one axis length is given.
     """
     field = _get_field(field)
-    counts = _maybe_unpack(counts)
+    counts = maybe_unpack(counts)
     for count in counts:
         if not isinstance(count, int):
             raise TypeError("expected an integer count, got "
@@ -2383,6 +2706,21 @@ def ones(*counts, field=None):
         counts *= 2
     return Matrix[field, counts].ones
 
+def diag(*xs, field=None):
+    """
+    Returns a matrix with a diagonal of the given elements and zeros elsewhere.
+    """
+    diagvec = tovec(*xs, field=field)
+    n = diagvec.size
+    Mat = Matrix[diagvec.field, (n, n)]
+    if n == 1:
+        cells = diagvec._cells
+    else:
+        cells = [Mat._f("zero")] * (n*n) if n else []
+        for i in range(n):
+            cells[i*n + i] = diagvec._cells[i]
+    return Mat(cells)
+
 def linspace(x0, x1, n, *, field=None):
     """
     Returns a vector of 'n' linearly spaced values starting at 'x0' and ending
@@ -2392,18 +2730,13 @@ def linspace(x0, x1, n, *, field=None):
         raise TypeError(f"expected an integer n, got {_tname(type(n))}")
     if n < 0:
         raise ValueError(f"expected n >= 0, got: {n}")
-    if not isinstance(x0, Matrix) and not isinstance(x1, Matrix):
-        field = _get_field(field)
-        cls = Single[field]
-    else:
-        cls = type(x0) if isinstance(x0, Matrix) else type(x1)
+    x0, x1 = castall(x0, x1, field=field)
     if n == 0:
         return empty[x0.field]
-    x0, x1 = cls.cast(x0, x1)
     if x0.isempty:
-        raise TypeError("'x0' cannot be empty")
+        raise TypeError("'x0' cannot be empty when n>0")
     if x1.isempty:
-        raise TypeError("'x1' cannot be empty")
+        raise TypeError("'x1' cannot be empty when n>0")
     if n == 1:
         return x0
     # Lerp each value.
@@ -2421,18 +2754,13 @@ def logspace(x0, x1, n, *, field=None):
         raise TypeError(f"expected an integer n, got {_tname(type(n))}")
     if n < 0:
         raise ValueError(f"expected n >= 0, got: {n}")
-    if not isinstance(x0, Matrix) and not isinstance(x1, Matrix):
-        field = _get_field(field)
-        cls = Single[field]
-    else:
-        cls = type(x0) if isinstance(x0, Matrix) else type(x1)
+    x0, x1 = castall(x0, x1, field=field)
     if n == 0:
         return empty[x0.field]
-    x0, x1 = cls.cast(x0, x1)
     if x0.isempty:
-        raise TypeError("'x0' cannot be empty")
+        raise TypeError("'x0' cannot be empty when n>0")
     if x1.isempty:
-        raise TypeError("'x1' cannot be empty")
+        raise TypeError("'x1' cannot be empty when n>0")
     if n == 1:
         return x0
     # Just log, do linear, then exp.
@@ -2441,165 +2769,6 @@ def logspace(x0, x1, n, *, field=None):
     step = (x1 - x0) / (n - 1)
     x = ((x0 + step * i).exp for i in range(n))
     return stack(x0.ndim, x)
-
-
-def summ(*xs, field=None):
-    """
-    Returns the additive sum of the given values.
-    """
-    field = _get_field(field)
-    xs = _maybe_unpack(xs)
-    if not xs:
-        return Single[field].zero
-    r = Single[field].zero
-    for x in xs:
-        if not isinstance(x, Matrix):
-            x, = Single[field].cast(x)
-        for y in x:
-            r += y
-    return r
-
-def prod(*xs, field=None):
-    """
-    Returns the multiplicative product of the given values.
-    """
-    field = _get_field(field)
-    xs = _maybe_unpack(xs)
-    if not xs:
-        return Single[field].one
-    r = Single[field].one
-    for x in xs:
-        if not isinstance(x, Matrix):
-            x, = Single[field].cast(x)
-        for y in x:
-            r *= y
-    return r
-
-def minn(*xs, field=None):
-    """
-    Returns the minimum of the given values, using the first occurrence in the
-    case of ties.
-    """
-    field = _get_field(field)
-    xs = _maybe_unpack(xs)
-    if not xs:
-        raise ValueError("cannot find minimum of no elements")
-    r = None
-    for x in xs:
-        if not isinstance(x, Matrix):
-            x, = Single[field].cast(x)
-        for y in x:
-            if r is None:
-                r = y
-            elif y < r:
-                r = y
-    return r
-
-def maxx(*xs, field=None):
-    """
-    Returns the maximum of the given values, using the first occurrence in the
-    case of ties.
-    """
-    field = _get_field(field)
-    xs = _maybe_unpack(xs)
-    if not xs:
-        raise ValueError("cannot find maximum of no elements")
-    r = None
-    for x in xs:
-        if not isinstance(x, Matrix):
-            x, = Single[field].cast(x)
-        for y in x:
-            if r is None:
-                r = y
-            elif y > r:
-                r = y
-    return r
-
-
-def mean(*xs, field=None):
-    """
-    Returns the arithmetic mean of the given values.
-    """
-    field = _get_field(field)
-    xs = _maybe_unpack(xs)
-    if not xs:
-        raise ValueError("cannot find the arithmetic mean no elements")
-    r = Single[field].zero
-    n = Single[field].zero
-    for x in xs:
-        if not isinstance(x, Matrix):
-            x, = Single[field].cast(x)
-        for y in x:
-            r += y
-            n += Single[field].one
-    return r / n
-def ave(*xs, field=None):
-    """
-    Alias for 'mean(*xs)'.
-    """
-    return mean(*xs, field=field)
-
-def geomean(*xs, field=None):
-    """
-    Returns the geometric mean of the given values.
-    """
-    field = _get_field(field)
-    xs = _maybe_unpack(xs)
-    if not xs:
-        raise ValueError("cannot find the geometric mean no elements")
-    r = Single[field].one
-    n = Single[field].zero
-    for x in xs:
-        if not isinstance(x, Matrix):
-            x, = Single[field].cast(x)
-        for y in x:
-            r *= y
-            n += Single[field].one
-    return r.root(n)
-
-def harmean(*xs, field=None):
-    """
-    Returns the harmonic mean of the given values.
-    """
-    field = _get_field(field)
-    xs = _maybe_unpack(xs)
-    if not xs:
-        raise ValueError("cannot find the harmonic mean no elements")
-    r = Single[field].zero
-    n = Single[field].zero
-    for x in xs:
-        if not isinstance(x, Matrix):
-            x, = Single[field].cast(x)
-        for y in x:
-            r += y.one / y
-            n += Single[field].one
-    return n / r
-
-def quadmean(*xs, field=None):
-    """
-    Returns the quadratic mean (root-mean-square) of the given values.
-    """
-    field = _get_field(field)
-    xs = _maybe_unpack(xs)
-    if not xs:
-        raise ValueError("cannot find the root-mean-square no elements")
-    r = Single[field].zero
-    n = Single[field].zero
-    for x in xs:
-        if not isinstance(x, Matrix):
-            x, = Single[field].cast(x)
-        for y in x:
-            r += y * y
-            n += Single[field].one
-    return (r / n).sqrt
-
-def logmean(x, y, *, field=None):
-    """
-    Returns the logarithmic mean of 'x' and 'y': (x - y) / ln(x / y)
-    """
-    x, y = castall(x, y, field=field)
-    f = lambda a, b: a if (a == b) else (a - b) / (a / b).ln
-    return x.apply(f, y)
 
 
 def lerp(x, X, Y, extend=False, *, field=None):
@@ -2667,25 +2836,6 @@ def lerp(x, X, Y, extend=False, *, field=None):
         return ya + (yb - ya) * ( (z - xa) / (xb - xa) )
 
     return x.apply(interpolate)
-
-
-
-def torad(degrees, *, field=None):
-    """
-    Converts degrees to radians.
-    """
-    field = _get_field(field)
-    x, = Single[field].cast(degrees)
-    # maybe preverse largest subproducts.
-    return x / (180 / x.pi)
-
-def todeg(radians, *, field=None):
-    """
-    Converts radians to degrees.
-    """
-    field = _get_field(field)
-    x, = Single[field].cast(radians)
-    return x * (180 / x.pi)
 
 
 
