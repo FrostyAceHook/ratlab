@@ -1,45 +1,6 @@
 import math as _math
 
 
-def interp(xs, ys, x, extend=False):
-    """
-    Using the given data points (xs, ys), returns the linearly interpolated y-
-    value for the x-value.
-    """
-    if len(xs) != len(ys):
-        raise ValueError("xs and ys must be the same length.")
-    if len(xs) < 2:
-        raise ValueError("need at least two data points.")
-
-    a, b = 0, len(xs) - 1
-    xa, xb = xs[a], xs[b]
-    if xa == xb:
-        raise ValueError("cannot duplicate data points.")
-    ascending = (xa < xb)
-
-    while b > a + 1:
-        c = (a + b) // 2
-        xc = xs[c]
-        if xc == xa or xc == xb:
-            raise ValueError("cannot duplicate data points.")
-        if xc == x:
-            return ys[c]
-        if (x > xc) == ascending:
-            if (xa > xc) == ascending:
-                raise ValueError("unsorted x values.")
-            a, xa = c, xc
-        else:
-            if (xb < xc) == ascending:
-                raise ValueError("unsorted x values.")
-            b, xb = c, xc
-
-    if (x < xa or xb < x) and not extend:
-        raise ValueError("cannot interpolate outside the data range")
-
-    ya, yb = ys[a], ys[b]
-    return ya + (yb - ya) * (x - xa) / (xb - xa)
-
-
 def rk4(f, T, Y0):
     """
     Solves the given differential: f(t, Y) = Y'; over the given time values and

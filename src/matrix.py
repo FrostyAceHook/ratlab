@@ -390,6 +390,12 @@ class Shape:
         Number of dimensions. Note empty has -1 dimensions and single has 0.
         """
         return -1 if not s else len(s)
+    @_instconst
+    def lastaxis(s):
+        """
+        Index of the last axis with non-1 length.
+        """
+        return max(0, len(s) - 1)
 
     @_instconst
     def isempty(s):
@@ -444,10 +450,10 @@ class Shape:
         """
         # Oob dimensions are implicitly 1 (unless empty, in which case 0).
         if not isinstance(axis, int):
-            raise TypeError(f"expected an integer axis, got "
+            raise TypeError("expected an integer axis, got "
                     f"{_tname(type(axis))}")
         if axis < 0:
-            raise ValueError(f"axis cannot be negative, got {axis}")
+            raise ValueError(f"axis cannot be negative, got: {axis}")
         if axis >= s.ndim:
             return 1 if s.size else 0
         return s._lens.__getitem__(axis)
@@ -456,11 +462,70 @@ class Shape:
         """
         Returns a new shape with the given length along 'axis'.
         """
+        if not isinstance(axis, int):
+            raise TypeError("expected an integer axis, got "
+                    f"{_tname(type(axis))}")
+        if axis < 0:
+            raise ValueError(f"axis cannot be negative, got: {axis}")
         if s.isempty:
             return s
-        shape = list(s) + [1] * (axis + 1 - len(s))
-        shape[axis] = length
-        return Shape(shape)
+        newshape = list(s._lens) + [1] * (axis + 1 - len(s._lens))
+        newshape[axis] = length
+        return Shape(newshape)
+
+    def insertaxis(s, axis, length):
+        """
+        Returns a new shape with the given length inserted at 'axis'.
+        """
+        if not isinstance(axis, int):
+            raise TypeError("expected an integer axis, got "
+                    f"{_tname(type(axis))}")
+        if axis < 0:
+            raise ValueError(f"axis cannot be negative, got: {axis}")
+        if s.isempty:
+            return s
+        newshape = list(s._lens) + [1] * (axis - len(s._lens))
+        newshape.insert(axis, length)
+        return Shape(newshape)
+
+    def insert(s, axis, shape):
+        """
+        Returns a new shape with the given shape inserted at 'axis'.
+        """
+        if not isinstance(axis, int):
+            raise TypeError("expected an integer axis, got "
+                    f"{_tname(type(axis))}")
+        if axis < 0:
+            raise ValueError(f"axis cannot be negative, got: {axis}")
+        if not isinstance(shape, Shape):
+            raise TypeError("expected a Shape shape, got "
+                    f"{_tname(type(shape))}")
+        if shape.isempty:
+            raise TypeError("expected a non-empty shape to insert")
+        if s.isempty:
+            return s
+        newshape = list(s._lens) + [1] * (axis - len(s._lens))
+        newshape[axis:axis] = shape._lens
+        return Shape(newshape)
+
+    def dropaxis(s, axis):
+        """
+        Returns a new shape with the given axis removed, however this axis must
+        not affect the memory layout of the cells - it must be 1 for non-empty
+        shapes and 0 for empty shapes.
+        """
+        if not isinstance(axis, int):
+            raise TypeError("expected an integer axis, got "
+                    f"{_tname(type(axis))}")
+        if axis < 0:
+            raise ValueError(f"axis cannot be negative, got: {axis}")
+        if s.isempty:
+            return s
+        if s[axis] != 1:
+            raise ValueError(f"cannot drop axis with length >1, axis {axis} "
+                    f"has length {s[axis]}")
+        return Shape(l for i, l in enumerate(s._lens) if i != axis)
+
 
     def __bool__(s):
         """
@@ -505,6 +570,7 @@ class Shape:
         return _math.prod(s._lens[:axis])
 
 
+    @property
     def indices(s):
         """
         Returns an iterable of all indices for this shape. An index is a tuple of
@@ -516,6 +582,7 @@ class Shape:
         revidxs = _itertools.product(*reversed(slices))
         return (tuple(reversed(revidx)) for revidx in revidxs)
 
+    @property
     def offsets(s):
         """
         Returns an iterable of all offsets for this shape. An offset is an
@@ -761,6 +828,12 @@ def Matrix(field, shape):
         Number of dimensions. Note empty has -1 dimensions and single has 0.
         """
         return cls.shape.ndim
+    @_classconst
+    def lastaxis(cls):
+        """
+        Index of the last axis with non-1 length.
+        """
+        return cls.shape.lastaxis
 
     @_classconst
     def isempty(cls):
@@ -902,6 +975,14 @@ def Matrix(field, shape):
         return s._cells[s.shape.offset(ijk)]
 
 
+    def dropaxis(s, axis):
+        """
+        Removes the given axis, however this axis must already have length 1 for
+        non-empty matrices.
+        """
+        return Matrix[s.field, s.shape.dropaxis(axis)](s._cells, _checkme=False)
+
+
     @_instconst
     def ravel(s):
         """
@@ -956,12 +1037,12 @@ def Matrix(field, shape):
             # Vector has only one memory format.
             cells = s._cells
         else:
-            idxs = newshape.indices()
+            idxs = newshape.indices
             invorder = [0] * len(order)
             for ii, i in enumerate(order):
                 invorder[i] = ii
             remap = lambda ri: [ri[invorder[axis]] for axis in range(s.ndim)]
-            cells = (s._at(*remap(idx)) for idx in idxs)
+            cells = tuple(s._at(*remap(idx)) for idx in idxs)
         return Matrix[s.field, newshape](cells, _checkme=False)
 
 
@@ -984,7 +1065,7 @@ def Matrix(field, shape):
         if newshape.size == 1:
             return s
         cells = [0] * newshape.size
-        for new in newshape.indices():
+        for new in newshape.indices:
             old = tuple(a % b for a, b in zip(new, shp))
             cells[newshape.offset(new)] = s._cells[s.shape.offset(old)]
         return Matrix[s.field, newshape](cells, _checkme=False)
@@ -1035,7 +1116,7 @@ def Matrix(field, shape):
         if s.issingle:
             newshape = Shape(len(xs))
         else:
-            newshape = s.shape.withaxis(s.ndim - 1, len(xs))
+            newshape = s.shape.withaxis(s.lastaxis, len(xs))
         return Matrix[s.field, newshape](xs, _checkme=False)
 
     def __len__(s):
@@ -1391,43 +1472,62 @@ def Matrix(field, shape):
 
 
     @classmethod
-    def _eltwise(cls, func, *xs, rtype=None, pierce=True):
-        # Cast me.
-        xs = cls.cast(xs)
+    def _eltwise(cls, func, *xs, rtype=None, over_field=True):
+        # `over_field` is for a non-matrix returning func which operates directly
+        # on the field elements, not on them wrapped in a single matrix.
 
         # Apply me.
         def f(y):
             nonlocal rtype
             ret = func(*y)
-            if isinstance(ret, Matrix):
-                if not ret.issingle:
-                    raise TypeError("expected 'func' to return a single, got "
-                            f"{ret.shape}")
-                ret = ret._cells[0]
             if rtype is None:
                 rtype = type(ret)
+                if issubclass(rtype, Matrix):
+                    if over_field:
+                        raise TypeError("'func' cannot return a matrix")
+                    if rtype.isempty:
+                        raise TypeError("'func' cannot return an empty matrix")
             elif not isinstance(ret, rtype):
                 raise TypeError(f"expected {_tname(rtype)} typed return from "
                         f"'func' for consistency, got {_tname(type(ret))})")
             return ret
+
+        # Cast me.
+        if not xs:
+            return empty(cls.field if rtype is None else rtype)
+        xs = cls.cast(xs)
+
         elts = zip(*(x._cells for x in xs))
-        if pierce:
-            # need these in tuple to eval now and find rtype.
+
+        rshape = xs[0].shape
+        if over_field:
+            # Eval the points now to find rtype and chuck it in a matrix.
             cells = tuple(f(y) for y in elts)
         else:
+            # Otherwise, need to handle the possibility of a matrix return. If a
+            # matrix is returned, they must all be the same shape and they are
+            # appended onto new axes.
             cells = tuple(f(single(z, field=cls.field) for z in y) for y in elts)
-        if not cells and rtype is None:
-            rtype = cls.field
-        return Matrix[rtype, xs[0].shape](cells)
+            if issubclass(rtype, Matrix):
+                # To maintain correct memory ordering we cant just concat the
+                # cells, we gotta grab the first from each, then the second, etc.
+                cells = tuple(mat._cells[off]
+                        for off in rtype.shape.offsets
+                        for mat in cells)
+                rshape = rshape.insert(rtype.ndim, rtype.shape)
+                rtype = rtype.field
+
+        return Matrix[rtype, rshape](cells)
 
     @classmethod
     def eltwise(cls, func, *xs, rtype=None):
         """
         Constructs a matrix from the results of 'func(a, b, ...)' for all zipped
         elements in '*xs'. If 'rtype' is non-none, hints/enforces the return type
-        from 'func'.
+        from 'func'. If 'func' returns a non-single matrix, the shape of the
+        return will have these elements appended into new axes.
         """
-        return cls._eltwise(func, *xs, rtype=rtype, pierce=False)
+        return cls._eltwise(func, *xs, rtype=rtype, over_field=False)
 
     def apply(s, func, *os, rtype=None):
         """
@@ -1843,15 +1943,15 @@ def Matrix(field, shape):
         # cheeky matrix of the reps to make access easy.
         reps = Matrix[GenericField[str], s.shape](rep(x) for x in s._cells)
         width = max(len(r.obj) for r in reps._cells)
-        return reps._repr_str(short, width, s.ndim, allow_flat=True)
+        return reps._repr_str(short, width, s.lastaxis, allow_flat=True)
 
-    def _repr_str(s, short, width, ndim, allow_flat=False):
+    def _repr_str(s, short, width, axis, allow_flat=False):
         # this method is a helper, and is only defined for matrices over the
         # GenericField[str].
 
-        if ndim > 2:
-            along = s.along(ndim - 1)
-            layers = [x._repr_str(short, width, ndim - 1) for x in along]
+        if axis > 1:
+            along = s.along(axis)
+            layers = [x._repr_str(short, width, axis - 1) for x in along]
             def encapsulate(r):
                 r = r.split("\n")
                 s = r[0] + "".join(f"\n  {line}" for line in r[1:])
@@ -2158,7 +2258,7 @@ def stack(axis, *xs, field=None):
         lookup[i] = lookup[i - 1] + (i >= offset[lookup[i - 1] + 1])
     # Get the cells.
     cells = [0] * newshape.size
-    for new in newshape.indices():
+    for new in newshape.indices:
         i = 0 if axis >= len(new) else new[axis]
         j = lookup[i]
         k = i - offset[j]
@@ -2289,22 +2389,21 @@ def linspace(x0, x1, n, *, field=None):
     at 'x1'.
     """
     if not isinstance(n, int):
-        raise TypeError(f"expected an integer 'n', got {_tname(type(n))}")
+        raise TypeError(f"expected an integer n, got {_tname(type(n))}")
     if n < 0:
-        raise ValueError(f"expected 'n' >= 0, got: {n}")
+        raise ValueError(f"expected n >= 0, got: {n}")
     if not isinstance(x0, Matrix) and not isinstance(x1, Matrix):
         field = _get_field(field)
         cls = Single[field]
     else:
         cls = type(x0) if isinstance(x0, Matrix) else type(x1)
-    x0, x1 = cls.cast(x0, x1)
-    if x0.isempty:
-        raise TypeError("expected non-empty for 'x0'")
-    if x1.isempty:
-        raise TypeError("expected non-empty for 'x1'")
-
     if n == 0:
         return empty[x0.field]
+    x0, x1 = cls.cast(x0, x1)
+    if x0.isempty:
+        raise TypeError("'x0' cannot be empty")
+    if x1.isempty:
+        raise TypeError("'x1' cannot be empty")
     if n == 1:
         return x0
     # Lerp each value.
@@ -2319,22 +2418,21 @@ def logspace(x0, x1, n, *, field=None):
     ending at 'x1'.
     """
     if not isinstance(n, int):
-        raise TypeError(f"expected an integer 'n', got {_tname(type(n))}")
+        raise TypeError(f"expected an integer n, got {_tname(type(n))}")
     if n < 0:
-        raise ValueError(f"expected 'n' >= 0, got: {n}")
+        raise ValueError(f"expected n >= 0, got: {n}")
     if not isinstance(x0, Matrix) and not isinstance(x1, Matrix):
         field = _get_field(field)
         cls = Single[field]
     else:
         cls = type(x0) if isinstance(x0, Matrix) else type(x1)
-    x0, x1 = cls.cast(x0, x1)
-    if x0.isempty:
-        raise TypeError("expected non-empty for 'x0'")
-    if x1.isempty:
-        raise TypeError("expected non-empty for 'x1'")
-
     if n == 0:
         return empty[x0.field]
+    x0, x1 = cls.cast(x0, x1)
+    if x0.isempty:
+        raise TypeError("'x0' cannot be empty")
+    if x1.isempty:
+        raise TypeError("'x1' cannot be empty")
     if n == 1:
         return x0
     # Just log, do linear, then exp.
@@ -2499,14 +2597,77 @@ def logmean(x, y, *, field=None):
     """
     Returns the logarithmic mean of 'x' and 'y': (x - y) / ln(x / y)
     """
-    if not isinstance(y, Matrix) and not isinstance(x, Matrix):
-        field = _get_field(field)
-        cls = Single[field]
-    else:
-        cls = type(y) if isinstance(y, Matrix) else type(x)
-    x, y = cls.cast(x, y)
+    x, y = castall(x, y, field=field)
     f = lambda a, b: a if (a == b) else (a - b) / (a / b).ln
     return x.apply(f, y)
+
+
+def lerp(x, X, Y, extend=False, *, field=None):
+    """
+    1-dimensional linear interpolation of 'X' and 'Y' at the points specified in
+    'x'. 'X' must be a vector, but all axes other than the first along 'Y' are
+    considered the y-values and the interpolated y-value for all elements of 'x'
+    will be returned. If 'extend' is true, allows 'x' to be outside the range of
+    'X'.
+    """
+    x, X, Y = castall(x, X, Y, field=field, broadcast=False)
+    if not X.isvec:
+        raise TypeError(f"expected a vector 'X', got {X.shape}")
+    if X.size != Y.shape[0]:
+        raise TypeError("expected one 'Y' data point for each 'X', got "
+                f"{X.size} x-values and {Y.shape[0]} y-values")
+    Ys = [y.dropaxis(0) for y in Y.along(0)]
+    if x.isempty:
+        return x
+    if X.size == 0:
+        raise TypeError("expected non-empty 'X' and 'Y' for a non-empty 'x'")
+    if X.size == 1:
+        def flat_interpolate_so_its_not_really_an_interpolate_at_all(z):
+            if not extend and z != X:
+                raise ValueError("expected 'x' within the range of 'X', "
+                        f"got: {z}, which is outside: {X} .. {X}")
+            return Ys[0]
+        return x.apply(flat_interpolate_so_its_not_really_an_interpolate_at_all)
+    xlo = X[0]
+    xhi = X[-1]
+    if xlo == xhi:
+        raise ValueError(f"expected unique 'X'-values, got duplicates: {xlo} "
+                f"and {xhi}")
+    ascending = (xlo < xhi)
+    if xhi < xlo:
+        xlo, xhi = xhi, xlo
+    def interpolate(z):
+        a, b = 0, len(X) - 1
+        xa, xb = X[a], X[b]
+        while b > a + 1:
+            c = (a + b) // 2
+            xc = X[c]
+            if xc == xa:
+                raise ValueError("expected unique 'X'-values, got duplicates: "
+                        f"{xa} and {xc}")
+            if xc == xb:
+                raise ValueError("expected unique 'X'-values, got duplicates: "
+                        f"{xc} and {xb}")
+            if xc == z:
+                return Ys[c]
+            if (z > xc) == ascending:
+                if (xa > xc) == ascending:
+                    raise ValueError("expected sorted 'X'-values, they weren't")
+                a, xa = c, xc
+            else:
+                if (xb < xc) == ascending:
+                    raise ValueError("expected sorted 'X'-values, they weren't")
+                b, xb = c, xc
+
+        if not extend and (z < xa or xb < z):
+            raise ValueError(f"expected 'x' within the range of 'X', got: {z}, "
+                    f"which is outside: {xlo} .. {xhi}")
+
+        ya, yb = Ys[a], Ys[b]
+        return ya + (yb - ya) * ( (z - xa) / (xb - xa) )
+
+    return x.apply(interpolate)
+
 
 
 def torad(degrees, *, field=None):
