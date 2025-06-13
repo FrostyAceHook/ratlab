@@ -169,11 +169,6 @@ class Complex(matrix.Field):
             return cls(isnan=True)
         return cls(a._re, -a._im)
 
-    def eqfr(a, b):
-        if a._isnan or b._isnan:
-            return a._isnan == b._isnan
-        return a._re == b._re and a._im == b._im
-
     @classmethod
     def eq(cls, a, b):
         if a._isnan or b._isnan:
@@ -198,6 +193,12 @@ class Complex(matrix.Field):
         if a._im or b._im: # complex is unorderable.
             raise NotImplementedError()
         return a._re < b._re
+
+    @classmethod
+    def issame(cls, a, b):
+        if a._isnan or b._isnan:
+            return a._isnan == b._isnan
+        return a._re == b._re and a._im == b._im
 
     @classmethod
     def hashed(cls, a):

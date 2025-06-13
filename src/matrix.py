@@ -180,6 +180,10 @@ class ExampleField(Field):
         return ...
 
     @classmethod
+    def issame(cls, a, b): # a is identical to b, must return bool
+        return True
+
+    @classmethod
     def hashed(cls, a): # hash(a)
         return hash(0)
 
@@ -322,7 +326,7 @@ def lits(field):
             expect = getattr(OldMat, name)
             if type(got) is not type(expect):
                 return True
-            return got != expect
+            return not expect.issame(got)
         def inject(name):
             if isoverridden(name):
                 return
@@ -712,6 +716,8 @@ def Matrix(field, shape):
 
                 "eq": "cannot do equality",
                 "lt": "cannot do ordering",
+
+                "issame": "cannot check if identical",
 
                 "hashed": "cannot hash",
 
@@ -1838,6 +1844,13 @@ def Matrix(field, shape):
     def __ge__(s, o):
         f = lambda a, b: s._f("eq")(a, b) or s._f("lt")(b, a)
         return s._apply(f, s, o)
+
+    def issame(s, o):
+        """
+        Element-wise all pairs are identical. This is different to '==', which is
+        allowed to return special types and havae a <100% precision.
+        """
+        return s._apply(s._f("issame"), s, o)
 
 
     def __and__(s, o):
