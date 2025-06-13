@@ -59,7 +59,7 @@ def _main():
             ">> ", "lst", "[", "1", ", ", "2", ", ", "3", "]", " # a list\n",
             "[", "1", ", ", "2", ", ", "3", "]",
         ]
-        colf = lambda s: (165 if "".join([x.strip() for x in s]).isdigit() else
+        colf = lambda s: (135 if "".join([x.strip() for x in s]).isdigit() else
                           161 if s.strip() == "lst" else
                           73 if s.strip() == ">>" else
                           245 if s.lstrip().startswith("#") else

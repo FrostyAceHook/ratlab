@@ -3,6 +3,7 @@ import inspect as _inspect
 import itertools as _itertools
 import math as _math
 import os as _os
+import re as _re
 import sys as _sys
 from pathlib import Path as _Path
 from types import GeneratorType as _GeneratorType
@@ -202,6 +203,15 @@ def coloured(cols, txts):
 
 # Hack to enable console escape codes.
 _os.system("")
+
+def nonctrl(string):
+    """
+    Returns 'string' with all console control codes removed.
+    """
+    control_code = _re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+    return control_code.sub("", string)
+
+
 
 
 def immutable(cls):

@@ -3,7 +3,7 @@ import math
 import struct
 
 import matrix
-from util import classconst, immutable, tname
+from util import coloured, classconst, immutable, tname
 
 
 @immutable
@@ -211,8 +211,8 @@ class Complex(matrix.Field):
         re = a._re
         im = a._im
         def repn(n):
-            if n == 0.0:
-                return "0"
+            if n == 0.0: # -0.0 -> 0.0
+                n = 0.0
             s = f"{n:.6g}" if short else repr(n)
             # "xxx.0" -> "xxx"
             if s.endswith(".0"):
@@ -221,24 +221,27 @@ class Complex(matrix.Field):
             if "e" in s:
                 if len(s) > 2 and s[-2] == "0":
                     s = s[:-2] + s[-1]
-            return s
+            return coloured(135, s)
 
-        sep = "+"
+        pos = coloured(161, "+")
+        neg = coloured(161, "-")
+        sep = pos
+        i = coloured(38, "i")
 
         if im == 0.0:
             im_s = ""
         elif im == 1.0:
-            im_s = "i"
+            im_s = i
         else:
             if im == -1.0:
-                sep = "-"
+                sep = neg
                 im_s = ""
             elif im < 0.0:
-                sep = "-"
+                sep = neg
                 im_s = repn(-im)
             else:
                 im_s = repn(im)
-            im_s = f"{im_s}i"
+            im_s = f"{im_s}{i}"
 
         if re == 0.0:
             re_s = ""
@@ -246,13 +249,13 @@ class Complex(matrix.Field):
             re_s = repn(re)
 
         if not re_s and not im_s:
-            return "0"
+            return repn(0.0)
 
         if not im_s:
             return re_s
 
         if not re_s:
-            if sep == "+":
+            if sep == pos:
                 sep = ""
             return f"{sep}{im_s}"
 

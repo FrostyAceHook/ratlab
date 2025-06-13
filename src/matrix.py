@@ -4,8 +4,9 @@ import math as _math
 import types as _types
 
 from util import (
-    classconst as _classconst, instconst as _instconst, tname as _tname,
+    coloured as _coloured, nonctrl as _nonctrl, tname as _tname,
     iterable as _iterable, immutable as _immutable, templated as _templated,
+    classconst as _classconst, instconst as _instconst,
 )
 
 
@@ -293,7 +294,21 @@ def GenericField(T):
 
 
 
-# Current field.
+def _is_overridden(space, field, name):
+    if name not in space:
+        return False
+    if field is None:
+        return True
+    got = space[name]
+    expect = getattr(Single[field], name)
+    if type(got) is not type(expect):
+        return True
+    try:
+        return not expect.issame(got)
+    except Exception:
+        return True # assume the worst.
+
+
 def lits(field, inject=True):
     """
     Sets the current/default field to the given field and injects constants such
@@ -306,42 +321,27 @@ def lits(field, inject=True):
     except Exception as e:
         raise TypeError("expected a valid field class, got "
                 f"{_tname(type(field))}") from e
-    injects = ["e", "pi"]
 
     if inject:
         # Grab the globals of caller.
         frame = _inspect.currentframe()
         try:
-            glbls = frame.f_back.f_globals
+            space = frame.f_back.f_globals
         finally:
             del frame # don leak.
-
-        # Inject constants, but only if they aren't currently overridden.
-        def isoverridden(name):
-            if name not in glbls:
-                return False
-            if lits._field is None:
-                return True
-            got = glbls[name]
-            expect = getattr(Single[lits._field], name)
-            if type(got) is not type(expect):
-                return True
-            try:
-                return not expect.issame(got)
-            except Exception:
-                return True # assume the worst.
-        for name in injects:
-            if isoverridden(name):
+        for name in lits._injects:
+            if _is_overridden(space, lits._field, name):
                 continue
             if field is None:
-                glbls.pop(name, None)
+                space.pop(name, None)
             else:
                 try:
-                    glbls[name] = getattr(Single[field], name)
+                    space[name] = getattr(Single[field], name)
                 except Exception:
                     pass
     lits._field = field
 lits._field = None
+lits._injects = ("e", "pi")
 
 def _get_field(field, xs=()):
     if field is None:
@@ -2225,7 +2225,7 @@ def Matrix(field, shape):
 
         # cheeky matrix of the reps to make access easy.
         reps = Matrix[GenericField[str], s.shape](rep(x) for x in s._cells)
-        width = max(len(r.obj) for r in reps._cells)
+        width = max(len(_nonctrl(r.obj)) for r in reps._cells)
         return reps._repr_str(short, width, s.lastaxis, allow_flat=True)
 
     def _repr_str(s, short, width, axis, allow_flat=False):
@@ -2248,13 +2248,14 @@ def Matrix(field, shape):
         suffix = ""
         height = s.shape[0]
         if allow_flat and s.iscol:
-            suffix = "'"
+            suffix = _coloured(40, "'")
             height = s.shape[1]
         cols = []
         for i, r in enumerate(s._cells):
             if not i % height:
                 cols.append([])
-            cols[-1].append(f"{r.obj:>{width}}")
+            cell = " " * (width - len(_nonctrl(r.obj))) + r.obj
+            cols[-1].append(cell)
         rows = list(zip(*cols))
         padded = (not short) or (width > 3)
         join = lambda x: "  ".join(x) if padded else " ".join(x)
@@ -3057,3 +3058,37 @@ def mhelp():
             sig = sig[:-len(", field=None")]
         expr = f"{name}({sig})"
         print_entry(expr, func.__doc__)
+
+
+def mvars(long=False):
+    """
+    Prints all matrix variables in the current space.
+    """
+
+    # Grab the globals of caller.
+    frame = _inspect.currentframe()
+    try:
+        space = frame.f_back.f_globals
+    finally:
+        del frame # don leak.
+
+    # Trim down to the matrix variables.
+    mspace = {k: v for k, v in space.items() if isinstance(v, Matrix)}
+    for name in lits._injects:
+        if name not in mspace:
+            continue
+        if not _is_overridden(space, lits._field, name):
+            mspace.pop(name, None)
+
+    if not mspace:
+        print(_coloured(245, "no matrix variables."))
+    for name, value in mspace.items():
+        pre = _coloured([208, 161], [name, " = "])
+        pad = len(_nonctrl(pre))
+        lines = value.__repr__(short=not long).splitlines()
+        if not lines:
+            print(pre)
+            continue
+        lines[0] = pre + lines[0]
+        lines[1:] = [" "*pad + x for x in lines[1:]]
+        print("\n".join(lines))
