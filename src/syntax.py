@@ -290,18 +290,21 @@ class _Transformer(_ast.NodeTransformer):
 
 def _pretty_print_exception(exc, callout, tb=False):
     # manually coloured exception printer.
-    def colour(line):
+    def issquiggles(s):
+        if s is None:
+            return False
+        if not s.strip():
+            return False
+        return all(c.strip() in {"", "~", "^"} for c in s)
+    def colour(lines, i):
+        line = lines[i]
+        next_line = None if i == len(lines) - 1 else lines[i + 1]
         if not line.strip():
             # Blank.
             return ""
         elif line.startswith("Traceback "):
             # "Traceback (most recent call last):".
             return _coloured(203, line)
-        elif all(c in set(" ~^") for c in line):
-            # Markings.
-            txts = ["".join(g) for _, g in _itertools.groupby(line)]
-            cols = [{" ": -1, "~": 55, "^": 93}[x[0]] for x in txts]
-            return _coloured(cols, txts)
         elif line.startswith("  File"):
             # Traceback file+line.
             if False and line.endswith(", in <module>"):
@@ -344,7 +347,33 @@ def _pretty_print_exception(exc, callout, tb=False):
         elif _re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', line) is not None:
             # Exception without a message.
             return _coloured(163, line)
+        elif issquiggles(line):
+            # Markings.
+            txts = ["".join(g) for _, g in _itertools.groupby(line)]
+            cols = [{" ": -1, "~": 55, "^": 93}[x[0]] for x in txts]
+            return _coloured(cols, txts)
         # otherwise assume source code or something.
+
+        # If the next line is squiggles, highlight the squiggled code.
+        if issquiggles(next_line) and len(line) >= len(next_line):
+            next_txts = ["".join(g) for _, g in _itertools.groupby(next_line)]
+            cols = [{" ": -1, "~": 210, "^": 203}[x[0]] for x in next_txts]
+            # cols.append(-1)
+            # Group this line in the same manner as the next.
+            lens = [len(s) for s in next_txts]
+            txts = []
+            i = 0
+            for l in lens:
+                txts.append(line[i:i + l])
+                i += l
+            if i < len(line):
+                if cols[-1] == -1:
+                    txts[-1] += line[i:]
+                else:
+                    cols.append(-1)
+                    txts.append(line[i:])
+            return _coloured(cols, txts)
+
         # actually the "During handling of the ..." line also falls here.
         return line
     if not tb:
@@ -356,7 +385,8 @@ def _pretty_print_exception(exc, callout, tb=False):
             etb = etb.tb_next
     tbe = _traceback.TracebackException(type(exc), exc, etb)
     old = "".join(tbe.format())
-    new = "\n".join(colour(line) for line in old.splitlines())
+    oldlines = old.splitlines()
+    new = "\n".join(colour(oldlines, i) for i in range(len(oldlines)))
     print(_coloured(124, f"## {callout}"))
     print(new)
 

@@ -1,6 +1,5 @@
 - fileme save all non excpetional lines to a file and then open it
 - "remoce two chars from points to user" bro wtf does this MEAN lmao
-- exception colour in code which is underlined
 - custom module importer for .rat
 - remove `_field` kwarg? might be unnecessary lmao
 - something to print all set variables (mvars() for all matrix vars?)

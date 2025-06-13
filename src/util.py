@@ -186,14 +186,19 @@ def coloured(cols, txts):
     for txt in txts:
         if not isinstance(txt, str):
             raise TypeError(f"expected string text, got {_tname(type(txt))}")
-    def colour(c, t):
-        if c < 0:
-            return t
+    segs = [] # funny
+    active = False
+    for c, t in zip(cols, txts):
         if not t:
-            return t
-        return f"\x1B[38;5;{c}m{t}"
-    segs = "".join(colour(c, t) for c, t in zip(cols, txts)) # funny
-    return segs + "\x1B[0m" if segs else ""
+            continue
+        if c >= 0:
+            segs.append(f"\x1B[38;5;{c}m")
+            active = True
+        elif active:
+            segs.append("\x1B[0m")
+            active = False
+        segs.append(t)
+    return "".join(segs) + "\x1B[0m" * active
 
 # Hack to enable console escape codes.
 _os.system("")
