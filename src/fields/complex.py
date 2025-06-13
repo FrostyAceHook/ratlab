@@ -1,3 +1,4 @@
+import cmath
 import math
 import struct
 
@@ -138,16 +139,46 @@ class Complex(matrix.Field):
         return cls.div(ln(b), ln(a))
 
     @classmethod
+    def sin(cls, a):
+        return cls.from_complex(cmath.sin(complex(a._re, a._im)))
+    @classmethod
+    def cos(cls, a):
+        return cls.from_complex(cmath.cos(complex(a._re, a._im)))
+    @classmethod
+    def tan(cls, a):
+        return cls.from_complex(cmath.tan(complex(a._re, a._im)))
+
+    @classmethod
+    def asin(cls, a):
+        return cls.from_complex(cmath.asin(complex(a._re, a._im)))
+    @classmethod
+    def acos(cls, a):
+        return cls.from_complex(cmath.acos(complex(a._re, a._im)))
+    @classmethod
+    def atan(cls, a):
+        return cls.from_complex(cmath.atan(complex(a._re, a._im)))
+    @classmethod
+    def atan2(cls, y, x):
+        y = complex(y._re, y._im)
+        x = complex(x._re, x._im)
+        return cls.from_complex(cmath.atan2(y, x))
+
+    @classmethod
     def conj(cls, a):
         if a._isnan:
             return cls(isnan=True)
         return cls(a._re, -a._im)
 
+    def eqfr(a, b):
+        if a._isnan or b._isnan:
+            return a._isnan == b._isnan
+        return a._re == b._re and a._im == b._im
+
     @classmethod
     def eq(cls, a, b):
         if a._isnan or b._isnan:
             return a._isnan == b._isnan
-        def iseq(x, y, ulps=5):
+        def iseq(x, y, ulps=15):
             if math.isinf(x) or math.isinf(y):
                 return x == y
             # we do tricks around here (c my beloved).
