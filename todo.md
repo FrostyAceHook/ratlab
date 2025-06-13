@@ -1,0 +1,6 @@
+- fileme save all non excpetional lines to a file and then open it
+- "remoce two chars from points to user" bro wtf does this MEAN lmao
+- something to print all set variables
+- shortened matrix print
+- SYMBOLIC. ITS TIME.
+- numpy and sympy forwarding :)))

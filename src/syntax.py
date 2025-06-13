@@ -86,7 +86,7 @@ class _Transformer(_ast.NodeTransformer):
         self.wrap_lits = False
         self.row_vector = False
         self.pierce_tuple = False
-        self.keywords = ["lst", "_syntax", "_space"]
+        self.keywords = ["lst", "clear", "_syntax", "_space"]
 
     def syntaxerrorme(self, msg, node):
         exc = SyntaxError(msg)
@@ -130,7 +130,7 @@ class _Transformer(_ast.NodeTransformer):
         # Ensure keywords aren't modified.
         if not _is_load(node):
             if _is_named(node, self.keywords):
-                self.syntaxerrorme(f"cannot modify keyword {repr(kw)} ", node)
+                self.syntaxerrorme(f"cannot modify keyword {repr(kw)}", node)
         return node
 
     def visit_Attribute(self, node):
@@ -422,7 +422,7 @@ def run_cli(space):
         if stripped == "quit":
             leave = True
             break
-        if stripped == "cls":
+        if stripped == "clear":
             _os.system("cls")
             continue
         _execute(source, space)

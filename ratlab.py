@@ -46,7 +46,8 @@ def _main():
     args = _sys.argv[1:]
 
     # Help msg.
-    if any(m in args for m in ["-h", "/h", "--help", "?", "-?", "/?"]):
+    lowerargs = [x.lower() for x in args]
+    if any(m in lowerargs for m in ["-h", "/h", "--help", "?", "-?", "/?"]):
         txts = ["usage: ", "ratlab ", "[path | -]..."]
         cols = [       73,    220,              80]
         usage = util.coloured(cols, txts)
