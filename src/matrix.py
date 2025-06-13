@@ -294,59 +294,63 @@ def GenericField(T):
 
 
 # Current field.
-def lits(field):
+def lits(field, inject=True):
     """
     Sets the current/default field to the given field and injects constants such
     as 'e' and 'pi' into the globals.
     """
     try:
         # try create a field out of it.
-        Single[field]
+        if field is not None:
+            Single[field]
     except Exception as e:
         raise TypeError("expected a valid field class, got "
                 f"{_tname(type(field))}") from e
+    injects = ["e", "pi"]
 
-    # Grab the globals of caller.
-    frame = _inspect.currentframe()
-    try:
-        glbls = frame.f_back.f_globals
-    finally:
-        del frame # don leak.
+    if inject:
+        # Grab the globals of caller.
+        frame = _inspect.currentframe()
+        try:
+            glbls = frame.f_back.f_globals
+        finally:
+            del frame # don leak.
 
-    if field is not None:
         # Inject constants, but only if they aren't currently overridden.
-        OldMat = Single[lits.field] if lits.field is not None else None
-        NewMat = Single[field]
         def isoverridden(name):
             if name not in glbls:
                 return False
-            if OldMat is None:
+            if lits._field is None:
                 return True
             got = glbls[name]
-            expect = getattr(OldMat, name)
+            expect = getattr(Single[lits._field], name)
             if type(got) is not type(expect):
                 return True
-            return not expect.issame(got)
-        def inject(name):
-            if isoverridden(name):
-                return
             try:
-                glbls[name] = getattr(NewMat, name)
+                return not expect.issame(got)
             except Exception:
-                pass
-        inject("e")
-        inject("pi")
-    lits.field = field
-lits.field = None
+                return True # assume the worst.
+        for name in injects:
+            if isoverridden(name):
+                continue
+            if field is None:
+                glbls.pop(name, None)
+            else:
+                try:
+                    glbls[name] = getattr(Single[field], name)
+                except Exception:
+                    pass
+    lits._field = field
+lits._field = None
 
-def _get_field(field, xs=False):
+def _get_field(field, xs=()):
     if field is None:
         if xs:
             field = xs[0].field
         else:
-            if lits.field is None:
+            if lits._field is None:
                 raise RuntimeError("specify a field using 'lits'")
-            field = lits.field
+            field = lits._field
     return field
 
 def _maybe_unpack(xs):
@@ -799,13 +803,13 @@ def Matrix(field, shape):
         """
         Single zero.
         """
-        return single(cls._f("zero"), _field=cls.field)
+        return single(cls._f("zero"), field=cls.field)
     @_classconst
     def one(cls):
         """
         Single one.
         """
-        return single(cls._f("one"), _field=cls.field)
+        return single(cls._f("one"), field=cls.field)
     @_classconst
     def e(cls):
         """
@@ -816,7 +820,7 @@ def Matrix(field, shape):
         else:
             cls._need("from_float", "to represent e")
             e = cls._f("from_float")(_math.e)
-        return single(e, _field=cls.field)
+        return single(e, field=cls.field)
     @_classconst
     def pi(cls):
         """
@@ -827,7 +831,7 @@ def Matrix(field, shape):
         else:
             cls._need("from_float", "to represent pi")
             pi = cls._f("from_float")(_math.pi)
-        return single(pi, _field=cls.field)
+        return single(pi, field=cls.field)
     @_classconst
     def i(cls):
         """
@@ -838,7 +842,7 @@ def Matrix(field, shape):
         else:
             cls._need("from_complex", "to represent i")
             i = cls._f("from_complex")(1j)
-        return single(i, _field=cls.field)
+        return single(i, field=cls.field)
 
     @_classconst
     def size(cls):
@@ -928,7 +932,7 @@ def Matrix(field, shape):
             if cell is None:
                 raise TypeError(f"{_tname(type(x))} cannot be cast to "
                         f"{_tname(cls.field)}")
-            return single(cell, _field=cls.field)
+            return single(cell, field=cls.field)
         xs = [conv(x) for x in xs]
 
         # Handle empties.
@@ -1113,7 +1117,7 @@ def Matrix(field, shape):
         if not s.isvec:
             raise TypeError(f"only vectors have bare iteration, got {s.shape} "
                     "(use .along or .ravel for matrix iterate)")
-        return (single(x, _field=s.field) for x in s._cells)
+        return (single(x, field=s.field) for x in s._cells)
 
     def __getitem__(s, i):
         """
@@ -1333,7 +1337,7 @@ def Matrix(field, shape):
                     det = add(det, mul(cells[row], subdet))
             return det
 
-        return single(determinant(s._cells, s.shape[0]), _field=s.field)
+        return single(determinant(s._cells, s.shape[0]), field=s.field)
 
     @_instconst
     def trace(s):
@@ -1528,7 +1532,7 @@ def Matrix(field, shape):
             # Otherwise, need to handle the possibility of a matrix return. If a
             # matrix is returned, they must all be the same shape and they are
             # appended onto new axes.
-            wrapme = lambda y: (single(z, _field=cls.field) for z in y)
+            wrapme = lambda y: (single(z, field=cls.field) for z in y)
             cells = tuple(f(wrapme(y)) for y in elts)
             if issubclass(rtype, Matrix):
                 # To maintain correct memory ordering we cant just concat the
@@ -1847,8 +1851,9 @@ def Matrix(field, shape):
 
     def issame(s, o):
         """
-        Element-wise all pairs are identical. This is different to '==', which is
-        allowed to return special types and havae a <100% precision.
+        Element-wise pair-wise identical check. This is different to '==' (which
+        checks for equivalent values, and may be different than identical
+        values).
         """
         return s._apply(s._f("issame"), s, o)
 
@@ -1866,12 +1871,12 @@ def Matrix(field, shape):
                     f"got {s.shape} and {o.shape}")
         dot = s._f("zero")
         if not s.shape:
-            return single(dot, _field=s.field)
+            return single(dot, field=s.field)
         mul = s._f("mul")
         add = s._f("add")
         for a, b in zip(s._cells, o._cells):
             dot = add(dot, mul(a, b))
-        return single(dot, _field=s.field)
+        return single(dot, field=s.field)
     def __rand__(s, o):
         o, = s.cast(o)
         return o.__and__(s)
@@ -2310,13 +2315,13 @@ Refers to the single (1x1) matrix type over the given field. Note this is not a
 proper templated class, only a thin wrapper.
 """
 
-def single(x, *, _field=None):
+def single(x, *, field=None):
     """
     Single (1x1) matrix of the given object.
     """
-    if _field is None:
-        _field = type(x)
-    return Single[_field]((x, ))
+    if field is None:
+        field = type(x)
+    return Single[field]((x, ))
 
 def issingle(a):
     """
@@ -2348,7 +2353,7 @@ def isempty(a):
 
 
 
-def castall(xs, broadcast=True, *, _field=None):
+def castall(xs, broadcast=True, *, field=None):
     """
     When given an sequence of matrices, returns them cast to the same field and
     optionally broadcast.
@@ -2363,253 +2368,253 @@ def castall(xs, broadcast=True, *, _field=None):
             Mat = type(x)
             break
     else:
-        Mat = Single[_get_field(_field)]
+        Mat = Single[_get_field(field)]
     return Mat.cast(*xs, broadcast=broadcast)
 
 
 
-def dot(x, y, *, _field=None):
+def dot(x, y, *, field=None):
     """
     Dot product, alias for 'x & y'.
     """
-    x, y = castall([x, y], _field=_field, broadcast=False)
+    x, y = castall([x, y], field=field, broadcast=False)
     return x & y
-def cross(x, y, *, _field=None):
+def cross(x, y, *, field=None):
     """
     Cross product, alias for 'x | y'.
     """
-    x, y = castall([x, y], _field=_field, broadcast=False)
+    x, y = castall([x, y], field=field, broadcast=False)
     return x | y
-def sqrt(x, *, _field=None):
+def sqrt(x, *, field=None):
     """
     Alias for 'x.sqrt'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.sqrt
-def cbrt(x, *, _field=None):
+def cbrt(x, *, field=None):
     """
     Alias for 'x.cbrt'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.cbrt
-def root(base, x, *, _field=None):
+def root(base, x, *, field=None):
     """
     Alias for 'x.root(base)'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.root(base)
-def exp(x, *, _field=None):
+def exp(x, *, field=None):
     """
     Alias for 'x.exp'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.exp
-def exp2(x, *, _field=None):
+def exp2(x, *, field=None):
     """
     Alias for 'x.exp2'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.exp2
-def exp10(x, *, _field=None):
+def exp10(x, *, field=None):
     """
     Alias for 'x.exp10'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.exp10
-def ln(x, *, _field=None):
+def ln(x, *, field=None):
     """
     Alias for 'x.ln'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.ln
-def log2(x, *, _field=None):
+def log2(x, *, field=None):
     """
     Alias for 'x.log2'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.log2
-def log10(x, *, _field=None):
+def log10(x, *, field=None):
     """
     Alias for 'x.log10'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.log10
-def log(base, x, *, _field=None):
+def log(base, x, *, field=None):
     """
     Alias for 'x.log(base)'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.log(base)
-def sin(x, *, _field=None):
+def sin(x, *, field=None):
     """
     Alias for 'x.sin'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.sin
-def cos(x, *, _field=None):
+def cos(x, *, field=None):
     """
     Alias for 'x.cos'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.cos
-def tan(x, *, _field=None):
+def tan(x, *, field=None):
     """
     Alias for 'x.tan'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.tan
-def asin(x, *, _field=None):
+def asin(x, *, field=None):
     """
     Alias for 'x.asin'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.asin
-def acos(x, *, _field=None):
+def acos(x, *, field=None):
     """
     Alias for 'x.acos'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.acos
-def atan(x, *, _field=None):
+def atan(x, *, field=None):
     """
     Alias for 'x.atan'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.atan
-def atan2(y, x, *, _field=None):
+def atan2(y, x, *, field=None):
     """
     Quadrant-aware 'atan(y / x)'.
     """
-    y, x = castall([y, x], _field=_field)
+    y, x = castall([y, x], field=field)
     return y._apply(y._f("atan2"), y, x)
-def diff(y, x, *, _field=None):
+def diff(y, x, *, field=None):
     """
     Alias for 'y.diff(x)'.
     """
-    y, x = castall([y, x], _field=_field)
+    y, x = castall([y, x], field=field)
     return y.diff(x)
-def intt(y, x, *bounds, _field=None):
+def intt(y, x, *bounds, field=None):
     """
     Alias for 'y.intt(x)'.
     """
     bounds = _maybe_unpack(bounds)
     if not bounds:
-        y, x = castall([y, x], _field=_field)
+        y, x = castall([y, x], field=field)
         return y.intt(x)
     if len(bounds) != 2:
         raise TypeError(f"must specify 0 or 2 bounds, got {len(bounds)}")
     lo, hi = bounds
-    y, x, lo, hi = castall([y, x, lo, hi], _field=_field)
+    y, x, lo, hi = castall([y, x, lo, hi], field=field)
     return y.intt(x, (lo, hi))
-def conj(x, *, _field=None):
+def conj(x, *, field=None):
     """
     Alias for 'x.conj'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.conj
-def real(x, *, _field=None):
+def real(x, *, field=None):
     """
     Alias for 'x.real'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.real
-def imag(x, *, _field=None):
+def imag(x, *, field=None):
     """
     Alias for 'x.imag'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.imag
-def summ(x, axis=None, *, _field=None):
+def summ(x, axis=None, *, field=None):
     """
     Alias for 'x.summ_along(axis)'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.summ_along(axis)
-def prod(x, axis=None, *, _field=None):
+def prod(x, axis=None, *, field=None):
     """
     Alias for 'x.prod_along(axis)'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.prod_along(axis)
-def minn(x, axis=None, *, _field=None):
+def minn(x, axis=None, *, field=None):
     """
     Alias for 'x.minn_along(axis)'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.minn_along(axis)
-def maxx(x, axis=None, *, _field=None):
+def maxx(x, axis=None, *, field=None):
     """
     Alias for 'x.maxx_along(axis)'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.maxx_along(axis)
-def mean(x, axis=None, *, _field=None):
+def mean(x, axis=None, *, field=None):
     """
     Alias for 'x.mean_along(axis)'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.mean_along(axis)
-def ave(x, axis=None, *, _field=None):
+def ave(x, axis=None, *, field=None):
     """
     Alias for 'x.mean_along(axis)'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.mean_along(axis)
-def geomean(x, axis=None, *, _field=None):
+def geomean(x, axis=None, *, field=None):
     """
     Alias for 'x.geomean_along(axis)'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.geomean_along(axis)
-def harmean(x, axis=None, *, _field=None):
+def harmean(x, axis=None, *, field=None):
     """
     Alias for 'x.harmean_along(axis)'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.harmean_along(axis)
-def quadmean(x, axis=None, *, _field=None):
+def quadmean(x, axis=None, *, field=None):
     """
     Alias for 'x.quadmean_along(axis)'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.quadmean_along(axis)
-def logmean(x, y, *, _field=None):
+def logmean(x, y, *, field=None):
     """
     Logarithmic mean of 'x' and 'y': (x - y) / ln(x / y)
     """
-    x, y = castall([x, y], _field=_field)
+    x, y = castall([x, y], field=field)
     f = lambda a, b: a if (a == b) else (a - b) / (a / b).ln
     return x.apply(f, y)
-def torad(degrees, *, _field=None):
+def torad(degrees, *, field=None):
     """
     Alias for 'degrees.torad'.
     """
-    x, = castall([degrees], _field=_field)
+    x, = castall([degrees], field=field)
     # maybe preverse largest subproducts.
     return x.torad
-def todeg(radians, *, _field=None):
+def todeg(radians, *, field=None):
     """
     Alias for 'radians.todeg'.
     """
-    x, = castall([radians], _field=_field)
+    x, = castall([radians], field=field)
     return x.todeg
 
 
-def long(x, *, _field=None):
+def long(x, *, field=None):
     """
     Prints a long string representation of 'x'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     print(x.__repr__(short=False))
 
 
-def stack(axis, *xs, _field=None):
+def stack(axis, *xs, field=None):
     """
     Stacks the given matrices along the given axis.
     """
     xs = _maybe_unpack(xs)
-    xs = castall(xs, _field=_field, broadcast=False)
-    field = _get_field(_field, xs)
+    xs = castall(xs, field=field, broadcast=False)
+    field = _get_field(field, xs)
     if not isinstance(axis, int):
         raise TypeError(f"expected an integer axis, got {_tname(type(axis))}")
     if axis < 0:
@@ -2653,25 +2658,25 @@ def stack(axis, *xs, _field=None):
         cells[newshape.offset(new)] = subcells[subshape.offset(subidx)]
     return Matrix[field, newshape](cells)
 
-def vstack(*xs, _field=None):
+def vstack(*xs, field=None):
     """
     Vertically concatenates the given matrices.
     """
-    return stack(0, *xs, _field=_field)
+    return stack(0, *xs, field=field)
 
-def hstack(*xs, _field=None):
+def hstack(*xs, field=None):
     """
     Horizontally concatenates the given matrices.
     """
-    return stack(1, *xs, _field=_field)
+    return stack(1, *xs, field=field)
 
-def ravel(*xs, _field=None):
+def ravel(*xs, field=None):
     """
     Concatenated vector of the raveled cells of all given matrices.
     """
     xs = _maybe_unpack(xs)
-    xs = castall(xs, _field=_field, broadcast=False)
-    field = _get_field(_field, xs)
+    xs = castall(xs, field=field, broadcast=False)
+    field = _get_field(field, xs)
     size = sum(x.size for x in xs)
     cells = [None] * size
     off = 0
@@ -2680,30 +2685,30 @@ def ravel(*xs, _field=None):
         off += x.size
     return Matrix[field, (size, )](cells)
 
-def rep(x, *counts, _field=None):
+def rep(x, *counts, field=None):
     """
     Repeats the given matrix the given number of times along each dimension.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.rep(*counts)
 
-def repalong(x, axis, count, *, _field=None):
+def repalong(x, axis, count, *, field=None):
     """
     Repeats the given matrix 'count' times along 'axis'.
     """
-    x, = castall([x], _field=_field)
+    x, = castall([x], field=field)
     return x.repalong(axis, count)
 
-def tovec(*xs, _field=None):
+def tovec(*xs, field=None):
     """
     Concatenated column vector of the given iterables.
     """
     # dont maybe unpack xs lmao.
-    field = _field
+    field = field
     cells = []
     for x in xs:
         if not _iterable(x):
-            x, = castall([x], _field=field)
+            x, = castall([x], field=field)
         if isinstance(x, Matrix):
             if not x.isvec:
                 raise TypeError("expected vectors to concatenate into column, "
@@ -2714,7 +2719,7 @@ def tovec(*xs, _field=None):
             continue
         for y in x:
             if not isinstance(y, Matrix):
-                y, = castall([y], _field=field)
+                y, = castall([y], field=field)
                 cells.append(y._cells[0])
                 continue
             if not y.issingle:
@@ -2727,23 +2732,23 @@ def tovec(*xs, _field=None):
     return Matrix[field, (len(cells), )](cells)
 
 
-def eye(n, *, _field=None):
+def eye(n, *, field=None):
     """
     2D identity matrix, of the given size.
     """
-    field = _get_field(_field)
+    field = _get_field(field)
     if not isinstance(n, int):
         raise TypeError(f"expected an integer size, got {_tname(type(n))}")
     if n < 0:
         raise ValueError(f"cannot have negative size, got: {n}")
     return Matrix[field, (n, n)].eye
 
-def zeros(*counts, _field=None):
+def zeros(*counts, field=None):
     """
     Zero-filled matrix of the given size, defaulting to square if only one axis
     length is given.
     """
-    field = _get_field(_field)
+    field = _get_field(field)
     counts = _maybe_unpack(counts)
     for count in counts:
         if not isinstance(count, int):
@@ -2755,12 +2760,12 @@ def zeros(*counts, _field=None):
         counts *= 2
     return Matrix[field, counts].zeros
 
-def ones(*counts, _field=None):
+def ones(*counts, field=None):
     """
     One-filled matrix of the given size, defaulting to square if only one axis
     length is given.
     """
-    field = _get_field(_field)
+    field = _get_field(field)
     counts = _maybe_unpack(counts)
     for count in counts:
         if not isinstance(count, int):
@@ -2772,11 +2777,11 @@ def ones(*counts, _field=None):
         counts *= 2
     return Matrix[field, counts].ones
 
-def diag(*xs, _field=None):
+def diag(*xs, field=None):
     """
     Matrix with a diagonal of the given elements and zeros elsewhere.
     """
-    diagvec = tovec(*xs, _field=_field)
+    diagvec = tovec(*xs, field=field)
     n = diagvec.size
     Mat = Matrix[diagvec.field, (n, n)]
     if n == 1:
@@ -2787,7 +2792,7 @@ def diag(*xs, _field=None):
             cells[i*n + i] = diagvec._cells[i]
     return Mat(cells)
 
-def linspace(x0, x1, n, *, _field=None):
+def linspace(x0, x1, n, *, field=None):
     """
     Vector of 'n' linearly spaced values starting at 'x0' and ending at 'x1'.
     """
@@ -2795,8 +2800,8 @@ def linspace(x0, x1, n, *, _field=None):
         raise TypeError(f"expected an integer n, got {_tname(type(n))}")
     if n < 0:
         raise ValueError(f"expected n >= 0, got: {n}")
-    x0, x1 = castall([x0, x1], _field=_field)
-    field = _get_field(_field, [x0, x1])
+    x0, x1 = castall([x0, x1], field=field)
+    field = _get_field(field, [x0, x1])
     if n == 0:
         return empty[field]
     if x0.isempty:
@@ -2811,7 +2816,7 @@ def linspace(x0, x1, n, *, _field=None):
     # Stack these along a new axis.
     return stack(x0.ndim, x)
 
-def logspace(x0, x1, n, *, _field=None):
+def logspace(x0, x1, n, *, field=None):
     """
     Vector of 'n' logarithmically spaced values starting at 'x0' and ending at
     'x1'.
@@ -2820,8 +2825,8 @@ def logspace(x0, x1, n, *, _field=None):
         raise TypeError(f"expected an integer n, got {_tname(type(n))}")
     if n < 0:
         raise ValueError(f"expected n >= 0, got: {n}")
-    x0, x1 = castall([x0, x1], _field=_field)
-    field = _get_field(_field, [x0, x1])
+    x0, x1 = castall([x0, x1], field=field)
+    field = _get_field(field, [x0, x1])
     if n == 0:
         return empty[field]
     if x0.isempty:
@@ -2838,7 +2843,7 @@ def logspace(x0, x1, n, *, _field=None):
     return stack(x0.ndim, x)
 
 
-def lerp(x, X, Y, extend=False, *, _field=None):
+def lerp(x, X, Y, extend=False, *, field=None):
     """
     1-dimensional linear interpolation of 'X' and 'Y' at the points specified in
     'x'. 'X' must be a vector, but all axes other than the first along 'Y' are
@@ -2846,7 +2851,7 @@ def lerp(x, X, Y, extend=False, *, _field=None):
     will be returned. If 'extend' is true, allows 'x' to be outside the range of
     'X'.
     """
-    x, X, Y = castall([x, X, Y], _field=_field, broadcast=False)
+    x, X, Y = castall([x, X, Y], field=field, broadcast=False)
     if not X.isvec:
         raise TypeError(f"expected a vector 'X', got {X.shape}")
     if X.size != Y.shape[0]:
@@ -2909,6 +2914,11 @@ def lerp(x, X, Y, extend=False, *, _field=None):
 
 
 def mhelp():
+    """
+    Prints the signature and doc of the functions in this file (the matrix
+    functions).
+    """
+
     def printme(name, long):
         name = "  " + name
         print(name, end="")
@@ -2927,7 +2937,7 @@ def mhelp():
 
     def print_entry(name, desc):
         s = f"{name} .."
-        s += "." * (18 - len(s)) + " "
+        s += "." * (22 - len(s)) + " "
         printme(s, desc)
 
     Mat = Single[Field]
@@ -3041,9 +3051,9 @@ def mhelp():
         sig = _inspect.signature(func)
         sig = str(sig)
         sig = sig[1:-1]
-        if sig.endswith(", *, _field=None"):
-            sig = sig[:-len(", *, _field=None")]
-        elif sig.endswith(", _field=None"):
-            sig = sig[:-len(", _field=None")]
+        if sig.endswith(", *, field=None"):
+            sig = sig[:-len(", *, field=None")]
+        elif sig.endswith(", field=None"):
+            sig = sig[:-len(", field=None")]
         expr = f"{name}({sig})"
         print_entry(expr, func.__doc__)

@@ -1,8 +1,8 @@
 - fileme save all non excpetional lines to a file and then open it
 - "remoce two chars from points to user" bro wtf does this MEAN lmao
 - custom module importer for .rat
-- remove `_field` kwarg? might be unnecessary lmao
 - something to print all set variables (mvars() for all matrix vars?)
-- shortened matrix print
-- SYMBOLIC. ITS TIME.
+- color for mhelp
+- color for matrix print?
 - numpy and sympy forwarding :)))
+- shortened matrix print

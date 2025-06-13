@@ -34,7 +34,7 @@ from util import tname as _tname, coloured as _coloured
 
 def _EXPOSED_literal(x):
     field = _matrix._get_field(None)
-    x, = _matrix.castall([x], _field=field)
+    x, = _matrix.castall([x], field=field)
     return x
 
 def _EXPOSED_list(*elements):
