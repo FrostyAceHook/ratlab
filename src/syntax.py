@@ -1,12 +1,13 @@
 import ast as _ast
 import codeop as _codeop
 import contextlib as _contextlib
-import linecache as _linecache
 import io as _io
 import itertools as _itertools
+import linecache as _linecache
 import os as _os
 import re as _re
 import traceback as _traceback
+import uuid as _uuid
 import warnings as _warnings
 from pathlib import Path as _Path
 
@@ -29,64 +30,76 @@ from util import tname as _tname, coloured as _coloured
 # - override 'lits' to give the current space.
 
 
-def _is_load(node):
-    return isinstance(node.ctx, _ast.Load)
+# Functions exposed so that the transformed source can call them:
 
-def _is_named(node, names):
-    if not isinstance(node, _ast.Name):
-        return False
-    return node.id in names
-
-def _ast_call(name, *args):
-    return _ast.Call(
-        func=_ast.Attribute(
-            value=_ast.Name(id="_syntax", ctx=_ast.Load()),
-            attr=name,
-            ctx=_ast.Load()
-        ),
-        args=list(args),
-        keywords=[],
-    )
-
-def _literal(x):
+def _EXPOSED_literal(x):
     field = _matrix._get_field(None)
     x, = _matrix.castall([x], _field=field)
     return x
 
-def _list_row(*xs):
-    return _matrix.hstack(*xs)
+def _EXPOSED_list(*elements):
+    return _matrix.hstack(*elements)
 
-def _list_col(*xs):
-    return _matrix.vstack(*xs)
-
-def _slice(matrix_literal, *sliced_by):
+def _EXPOSED_slice(matrix_literal, *sliced_by):
     append_me = _matrix.hstack(*sliced_by)
     return _matrix.vstack(matrix_literal, append_me)
 
-def _is_matrix_literal(node):
-    # strictly helper for subscript handler.
-    if not isinstance(node, _ast.Call):
-        return False
-    func = node.func
-    if not isinstance(func, _ast.Attribute):
-        return False
-    mod = func.value
-    if not isinstance(mod, _ast.Name):
-        return False
-    if mod.id != "_syntax":
-        return False
-    name = func.attr
-    return name == "_slice" or name == "_list_row" or name == "_list_col"
+def _EXPOSED_clear():
+    _os.system("cls")
+
+class _ExitCliException(Exception):
+    pass
+def _EXPOSED_quit():
+    raise _ExitCliException()
+
+def _EXPOSED_print_nonnone(x):
+    if x is not None:
+        print(repr(x))
 
 class _Transformer(_ast.NodeTransformer):
-    def __init__(self, source, filename):
-        super().__init__()
-        self.source = source
-        self.filename = filename
-        self.wrap_lits = False
-        self.row_vector = False
-        self.pierce_tuple = False
-        self.keywords = ["lst", "clear", "_syntax", "_space"]
+    @staticmethod
+    def ast_call(func, *args):
+        assert func.__name__.startswith("_EXPOSED_")
+        return _ast.Call(
+            func=_ast.Attribute(
+                value=_ast.Name(id="_syntax", ctx=_ast.Load()),
+                attr=func.__name__,
+                ctx=_ast.Load()
+            ),
+            args=list(args),
+            keywords=[],
+        )
+    @staticmethod
+    def copyloc(dst, src):
+        _ast.copy_location(dst, src)
+        _ast.fix_missing_locations(dst)
+        return dst
+
+    @staticmethod
+    def is_load(node):
+        return isinstance(node.ctx, _ast.Load)
+
+    @staticmethod
+    def is_named(node, names):
+        if not isinstance(node, _ast.Name):
+            return False
+        if isinstance(names, str):
+            return node.id == names
+        return node.id in names
+
+    @staticmethod
+    def is_matlit(node):
+        if not isinstance(node, _ast.Call):
+            return False
+        func = node.func
+        if not isinstance(func, _ast.Attribute):
+            return False
+        mod = func.value
+        if not isinstance(mod, _ast.Name):
+            return False
+        if mod.id != "_syntax":
+            return False
+        return func.attr in {_EXPOSED_list.__name__, _EXPOSED_slice.__name__}
 
     def syntaxerrorme(self, msg, node):
         exc = SyntaxError(msg)
@@ -99,6 +112,50 @@ class _Transformer(_ast.NodeTransformer):
             exc.end_offset = node.end_col_offset + 1
         exc.text = self.source.splitlines()[node.lineno - 1]
         raise exc
+
+
+    def __init__(self, source, filename):
+        super().__init__()
+        self.source = source
+        self.filename = filename
+        self.wrap_lits = False
+        self.row_vector = False
+        self.pierce_tuple = False
+        self.keywords = ["clear", "quit", "lst", "_syntax"]
+
+    def cook(self, console=False):
+        module = _ast.parse(self.source, self.filename)
+        module = self.visit(module)
+        # Nothing more for non-console.
+        if not console:
+            return module
+        # Every other transformation requires a single Expr node.
+        if len(module.body) != 1:
+            return module
+        expr = module.body[0]
+        if not isinstance(expr, _ast.Expr):
+            return module
+        node = expr.value
+
+        # "clear" becomes a clear screen.
+        if self.is_named(node, "clear"):
+            new_node = self.ast_call(_EXPOSED_clear)
+        # "quit" becomes an exit cli.
+        elif self.is_named(node, "quit"):
+            new_node = self.ast_call(_EXPOSED_quit)
+        # Everything else gets printed if non-none. However, this can be stopped
+        # by appending a semicolon.
+        elif not self.source.rstrip().endswith(";"):
+            new_node = self.ast_call(_EXPOSED_print_nonnone, node)
+        # Otherwise no changes.
+        else:
+            return module
+
+        # Update the expr with this new node.
+        self.copyloc(new_node, node)
+        expr.value = new_node
+        return module
+
 
     def visit(self, node):
         was_wrapping_lits = self.wrap_lits
@@ -123,29 +180,33 @@ class _Transformer(_ast.NodeTransformer):
 
     def visit_Constant(self, node):
         if self.wrap_lits:
-            return _ast_call("_literal", node)
+            new_node = self.ast_call(_EXPOSED_literal, node)
+            return self.copyloc(new_node, node)
         return node
 
     def visit_Name(self, node):
         # Ensure keywords aren't modified.
-        if not _is_load(node):
-            if _is_named(node, self.keywords):
-                self.syntaxerrorme(f"cannot modify keyword {repr(kw)}", node)
+        if not self.is_load(node):
+            for kw in self.keywords:
+                if self.is_named(node, kw):
+                    self.syntaxerrorme("cannot modify ratlab keyword "
+                            f"{repr(kw)}", node)
         return node
 
     def visit_Attribute(self, node):
         node = self.generic_visit(node)
 
         # Ensure keywords aren't modified.
-        if not _is_load(node):
-            if _is_named(node, self.keywords):
-                self.syntaxerrorme(f"cannot modify keyword {repr(kw)} "
-                        "attributes", node)
+        if not self.is_load(node):
+            for kw in self.keywords:
+                if self.is_named(node, kw):
+                    self.syntaxerrorme("cannot modify ratlab keyword "
+                            f"{repr(kw)} attributes", node)
         return node
 
     def visit_List(self, node):
         # Only transform loads into matrices.
-        if not _is_load(node):
+        if not self.is_load(node):
             return self.generic_visit(node)
 
         # If it's immediately wrapped in a tuple, unpack it to have the same
@@ -154,7 +215,7 @@ class _Transformer(_ast.NodeTransformer):
         #  [(1,2)][(3,4)] == error typically
         if len(node.elts) == 1 and isinstance(node.elts[0], _ast.Tuple):
             tpl = node.elts[0]
-            if _is_load(tpl): # ig check its load?
+            if self.is_load(tpl): # ig check its load?
                 node.elts = tpl.elts
         # All list literals are matrices.
         self.wrap_lits = True
@@ -168,11 +229,8 @@ class _Transformer(_ast.NodeTransformer):
         # NEVERMIND, its kinda ass. mainly for when concating matrices, like:
         #  x = [1,2]  (x = [1][2])
         #  [x, x]   (!= [1,1][2,2], it =[1][2][1][2])
-        # funcname = "_list_row" if rowme else "_list_col"
-        funcname = "_list_row"
-        new_node = _ast_call(funcname, *node.elts)
-        _ast.copy_location(new_node, node)
-        return new_node
+        new_node = self.ast_call(_EXPOSED_list, *node.elts)
+        return self.copyloc(new_node, node)
 
     def visit_Subscript(self, node):
         # Handle the thing we subscripting, so we can know if its a matrix
@@ -181,9 +239,9 @@ class _Transformer(_ast.NodeTransformer):
         node.value = self.visit(node.value)
 
         # Find what we're doing based on what we're subscripting.
-        if _is_named(node.value, {"lst"}):
+        if self.is_named(node.value, "lst"):
             what = "list" # create a list literal.
-        elif _is_matrix_literal(node.value):
+        elif self.is_matlit(node.value):
             what = "matrix" # append a row to a matrix literal.
         else:
             what = "normal" # idk normal subscript things.
@@ -202,8 +260,7 @@ class _Transformer(_ast.NodeTransformer):
             for elt in elts:
                 elt.ctx = node.ctx
             new_node = _ast.List(elts=elts, ctx=node.ctx)
-            _ast.copy_location(new_node, node)
-            return new_node
+            return self.copyloc(new_node, node)
 
         if what == "matrix":
             # Ensure its a load.
@@ -214,7 +271,7 @@ class _Transformer(_ast.NodeTransformer):
             # Get all the slice elements.
             elts = node.slice
             if isinstance(elts, _ast.Tuple):
-                if not _is_load(elts):
+                if not self.is_load(elts):
                     self.syntaxerrorme("how have you even done this", elts)
                 elts = elts.elts
             else:
@@ -225,64 +282,14 @@ class _Transformer(_ast.NodeTransformer):
                     self.syntaxerrorme("cannot use slices as elements of a "
                             "matrix literal", elt)
             # Create a call to concat the row.
-            new_node = _ast_call("_slice", node.value, *elts)
-            _ast.copy_location(new_node, node)
-            return new_node
+            new_node = self.ast_call(_EXPOSED_slice, node.value, *elts)
+            return self.copyloc(new_node, node)
 
         return node
 
-    def visit_Call(self, node):
-        # Transform args.
-        node = self.generic_visit(node)
 
-        # See if it's a `lits` call.
-        if not _is_named(node.func, {"lits"}):
-            return node
-
-        # Ensure theres only one arg given (and it is field).
-        for kw in node.keywords:
-            if kw.arg != "field":
-                self.syntaxerrorme("lits() got an unexpected keyword argument: "
-                        f"{repr(kw.arg)}", node)
-        if len(node.args) > 1:
-            self.syntaxerrorme("lits() takes 1 positional argument but "
-                    f"{len(node.args)} were given", node)
-        if node.args and node.keywords:
-            self.syntaxerrorme("lits() got multiple values for argument 'field'",
-                    node)
-        if not node.args and not node.keywords:
-            self.syntaxerrorme("lits() missing 1 required positional argument: "
-                    "'field'", node)
-
-        # Add the current space as kwarg.
-        space = _ast.Name(id="_space", ctx=_ast.Load())
-        space_kwarg = _ast.keyword(arg="_space", value=space)
-        node.keywords.append(space_kwarg)
-
-        return node
-
-def _print_nonnone(x):
-    if x is not None:
-        print(repr(x))
-
-def _parse(source, filename, feedback):
-    # Parse the code.
-    module = _ast.parse(source, filename)
-    module = _Transformer(source, filename).visit(module)
-
-    # If requested, and a print-if-nonnone if the entire thing is an expression.
-    body = module.body
-    if feedback and len(body) == 1 and isinstance(body[0], _ast.Expr):
-        # However, this can be circumvented by appending a semicolon.
-        if not source.lstrip().endswith(";"):
-            expr_node = body[0]
-            tree = _ast.Expr(value=_ast_call("_print_nonnone", expr_node.value))
-            module = _ast.Module(body=[tree], type_ignores=module.type_ignores)
-
-    _ast.fix_missing_locations(module)
-    return module
-
-def _print_exc(exc, callout, tb=False):
+def _pretty_print_exception(exc, callout, tb=False):
+    # manually coloured exception printer.
     def colour(line):
         if not line.strip():
             # Blank.
@@ -315,10 +322,10 @@ def _print_exc(exc, callout, tb=False):
                 txts = list(match.groups())
                 cols = [7, 244, 255, 244, 7, 165]
             fname = txts.pop(1)
-            if fname[:2] == '"<' and fname[-2:] == '>"':
-                txts.insert(1, fname)
-                cols.pop(3)
-                cols.pop(2)
+            if fname.startswith('"<') and fname.endswith('/console>"'):
+                txts.insert(1, fname[:-len('console>"')])
+                txts.insert(2, "console")
+                txts.insert(3, '>"')
             elif _os.sep not in fname:
                 txts.insert(1, fname[0])
                 txts.insert(2, fname[1:-1])
@@ -334,6 +341,9 @@ def _print_exc(exc, callout, tb=False):
             txts = line.split(":", 1)
             txts[0] += ":"
             return _coloured([163, 171], txts)
+        elif _re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', line) is not None:
+            # Exception without a message.
+            return _coloured(163, line)
         # otherwise assume source code or something.
         # actually the "During handling of the ..." line also falls here.
         return line
@@ -351,17 +361,22 @@ def _print_exc(exc, callout, tb=False):
     print(new)
 
 
-def _execute(source, space, filename="<rat>", feedback=True):
-    # Store cli source for nice error printing.
-    if filename == "<rat>":
+def _execute(source, space, filename=None):
+    # For console if filename is none.
+    console = (filename is None)
+    if console:
+        filename = f"<{_uuid.uuid4()}/console>"
+        # Store source for some nice error printing.
         lines = [line + "\n" for line in source.splitlines()]
         _linecache.cache[filename] = (len(source), None, lines, filename)
+
     try:
         # Transform and compile.
-        parsed = _parse(source, filename=filename, feedback=feedback)
+        transformer = _Transformer(source, filename)
+        parsed = transformer.cook(console=console)
         compiled = compile(parsed, filename=filename, mode="exec")
     except Exception as e:
-        _print_exc(e, "TYPO", tb=False)
+        _pretty_print_exception(e, "TYPO", tb=False)
         return False
     try:
         # Splice _syntax into this bitch.
@@ -369,16 +384,13 @@ def _execute(source, space, filename="<rat>", feedback=True):
             space["_syntax"] = __import__(__name__)
         if space["_syntax"] is not __import__(__name__):
             raise RuntimeError("reserved '_syntax' set within variable space")
-        # Splice the space into itself.
-        if "_space" not in space:
-            space["_space"] = space
-        if space["_space"] is not space:
-            raise RuntimeError("reserved '_space' set within variable space")
-        # Execute. i dont remember now lmao but past me had issues when `locals`
-        # wasnt also set to the global space. probably some shitting bug idk.
+        # Execute, with both locals and globals set to `space` to simulate
+        # module-level (filescope) code.
         exec(compiled, space, space)
     except Exception as e:
-        _print_exc(e, "ERROR", tb=True)
+        if isinstance(e, _ExitCliException) and console:
+            raise
+        _pretty_print_exception(e, "ERROR", tb=True)
         return False
     return True
 
@@ -397,7 +409,9 @@ def run_cli(space):
                 print(_coloured(73, ".. " if source else ">> "), end="")
                 line = input()
             except EOFError:
-                break
+                # they ctrl+c-ed my ass.
+                print()
+                raise _ExitCliException()
             source += "\n"*(not not source) + line
             if not line:
                 break
@@ -413,20 +427,11 @@ def run_cli(space):
                 break
         return source
 
-    leave = False
-    while not leave:
-        source = get_input()
-        stripped = source.strip()
-        if not stripped:
-            continue
-        if stripped == "quit":
-            leave = True
-            break
-        if stripped == "clear":
-            _os.system("cls")
-            continue
-        _execute(source, space)
-    if leave:
+    try:
+        while True:
+            source = get_input()
+            _execute(source, space)
+    except _ExitCliException:
         print(_coloured([73, 80], ["-- ", "okie leaving."]))
 
 
@@ -509,7 +514,7 @@ def run_file(space, path, has_next):
     # Read and execute the file.
     with path.open("r", encoding="utf-8") as file:
         source = file.read()
-    if not _execute(source, space, filename=str(path), feedback=False):
+    if not _execute(source, space, filename=str(path)):
         if not has_next:
             return
         ignore = query("exception in file", path)

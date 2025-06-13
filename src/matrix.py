@@ -290,10 +290,10 @@ def GenericField(T):
 
 
 # Current field.
-def lits(field, *, _space=None):
+def lits(field):
     """
     Sets the current/default field to the given field and injects constants such
-    as 'e' and 'pi' into the space.
+    as 'e' and 'pi' into the globals.
     """
     try:
         # try create a field out of it.
@@ -302,16 +302,23 @@ def lits(field, *, _space=None):
         raise TypeError("expected a valid field class, got "
                 f"{_tname(type(field))}") from e
 
-    if field is not None and _space is not None:
+    # Grab the globals of caller.
+    frame = _inspect.currentframe()
+    try:
+        glbls = frame.f_back.f_globals
+    finally:
+        del frame # don leak.
+
+    if field is not None:
         # Inject constants, but only if they aren't currently overridden.
         OldMat = Single[lits.field] if lits.field is not None else None
         NewMat = Single[field]
         def isoverridden(name):
-            if name not in _space:
+            if name not in glbls:
                 return False
             if OldMat is None:
                 return True
-            got = _space[name]
+            got = glbls[name]
             expect = getattr(OldMat, name)
             if type(got) is not type(expect):
                 return True
@@ -320,7 +327,7 @@ def lits(field, *, _space=None):
             if isoverridden(name):
                 return
             try:
-                _space[name] = getattr(NewMat, name)
+                glbls[name] = getattr(NewMat, name)
             except Exception:
                 pass
         inject("e")
@@ -338,29 +345,7 @@ def _get_field(field, xs=False):
             field = lits.field
     return field
 
-
-
-def castall(xs, broadcast=True, *, _field=None):
-    """
-    When given an sequence of matrices, returns them cast to the same field and
-    optionally broadcast.
-    """
-    if not _iterable(xs):
-        raise TypeError(f"expected iterable for xs, got {_tname(type(xs))}")
-    xs = list(xs)
-    if not xs:
-        return ()
-    for x in xs:
-        if isinstance(x, Matrix):
-            Mat = type(x)
-            break
-    else:
-        Mat = Single[_get_field(_field)]
-    return Mat.cast(*xs, broadcast=broadcast)
-
-
-
-def maybe_unpack(xs):
+def _maybe_unpack(xs):
     if len(xs) == 0 or len(xs) > 1:
         return xs
     x = xs[0]
@@ -381,7 +366,7 @@ class Shape:
     """
 
     def __init__(s, *lens):
-        lens = maybe_unpack(lens)
+        lens = _maybe_unpack(lens)
         for l in lens:
             if not isinstance(l, int):
                 raise TypeError("dimension lengths must be ints, got "
@@ -640,7 +625,7 @@ class Shape:
         """
         if s.isempty:
             raise ValueError("cannot index empty")
-        ijk = maybe_unpack(ijk)
+        ijk = _maybe_unpack(ijk)
         for ii, i in enumerate(ijk):
             if not isinstance(i, int):
                 raise TypeError("expected an integer index, got "
@@ -913,7 +898,7 @@ def Matrix(field, shape):
         size. Note that the shape of this class is ignored. If 'broadcast' is
         false, shapes will be left unchanged.
         """
-        xs = maybe_unpack(xs)
+        xs = _maybe_unpack(xs)
         if not xs:
             return ()
 
@@ -1083,7 +1068,7 @@ def Matrix(field, shape):
         """
         Repeats this matrix the given number of times along each dimension.
         """
-        counts = maybe_unpack(counts)
+        counts = _maybe_unpack(counts)
         for count in counts:
             if not isinstance(count, int):
                 raise TypeError("expected an integer count, got "
@@ -1800,7 +1785,7 @@ def Matrix(field, shape):
         Element-wise integral with respect to 'x'. If bounds are provided,
         evaluates the definite integral.
         """
-        bounds = maybe_unpack(bounds)
+        bounds = _maybe_unpack(bounds)
         if not bounds:
             s, x = cls.cast(s, x)
             return s._apply(s._f("intt"), s, x)
@@ -2350,6 +2335,26 @@ def isempty(a):
 
 
 
+def castall(xs, broadcast=True, *, _field=None):
+    """
+    When given an sequence of matrices, returns them cast to the same field and
+    optionally broadcast.
+    """
+    if not _iterable(xs):
+        raise TypeError(f"expected iterable for xs, got {_tname(type(xs))}")
+    xs = list(xs)
+    if not xs:
+        return ()
+    for x in xs:
+        if isinstance(x, Matrix):
+            Mat = type(x)
+            break
+    else:
+        Mat = Single[_get_field(_field)]
+    return Mat.cast(*xs, broadcast=broadcast)
+
+
+
 def dot(x, y, *, _field=None):
     """
     Dot product, alias for 'x & y'.
@@ -2474,7 +2479,7 @@ def intt(y, x, *bounds, _field=None):
     """
     Alias for 'y.intt(x)'.
     """
-    bounds = maybe_unpack(bounds)
+    bounds = _maybe_unpack(bounds)
     if not bounds:
         y, x = castall([y, x], _field=_field)
         return y.intt(x)
@@ -2589,7 +2594,7 @@ def stack(axis, *xs, _field=None):
     """
     Stacks the given matrices along the given axis.
     """
-    xs = maybe_unpack(xs)
+    xs = _maybe_unpack(xs)
     xs = castall(xs, _field=_field, broadcast=False)
     field = _get_field(_field, xs)
     if not isinstance(axis, int):
@@ -2651,7 +2656,7 @@ def ravel(*xs, _field=None):
     """
     Concatenated vector of the raveled cells of all given matrices.
     """
-    xs = maybe_unpack(xs)
+    xs = _maybe_unpack(xs)
     xs = castall(xs, _field=_field, broadcast=False)
     field = _get_field(_field, xs)
     size = sum(x.size for x in xs)
@@ -2726,7 +2731,7 @@ def zeros(*counts, _field=None):
     length is given.
     """
     field = _get_field(_field)
-    counts = maybe_unpack(counts)
+    counts = _maybe_unpack(counts)
     for count in counts:
         if not isinstance(count, int):
             raise TypeError("expected an integer count, got "
@@ -2743,7 +2748,7 @@ def ones(*counts, _field=None):
     length is given.
     """
     field = _get_field(_field)
-    counts = maybe_unpack(counts)
+    counts = _maybe_unpack(counts)
     for count in counts:
         if not isinstance(count, int):
             raise TypeError("expected an integer count, got "
@@ -3027,7 +3032,5 @@ def mhelp():
             sig = sig[:-len(", *, _field=None")]
         elif sig.endswith(", _field=None"):
             sig = sig[:-len(", _field=None")]
-        elif sig.endswith(", *, _space=None"):
-            sig = sig[:-len(", *, _space=None")]
         expr = f"{name}({sig})"
         print_entry(expr, func.__doc__)

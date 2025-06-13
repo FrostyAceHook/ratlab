@@ -83,8 +83,8 @@ matrices.
 
     # Public globals as initial variable space.
     space = {k: v for k, v in globals().items() if not k.startswith("_")}
-    # And set an initial field.
-    lits(Complex, _space=space)
+    # And set an initial field (modifying the `space` and not our globals).
+    exec("lits(Complex)", space, space)
 
     # Read and execute each input file, treating "-" as a cli.
     for i, path in enumerate(args):
