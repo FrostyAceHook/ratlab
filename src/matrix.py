@@ -650,7 +650,7 @@ class Shape:
 
 
 # Matrices.
-@_templated(parents=Field, decorators=_immutable)
+@_templated(decorators=_immutable)
 def Matrix(field, shape):
     """
     Fixed-sized n-dimensional sequence of elements.
@@ -1539,6 +1539,8 @@ def Matrix(field, shape):
                 rshape = rshape.insert(rtype.ndim, rtype.shape)
                 rtype = rtype.field
 
+        if rtype is None:
+            rtype = cls.field
         return Matrix[rtype, rshape](cells)
 
     @classmethod
@@ -1740,6 +1742,7 @@ def Matrix(field, shape):
         """
         return s._apply(lambda a, b: s._f("log")(b, a), s, base)
 
+
     @_instconst
     def sin(s):
         """
@@ -1778,6 +1781,44 @@ def Matrix(field, shape):
         """
         return s._apply(s._f("atan"), s)
 
+    @_instconst
+    def sind(s):
+        """
+        Element-wise trigonometric sine, with input in degrees.
+        """
+        return s._apply(s._f("sin"), s.torad)
+    @_instconst
+    def cosd(s):
+        """
+        Element-wise trigonometric cosine, with input in degrees.
+        """
+        return s._apply(s._f("cos"), s.torad)
+    @_instconst
+    def tand(s):
+        """
+        Element-wise trigonometric tangent, with input in degrees.
+        """
+        return s._apply(s._f("tan"), s.torad)
+
+    @_instconst
+    def asind(s):
+        """
+        Element-wise trigonometric inverse-sine, with output in degrees.
+        """
+        return s._apply(s._f("asin"), s).todeg
+    @_instconst
+    def acosd(s):
+        """
+        Element-wise trigonometric inverse-cosine, with output in degrees.
+        """
+        return s._apply(s._f("acos"), s).todeg
+    @_instconst
+    def atand(s):
+        """
+        Element-wise trigonometric inverse-tangent, with output in degrees.
+        """
+        return s._apply(s._f("atan"), s).todeg
+
 
     def diff(s, x):
         """
@@ -1813,12 +1854,16 @@ def Matrix(field, shape):
         """
         Element-wise take-real.
         """
+        if s.isempty: # avoid divving by non-empty.
+            return s
         return (s + s.conj) / 2
     @_instconst
     def imag(s):
         """
         Element-wise take-imaginary.
         """
+        if s.isempty:
+            return s
         return (s - s.conj) / (2 * s.i)
 
 
@@ -2149,7 +2194,7 @@ def Matrix(field, shape):
 
     def __bool__(s):
         """
-        Cast to bool, returning true all elements are non-zero.
+        Cast to bool, returning true iff all elements are non-zero.
         """
         return not any(s._f("eq")(x, s._f("zero")) for x in s._cells)
     def __int__(s):
@@ -2270,8 +2315,13 @@ def Matrix(field, shape):
         element instead.
         """
         cells = object.__getattribute__(s, "_cells") # cooked.
+        field = object.__getattribute__(s, "field")
+        shape = object.__getattribute__(s, "shape")
         bad = False
+        checked_elements = False
         if attr.startswith("_"):
+            bad = True
+        elif attr in vars(ExampleField).keys():
             bad = True
         elif cells:
             try:
@@ -2279,20 +2329,36 @@ def Matrix(field, shape):
                 cells = tuple(getattr(x, attr) for x in cells)
             except AttributeError:
                 bad = True
+                checked_elements = True
         else:
+            obj = None
             try:
-                bad = not hasattr(s._f("zero"), attr)
+                s._need("zero", "test for attribute")
+                obj = s._f("zero")
             except NotImplementedError:
                 try:
-                    bad = not hasattr(s._f("one"), attr)
+                    s._need("one", "test for attribute")
+                    obj = s._f("one")
                 except NotImplementedError:
-                    bad = False # giv up.
+                    pass
+            if obj is None:
+                bad = True
+            else:
+                try:
+                    x = getattr(obj, attr)
+                    if rtype is None:
+                        rtype = type(x)
+                except Exception:
+                    bad = True
+                    checked_elements = True
         if bad:
+            extra = ""
+            if checked_elements:
+                extra = f" (and neither do the {_tname(field)} elements)"
             raise AttributeError(f"{_tname(type(s))} object has no attribute "
-                    f"{repr(attr)} (and neither do the {_tname(s.field)} "
-                    "elements)")
+                    f"{repr(attr)}{extra}")
         if not cells and rtype is None:
-            rtype = s.field
+            rtype = field
         if rtype is None:
             rtype = type(cells[0])
         for cell in cells:
@@ -2300,7 +2366,8 @@ def Matrix(field, shape):
                 raise TypeError(f"expected {_tname(rtype)} typed return from "
                         f"'.__getattr__({repr(attr)})' for consistency, got "
                         f"{_tname(type(cell))})")
-        return Matrix[rtype, s.shape](cells)
+        return Matrix[rtype, shape](cells)
+
 
 
 
@@ -2354,7 +2421,7 @@ def isempty(a):
 def castall(xs, broadcast=True, *, field=None):
     """
     When given an sequence of matrices, returns them cast to the same field and
-    optionally broadcast.
+    (optionally) broadcast to the same shape.
     """
     if not _iterable(xs):
         raise TypeError(f"expected iterable for xs, got {_tname(type(xs))}")
@@ -2485,6 +2552,48 @@ def atan2(y, x, *, field=None):
     """
     y, x = castall([y, x], field=field)
     return y._apply(y._f("atan2"), y, x)
+def sind(x, *, field=None):
+    """
+    Alias for 'x.sind'.
+    """
+    x, = castall([x], field=field)
+    return x.sind
+def cosd(x, *, field=None):
+    """
+    Alias for 'x.cosd'.
+    """
+    x, = castall([x], field=field)
+    return x.cosd
+def tand(x, *, field=None):
+    """
+    Alias for 'x.tand'.
+    """
+    x, = castall([x], field=field)
+    return x.tand
+def asind(x, *, field=None):
+    """
+    Alias for 'x.asind'.
+    """
+    x, = castall([x], field=field)
+    return x.asind
+def acosd(x, *, field=None):
+    """
+    Alias for 'x.acosd'.
+    """
+    x, = castall([x], field=field)
+    return x.acosd
+def atand(x, *, field=None):
+    """
+    Alias for 'x.atand'.
+    """
+    x, = castall([x], field=field)
+    return x.atand
+def atand2(y, x, *, field=None):
+    """
+    Quadrant-aware 'atand(y / x)'.
+    """
+    y, x = castall([y, x], field=field)
+    return y._apply(y._f("atan2"), y, x).todeg
 def diff(y, x, *, field=None):
     """
     Alias for 'y.diff(x)'.
@@ -3039,7 +3148,8 @@ def mhelp():
     funcs = {name: obj for name, obj in globals().items()
             if obj.__doc__ is not None
             and callable(obj)
-            and obj.__module__ == __name__}
+            and obj.__module__ == __name__
+            and name != "Matrix"}
 
     # Explicitly print a couple.
     print_entry("Matrix[field, shape]", Matrix.__doc__)

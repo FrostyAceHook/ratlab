@@ -163,10 +163,14 @@ def tname(t, namespaced=False):
     return f"'{namespace}{name}'"
 
 
+# Hack to enable console escape codes.
+_os.system("")
+
 def coloured(cols, txts):
     """
     When given the colour 'cols' and text 'txts' arrays, prints each element of
-    the text as its corresponding colour. Colour codes can be found at:
+    the text as its corresponding colour. If any text is already coloured, it is
+    left as that colour. Colour codes can be found at:
     https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
     """
     if isinstance(cols, int):
@@ -187,27 +191,71 @@ def coloured(cols, txts):
     for txt in txts:
         if not isinstance(txt, str):
             raise TypeError(f"expected string text, got {_tname(type(txt))}")
-    segs = [] # funny
-    active = False
-    for c, t in zip(cols, txts):
-        if not t:
-            continue
-        if c >= 0:
-            segs.append(f"\x1B[38;5;{c}m")
-            active = True
-        elif active:
-            segs.append("\x1B[0m")
-            active = False
-        segs.append(t)
-    return "".join(segs) + "\x1B[0m" * active
 
-# Hack to enable console escape codes.
-_os.system("")
+    leading_off_code = _re.compile(r"^\x1B\[0m")
+    leading_col_code = _re.compile(r"^\x1B\[38;5;([0-9]+)m")
+    leading_ctrl_code = _re.compile(r"^\x1B\[[0-9;]*[A-Za-z]")
+    col_code = lambda c: f"\x1B[38;5;{c}m" if c >= 0 else "\x1B[0m"
+
+    # Decompose into a list of characters (without control codes) and which
+    # colour they should be.
+    chars = []
+    codes = []
+    full = "".join(txts)
+    cur_col = -1
+    while True:
+        while True:
+            # Check for an off code.
+            match = leading_off_code.match(full)
+            if match is not None:
+                cur_col = -1
+                full = full[len(match.group(0)):]
+                continue
+            # Check for a colour code.
+            match = leading_col_code.match(full)
+            if match is not None:
+                cur_col = int(match.group(1))
+                full = full[len(match.group(0)):]
+                continue
+            # Ignore any other code.
+            match = leading_ctrl_code.match(full)
+            if match is not None:
+                full = full[len(match.group(0)):]
+                continue
+            break
+        if not full:
+            break
+        codes.append(cur_col)
+        chars.append(full[0])
+        full = full[1:]
+
+    # Construct the coloured string, only colouring where necessary.
+    wants = [c for col, txt in zip(cols, txts)
+               for c in [col] * len(nonctrl(txt))]
+    assert len(chars) == len(codes)
+    assert len(chars) == len(wants)
+    for i, c in enumerate(codes):
+        if c != -1:
+            wants[i] = c
+    # Reset to nothing at the end.
+    chars.append("")
+    wants.append(-1)
+
+    segs = [] # funny
+    prev = -1
+    for w, c in zip(wants, chars):
+        if w != prev:
+            segs.append(col_code(w))
+            prev = w
+        segs.append(c)
+    return "".join(segs)
 
 def nonctrl(string):
     """
     Returns 'string' with all console control codes removed.
     """
+    if not isinstance(string, str):
+        raise TypeError(f"expected a str 'string', got {_tname(type(string))}")
     control_code = _re.compile(r"\x1B\[[0-9;]*[A-Za-z]")
     return control_code.sub("", string)
 
@@ -216,6 +264,14 @@ def idxctrl(string, i):
     Returns the correct index into 'string' which indexes the character
     'nonctrl(string)[i]'.
     """
+    if not isinstance(string, str):
+        raise TypeError(f"expected a str 'string', got {_tname(type(string))}")
+    if not isinstance(i, int):
+        raise TypeError(f"expected an integer 'i', got {_tname(type(i))}")
+    if i >= len(string):
+        return i
+    if i < 0:
+        raise IndexError(f"expected a positive index, got: {i}")
     leading_control_code = _re.compile(r"^(?:\x1B\[[0-9;]*[A-Za-z])+")
     missing = 0
     for _ in range(i + 1):
@@ -436,8 +492,7 @@ def templated(creator, parents=(), decorators=(), metaclass=type):
         return create_class(*params)
 
     def __call__(self, *args, **kwargs):
-        raise NotImplementedError("use square brackets to pass template "
-                "params")
+        raise TypeError("use square brackets to instantiate a templated class")
 
     attrs = {
         "params": param_names,

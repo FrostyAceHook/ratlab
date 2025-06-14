@@ -37,18 +37,18 @@ class Complex(matrix.Field):
     @classmethod
     def to_int(cls, a):
         if a._isnan:
-            raise NotImplementedError()
+            raise ValueError("cannot cast nan to int")
         if a._im:
-            raise NotImplementedError()
+            raise ValueError(f"cannot cast non-real to int, got: {a}")
         if math.isinf(a._re) or a._re != int(a._re):
-            raise NotImplementedError()
+            raise ValueError(f"cannot cast non-integer to int, got: {a}")
         return int(a._re)
     @classmethod
     def to_float(cls, a):
         if a._isnan:
             return float("nan")
         if a._im:
-            raise NotImplementedError()
+            raise ValueError(f"cannot cast non-real to float, got: {a}")
         return a._re
     @classmethod
     def to_complex(cls, a):
@@ -100,6 +100,8 @@ class Complex(matrix.Field):
         re = a._re * b._re + a._im * b._im
         im = a._im * b._re - a._re * b._im
         den = b._re * b._re + b._im * b._im
+        if den == 0.0:
+            raise ZeroDivisionError("x/0")
         re /= den
         im /= den
         return cls(re, im)
@@ -108,60 +110,71 @@ class Complex(matrix.Field):
     def power(cls, a, b):
         if a._isnan or b._isnan:
             return cls(isnan=True)
-        def exp(x):
-            # e^(a.re + i a.im)
-            # = e^a.re e^(i a.im)
-            # = e^a.re (cos(a.im) + i sin(a.im))
-            re = math.exp(x._re) * math.cos(x._im)
-            im = math.exp(x._re) * math.sin(x._im)
-            return cls(re, im)
-        # a^b = e^(ln(a) b)
-        lna = cls.log(cls(math.e), a)
-        return exp(cls.mul(lna, b))
+        a = complex(a._re, a._im)
+        b = complex(b._re, b._im)
+        return cls.from_complex(a ** b)
     @classmethod
     def root(cls, a, b):
         if a._isnan or b._isnan:
             return cls(isnan=True)
-        return cls.power(a, cls.div(cls.one, b))
+        if b._re == 0.0 and b._im == 0.0:
+            raise ZeroDivisionError("x ^ (1/0)")
+        a = complex(a._re, a._im)
+        b = complex(b._re, b._im)
+        return cls.from_complex(a ** (1 / b))
     @classmethod
     def log(cls, a, b):
         if a._isnan or b._isnan:
             return cls(isnan=True)
-        def ln(x):
-            # ln(a)
-            # = ln(mag(a)) + i arg(a)  [principal branch]
-            # = 0.5 ln(mag(a)^2) + i arg(a)
-            sqrmag = x._re * x._re + x._im * x._im
-            re = 0.5 * math.log(sqrmag)
-            im = math.atan2(x._im, x._re)
-            return cls(re, im)
-        # log_a(b) = ln(b) / ln(a)
-        return cls.div(ln(b), ln(a))
+        a = complex(a._re, a._im)
+        b = complex(b._re, b._im)
+        return cls.from_complex(cmath.log(b) / cmath.log(a))
 
     @classmethod
     def sin(cls, a):
-        return cls.from_complex(cmath.sin(complex(a._re, a._im)))
+        if a._isnan:
+            return cls(isnan=True)
+        a = complex(a._re, a._im)
+        return cls.from_complex(cmath.sin(a))
     @classmethod
     def cos(cls, a):
-        return cls.from_complex(cmath.cos(complex(a._re, a._im)))
+        if a._isnan:
+            return cls(isnan=True)
+        a = complex(a._re, a._im)
+        return cls.from_complex(cmath.cos(a))
     @classmethod
     def tan(cls, a):
-        return cls.from_complex(cmath.tan(complex(a._re, a._im)))
+        if a._isnan:
+            return cls(isnan=True)
+        a = complex(a._re, a._im)
+        return cls.from_complex(cmath.tan(a))
 
     @classmethod
     def asin(cls, a):
-        return cls.from_complex(cmath.asin(complex(a._re, a._im)))
+        if a._isnan:
+            return cls(isnan=True)
+        a = complex(a._re, a._im)
+        return cls.from_complex(cmath.asin(a))
     @classmethod
     def acos(cls, a):
-        return cls.from_complex(cmath.acos(complex(a._re, a._im)))
+        if a._isnan:
+            return cls(isnan=True)
+        a = complex(a._re, a._im)
+        return cls.from_complex(cmath.acos(a))
     @classmethod
     def atan(cls, a):
-        return cls.from_complex(cmath.atan(complex(a._re, a._im)))
+        if a._isnan:
+            return cls(isnan=True)
+        a = complex(a._re, a._im)
+        return cls.from_complex(cmath.atan(a))
     @classmethod
     def atan2(cls, y, x):
-        y = complex(y._re, y._im)
-        x = complex(x._re, x._im)
-        return cls.from_complex(cmath.atan2(y, x))
+        if y._isnan or x._isnan:
+            return cls(isnan=True)
+        if y._im != 0.0 or x._im != 0.0:
+            raise ValueError(f"cannot use atan2 with non-real, got: {y}, and: "
+                    f"{x}")
+        return cls(math.atan2(y._re, x._re))
 
     @classmethod
     def conj(cls, a):
@@ -191,7 +204,7 @@ class Complex(matrix.Field):
         if a._isnan or b._isnan:
             return a._isnan < b._isnan
         if a._im or b._im: # complex is unorderable.
-            raise NotImplementedError()
+            raise ValueError(f"cannot order non-real, got: {a}, and: {b}")
         return a._re < b._re
 
     @classmethod
