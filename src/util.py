@@ -212,6 +212,40 @@ def nonctrl(string):
     return control_code.sub("", string)
 
 
+def entry(name, desc=None, *, width=100, pwidth=20, lead=2):
+    """
+    Returns a string of the form "<name> .... <desc>", with total width as given
+    and points stopping at 'pwidth' at the earliest. If 'desc' is none, just
+    returns 'name' wrapped at 'width'. 'lead' spaces will be inserted before each
+    line, to pad the string.
+    """
+    name = " ".join(name.split())
+    parts = []
+    pad_to = 0
+    wrapme = ""
+    first = True
+    if desc is not None:
+        desc = " ".join(desc.split())
+        left = " " * lead + name + " .."
+        left += "." * (pwidth - len(left)) + " "
+        parts.append(left)
+        pad_to = len(left)
+        wrapme = desc
+    else:
+        first = False
+        pad_to = lead
+        wrapme = name
+
+    while wrapme:
+        line = wrapme[:width - pad_to]
+        if len(line) == width - pad_to and " " in line:
+            line = line[:line.rindex(" ")]
+        wrapme = wrapme[len(line):].lstrip()
+        pad = " " * (0 if first else pad_to)
+        parts.append(pad + line + "\n" * (not not wrapme))
+        first = False
+    return "".join(parts)
+
 
 
 def immutable(cls):

@@ -4,7 +4,7 @@ import math as _math
 import types as _types
 
 from util import (
-    coloured as _coloured, nonctrl as _nonctrl, tname as _tname,
+    coloured as _coloured, nonctrl as _nonctrl, entry as _entry, tname as _tname,
     iterable as _iterable, immutable as _immutable, templated as _templated,
     classconst as _classconst, instconst as _instconst,
 )
@@ -2919,27 +2919,8 @@ def mhelp():
     Prints the signature and doc of the functions in this file (the matrix
     functions).
     """
-
-    def printme(name, long):
-        name = "  " + name
-        print(name, end="")
-        s = " ".join(long.split())
-        w = 0
-        while s:
-            if w:
-                print(w * " ", end="")
-            else:
-                w = len(name)
-            line = s[:100 - w]
-            if len(line) == 100 - w and " " in line:
-                line = line[:line.rindex(" ")]
-            print(line)
-            s = s[len(line):].lstrip()
-
     def print_entry(name, desc):
-        s = f"{name} .."
-        s += "." * (22 - len(s)) + " "
-        printme(s, desc)
+        print(_entry(name, desc, width=100, pwidth=22, lead=2))
 
     Mat = Single[Field]
     attrs = {name: attr for name, attr in vars(Mat).items()

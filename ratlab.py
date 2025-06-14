@@ -48,33 +48,57 @@ def _main():
     # Help msg.
     lowerargs = [x.lower() for x in args]
     if any(m in lowerargs for m in ["-h", "/h", "--help", "?", "-?", "/?"]):
-        txts = ["usage: ", "ratlab ", "[path | -]..."]
-        cols = [       73,    220,              80]
-        usage = util.coloured(cols, txts)
+        def wrap_string(s):
+            return util.entry(s, width=76, lead=0) + "\n"
+        def code_colour(s):
+            if "".join([x.strip() for x in s]).isdigit():
+                return 135
+            if s.strip() in _syntax._KEYWORDS:
+                return 161
+            if s.strip() == ">>":
+                return 73
+            if s.lstrip().startswith("#"):
+                return 245
+            return -1
+        msg = ""
+
+        txts = ["usage: ", "ratlab ", "[path | -]...\n"]
+        cols = [       73,       220,                80]
+        msg += "\n"
+        msg += util.coloured(cols, txts)
+        msg += "\n"
+        msg += wrap_string("Executes the given scripts sequentially and with a "
+                           "shared variable space. If '-' is encountered as a "
+                           "path, an interactive console is started. If no "
+                           "arguments are given, starts a console.")
+
+
         txts = [
             ">> ", "[", "1", ", ", "2", ", ", "3", "][", "4", ", ", "5", ", ",
                 "6", "]", " # a 2x3 matrix\n",
             "[", "1 2 3", "]\n",
             "[", "4 5 6", "]\n",
             ">> ", "lst", "[", "1", ", ", "2", ", ", "3", "]", " # a list\n",
-            "[", "1", ", ", "2", ", ", "3", "]",
+            "[", "1", ", ", "2", ", ", "3", "]\n",
         ]
-        colf = lambda s: (135 if "".join([x.strip() for x in s]).isdigit() else
-                          161 if s.strip() == "lst" else
-                          73 if s.strip() == ">>" else
-                          245 if s.lstrip().startswith("#") else
-                          7)
-        code = util.coloured(map(colf, txts), txts)
-        print(f"""
-{usage}
+        msg += "\n"
+        msg += wrap_string("Ratlab is essentially Python with pre-loaded "
+                           "modules and added syntax for matrices:")
+        msg += util.coloured(map(code_colour, txts), txts)
 
-Executes the given scripts sequentially and with a shared variable space.
-If '-' is encountered as a path, an interactive console is started (which
-may be exited via 'quit'). If invoked with no arguments, starts a console.
 
-Ratlab is essentially Python with pre-loaded modules and added syntax for
-matrices.
-{code}""")
+        txts = []
+        for name, func in _syntax._COMMANDS.items():
+            doc = " ".join(func.__doc__.split())
+            txts.append(">> ")
+            txts.append(name)
+            txts.append(" " * (8 - len(name)) + f" # {doc}\n")
+        msg += "\n"
+        msg += wrap_string("When within the console, there are several commands "
+                           "which can be used by typing their bare name:")
+        msg += util.coloured(map(code_colour, txts), txts)
+
+        print(msg, end="")
         quit()
 
     # If no files, default to cli.
@@ -89,7 +113,7 @@ matrices.
     # Read and execute each input file, treating "-" as a cli.
     for i, path in enumerate(args):
         if path.strip() == "-":
-            _syntax.run_cli(space)
+            _syntax.run_console(space)
         else:
             _syntax.run_file(space, path, i < len(args) - 1)
 

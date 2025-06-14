@@ -44,17 +44,53 @@ def _EXPOSED_slice(matrix_literal, *sliced_by):
     append_me = _matrix.hstack(*sliced_by)
     return _matrix.vstack(matrix_literal, append_me)
 
-def _EXPOSED_clear():
-    _os.system("cls")
-
-class _ExitCliException(Exception):
-    pass
-def _EXPOSED_quit():
-    raise _ExitCliException()
-
 def _EXPOSED_print_nonnone(x):
     if x is not None:
         print(repr(x))
+
+
+# Commands (which are invoked like `cmd()`, but `cmd` also gets transformed to
+# that)
+
+def _EXPOSED_clear():
+    """
+    clear the screen
+    """
+    _os.system("cls")
+
+class _History:
+    def __init__(self):
+        self.fnames = []
+    def add(self, fname):
+        self.fnames.append(fname)
+    def clear(self):
+        self.fnames.clear()
+    def __repr__(self):
+        lines = []
+        for fname in self.fnames:
+            lines += _linecache.cache[fname][2]
+        return "".join(lines).rstrip()
+_HISTORY = _History()
+def _EXPOSED_history():
+    """
+    print this console's past inputs
+    """
+    print(_HISTORY)
+
+class _ExitConsoleException(Exception):
+    pass
+def _EXPOSED_quit():
+    """
+    exit this console
+    """
+    raise _ExitConsoleException()
+
+
+_COMMANDS = {"clear": _EXPOSED_clear, "history": _EXPOSED_history,
+        "quit": _EXPOSED_quit}
+
+_KEYWORDS = ["_syntax", "lst"] + list(_COMMANDS.keys())
+
 
 class _Transformer(_ast.NodeTransformer):
     @staticmethod
@@ -114,46 +150,44 @@ class _Transformer(_ast.NodeTransformer):
         raise exc
 
 
-    def __init__(self, source, filename):
+    def __init__(self, source, filename, console):
         super().__init__()
         self.source = source
         self.filename = filename
         self.wrap_lits = False
         self.row_vector = False
         self.pierce_tuple = False
-        self.keywords = ["clear", "quit", "lst", "_syntax"]
+        self.in_func_name = 0
+        self.console = console
 
-    def cook(self, console=False):
+    def cook(self):
         module = _ast.parse(self.source, self.filename)
         module = self.visit(module)
-        # Nothing more for non-console.
-        if not console:
-            return module
-        # Every other transformation requires a single Expr node.
-        if len(module.body) != 1:
-            return module
-        expr = module.body[0]
-        if not isinstance(expr, _ast.Expr):
-            return module
-        node = expr.value
+        body = module.body
+        # Console has some additional changes which require a single expression
+        # as the entire line.
+        if self.console and len(body) == 1 and isinstance(body[0], _ast.Expr):
+            expr = body[0]
+            node = expr.value
+            new_node = node
 
-        # "clear" becomes a clear screen.
-        if self.is_named(node, "clear"):
-            new_node = self.ast_call(_EXPOSED_clear)
-        # "quit" becomes an exit cli.
-        elif self.is_named(node, "quit"):
-            new_node = self.ast_call(_EXPOSED_quit)
-        # Everything else gets printed if non-none. However, this can be stopped
-        # by appending a semicolon.
-        elif not self.source.rstrip().endswith(";"):
-            new_node = self.ast_call(_EXPOSED_print_nonnone, node)
-        # Otherwise no changes.
-        else:
-            return module
+            # Check for commands.
+            if self.is_named(new_node, _COMMANDS.keys()):
+                new_node = self.ast_call(_COMMANDS[new_node.id])
 
-        # Update the expr with this new node.
-        self.copyloc(new_node, node)
-        expr.value = new_node
+            # Everything gets printed if non-none. However, this can be
+            # stopped by appending a semicolon.
+            if not self.source.rstrip().endswith(";"):
+                new_node = self.ast_call(_EXPOSED_print_nonnone, new_node)
+
+            # Update the expr with this new node (which may still just be node).
+            self.copyloc(new_node, node)
+            expr.value = new_node
+
+        # Put console inputs in the history.
+        if self.console:
+            _HISTORY.add(self.filename)
+
         return module
 
 
@@ -172,10 +206,9 @@ class _Transformer(_ast.NodeTransformer):
         if not isinstance(node, _ast.List):
             self.row_vector = False
 
+        self.in_func_name -= 1
         new_node = super().visit(node)
-
         self.wrap_lits = was_wrapping_lits
-
         return new_node
 
     def visit_Constant(self, node):
@@ -187,10 +220,35 @@ class _Transformer(_ast.NodeTransformer):
     def visit_Name(self, node):
         # Ensure keywords aren't modified.
         if not self.is_load(node):
-            for kw in self.keywords:
+            for kw in _KEYWORDS:
                 if self.is_named(node, kw):
                     self.syntaxerrorme("cannot modify ratlab keyword "
                             f"{repr(kw)}", node)
+        for kw in _COMMANDS:
+            if self.is_named(node, kw):
+                # Only available in console.
+                if not self.console:
+                    self.syntaxerrorme("cannot reference ratlab command "
+                            f"{repr(kw)} from outside console", node)
+                # If this is a command which isn't being called, make it be
+                # called.
+                if self.in_func_name <= 0:
+                    new_node = self.ast_call(_COMMANDS[kw])
+                    return self.copyloc(new_node, node)
+                # Otherwise, make it the correct name.
+                new_node = _ast.Attribute(
+                    value=_ast.Name(id="_syntax", ctx=_ast.Load()),
+                    attr=_COMMANDS[kw].__name__,
+                    ctx=_ast.Load()
+                )
+                return self.copyloc(new_node, node)
+        return node
+
+    def visit_Call(self, node):
+        self.in_func_name = 2
+        node.func = self.visit(node.func)
+        self.in_func_name = 0
+        node.args = [self.visit(x) for x in node.args]
         return node
 
     def visit_Attribute(self, node):
@@ -198,7 +256,7 @@ class _Transformer(_ast.NodeTransformer):
 
         # Ensure keywords aren't modified.
         if not self.is_load(node):
-            for kw in self.keywords:
+            for kw in _KEYWORDS:
                 if self.is_named(node, kw):
                     self.syntaxerrorme("cannot modify ratlab keyword "
                             f"{repr(kw)} attributes", node)
@@ -402,8 +460,8 @@ def _execute(source, space, filename=None):
 
     try:
         # Transform and compile.
-        transformer = _Transformer(source, filename)
-        parsed = transformer.cook(console=console)
+        transformer = _Transformer(source, filename, console)
+        parsed = transformer.cook()
         compiled = compile(parsed, filename=filename, mode="exec")
     except Exception as e:
         _pretty_print_exception(e, "TYPO", tb=False)
@@ -418,7 +476,7 @@ def _execute(source, space, filename=None):
         # module-level (filescope) code.
         exec(compiled, space, space)
     except Exception as e:
-        if isinstance(e, _ExitCliException) and console:
+        if isinstance(e, _ExitConsoleException) and console:
             raise
         _pretty_print_exception(e, "ERROR", tb=True)
         return False
@@ -426,7 +484,7 @@ def _execute(source, space, filename=None):
 
 
 
-def run_cli(space):
+def run_console(space):
     """
     Starts a command-line interface which is basically just an embedded python
     interpreter. `space` should be a globals()-type dictionary of variables to
@@ -441,7 +499,7 @@ def run_cli(space):
             except EOFError:
                 # they ctrl+c-ed my ass.
                 print()
-                raise _ExitCliException()
+                raise _ExitConsoleException()
             source += "\n"*(not not source) + line
             if not line:
                 break
@@ -461,8 +519,10 @@ def run_cli(space):
         while True:
             source = get_input()
             _execute(source, space)
-    except _ExitCliException:
+    except _ExitConsoleException:
         print(_coloured([73, 80], ["-- ", "okie leaving."]))
+    finally:
+        _HISTORY.clear()
 
 
 
