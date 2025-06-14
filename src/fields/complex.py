@@ -210,22 +210,36 @@ class Complex(matrix.Field):
             return "nan"
         re = a._re
         im = a._im
+        plus = coloured(161, "+")
+        minus = coloured(161, "-")
         def repn(n):
             if n == 0.0: # -0.0 -> 0.0
                 n = 0.0
+            if n < 0.0:
+                return minus + repn(-n)
             s = f"{n:.6g}" if short else repr(n)
             # "xxx.0" -> "xxx"
             if s.endswith(".0"):
                 s = s[:-2]
+            if "e" not in s:
+                return coloured(135, s)
             # "xxx.xe-0y" -> "xxx.xe-y"
-            if "e" in s:
-                if len(s) > 2 and s[-2] == "0":
-                    s = s[:-2] + s[-1]
+            if len(s) > 2 and s[-2] == "0":
+                s = s[:-2] + s[-1]
             return coloured(135, s)
+            # if you wanna highlight the e, maybe try this but i couldnt find a
+            # nice colour lmao.
+            if "e-" in s:
+                parts = s.split("e-")
+                parts.insert(1, "e-")
+            else:
+                parts = s.split("e+")
+                parts.insert(1, "e+")
+            if len(parts) != 3:
+                raise Exception(f"weirdly split string {parts}")
+            return coloured([135, 105, 135], parts)
 
-        pos = coloured(161, "+")
-        neg = coloured(161, "-")
-        sep = pos
+        sep = plus
         i = coloured(38, "i")
 
         if im == 0.0:
@@ -234,10 +248,10 @@ class Complex(matrix.Field):
             im_s = i
         else:
             if im == -1.0:
-                sep = neg
+                sep = minus
                 im_s = ""
             elif im < 0.0:
-                sep = neg
+                sep = minus
                 im_s = repn(-im)
             else:
                 im_s = repn(im)
@@ -255,7 +269,7 @@ class Complex(matrix.Field):
             return re_s
 
         if not re_s:
-            if sep == pos:
+            if sep == plus:
                 sep = ""
             return f"{sep}{im_s}"
 

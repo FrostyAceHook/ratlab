@@ -208,8 +208,21 @@ def nonctrl(string):
     """
     Returns 'string' with all console control codes removed.
     """
-    control_code = _re.compile(r"\x1b\[[0-9;]*[A-Za-z]")
+    control_code = _re.compile(r"\x1B\[[0-9;]*[A-Za-z]")
     return control_code.sub("", string)
+
+def idxctrl(string, i):
+    """
+    Returns the correct index into 'string' which indexes the character
+    'nonctrl(string)[i]'.
+    """
+    leading_control_code = _re.compile(r"^(?:\x1B\[[0-9;]*[A-Za-z])+")
+    missing = 0
+    for _ in range(i + 1):
+        new = leading_control_code.sub("", string)
+        missing += len(string) - len(new)
+        string = new[1:]
+    return missing + i
 
 
 def entry(name, desc=None, *, width=100, pwidth=20, lead=2):
@@ -227,9 +240,9 @@ def entry(name, desc=None, *, width=100, pwidth=20, lead=2):
     if desc is not None:
         desc = " ".join(desc.split())
         left = " " * lead + name + " .."
-        left += "." * (pwidth - len(left)) + " "
+        left += "." * (pwidth - len(nonctrl(left))) + " "
         parts.append(left)
-        pad_to = len(left)
+        pad_to = len(nonctrl(left))
         wrapme = desc
     else:
         first = False
@@ -237,8 +250,8 @@ def entry(name, desc=None, *, width=100, pwidth=20, lead=2):
         wrapme = name
 
     while wrapme:
-        line = wrapme[:width - pad_to]
-        if len(line) == width - pad_to and " " in line:
+        line = wrapme[:idxctrl(wrapme, width - pad_to)]
+        if len(nonctrl(line)) == width - pad_to and " " in line:
             line = line[:line.rindex(" ")]
         wrapme = wrapme[len(line):].lstrip()
         pad = " " * (0 if first else pad_to)

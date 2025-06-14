@@ -653,11 +653,7 @@ class Shape:
 @_templated(parents=Field, decorators=_immutable)
 def Matrix(field, shape):
     """
-    Fixed-sized n-dimensional sequence of elements. 'field' is the class of the
-    elements, and 'shape' is a tuple of the length along each dimension. 'shape'
-    is an empty tuple for a single element, has a zero anywhere in it for an
-    empty matrix, and is implicitly infinite with appended 1s. For a typical 2x2
-    matrix, the shape is (row count, col count).
+    Fixed-sized n-dimensional sequence of elements.
     """
 
     if not isinstance(field, type):
@@ -1159,7 +1155,7 @@ def Matrix(field, shape):
     @_instconst
     def cols(s):
         """
-        Tuple of columns.
+        Tuple of columns, for 2D matrices.
         """
         if s.ndim > 2:
             raise TypeError(f"only 2D matrices can use .cols, got {s.shape} "
@@ -1168,7 +1164,7 @@ def Matrix(field, shape):
     @_instconst
     def rows(s):
         """
-        Tuple of rows.
+        Tuple of rows, for 2D matrices.
         """
         if s.ndim > 2:
             raise TypeError(f"only 2D matrices can use .rows, got {s.shape} "
@@ -1177,7 +1173,7 @@ def Matrix(field, shape):
     @_instconst
     def colmajor(s):
         """
-        Vector of cells in column-major order.
+        Vector of cells in column-major order, for 2D matrices.
         """
         if s.ndim > 2:
             raise TypeError(f"only 2D matrices can use .colmajor, got {s.shape} "
@@ -1186,7 +1182,7 @@ def Matrix(field, shape):
     @_instconst
     def rowmajor(s):
         """
-        Vector of cells in row-major order.
+        Vector of cells in row-major order, for 2D matrices.
         """
         if s.ndim > 2:
             raise TypeError(f"only 2D matrices can use .rowmajor, got {s.shape} "
@@ -1851,7 +1847,7 @@ def Matrix(field, shape):
 
     def issame(s, o):
         """
-        Element-wise pair-wise identical check. This is different to '==' (which
+        Element-wise identical check. Note this is different to '==' (which
         checks for equivalent values, and may be different than identical
         values).
         """
@@ -2496,7 +2492,7 @@ def diff(y, x, *, field=None):
     return y.diff(x)
 def intt(y, x, *bounds, field=None):
     """
-    Alias for 'y.intt(x)'.
+    Alias for 'y.intt(x, *bounds)'.
     """
     bounds = _maybe_unpack(bounds)
     if not bounds:
@@ -2600,6 +2596,13 @@ def todeg(radians, *, field=None):
     x, = castall([radians], field=field)
     return x.todeg
 
+
+def short(x, *, field=None):
+    """
+    Prints a short string representation of 'x'.
+    """
+    x, = castall([x], field=field)
+    print(x.__repr__(short=True))
 
 def long(x, *, field=None):
     """
@@ -2919,8 +2922,47 @@ def mhelp():
     Prints the signature and doc of the functions in this file (the matrix
     functions).
     """
+    width = 100
+    def classify(c):
+        if c.isalnum() or c == "_":
+            return "identifier"
+        if c in ".+-*/%=&|@<>^~:":
+            return "operator"
+        if c in "()[]{}, ":
+            return "boring"
+        raise Exception(f"dunno {repr(c)}")
+    def colourof(txt, prev_txt, next_txt, key, leading):
+        if txt in {"None", "False", "True"}:
+            return 135
+        if key == "identifier":
+            if leading and txt[0].isupper():
+                return 38
+            if next_txt == "(" or next_txt == "[":
+                return 112
+            if prev_txt == "." and next_txt is None:
+                return 153
+            return 208
+        if key == "operator":
+            return 161
+        if key == "boring":
+            return -1
+        raise Exception(f"dunno {repr(key)}")
     def print_entry(name, desc):
-        print(_entry(name, desc, width=100, pwidth=22, lead=2))
+        txts = []
+        cols = []
+        leading = True
+        grouped = _itertools.groupby(name, key=classify)
+        keytxts = [(k, "".join(g)) for k, g in grouped]
+        for i in range(len(keytxts)):
+            key, txt = keytxts[i]
+            prev_txt = None if i == 0 else keytxts[i - 1][1]
+            next_txt = None if i == len(keytxts) - 1 else keytxts[i + 1][1]
+            col = colourof(txt, prev_txt, next_txt, key, leading)
+            txts.append(txt)
+            cols.append(col)
+            leading = False
+        name = _coloured(cols, txts)
+        print(_entry(name, desc, width=width, pwidth=22, lead=2))
 
     Mat = Single[Field]
     attrs = {name: attr for name, attr in vars(Mat).items()
@@ -2938,11 +2980,9 @@ def mhelp():
             and obj.__name__ != this_func}
 
     # Explicitly print a couple.
-    printme("Matrix - ", Matrix.__doc__)
-    print_entry("lits(field)", lits.__doc__)
+    print_entry("Matrix[field, shape]", Matrix.__doc__)
     print_entry("M.field", "Cell type.")
-    print_entry("M.shape", "Sizes for each dimension.")
-    funcs.pop("lits", None)
+    print_entry("M.shape", "'Shape' object with the length of each dimension.")
     attrs.pop("field", None)
     attrs.pop("shape", None)
 
