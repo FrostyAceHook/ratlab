@@ -1,8 +1,10 @@
-- fileme save all non excpetional lines to a file and then open it
 - "remoce two chars from points to user" bro wtf does this MEAN lmao
 - custom module importer for .rat
-- something to print all set variables (mvars() for all matrix vars?)
-- color for mhelp
-- color for matrix print?
-- numpy and sympy forwarding :)))
+- `rotate` function which does brfilters np shift
 - shortened matrix print
+- matrix eig
+- maybe restructure matrix to only be "instantiated" when required and tack a
+    "callable" onto each one. this would allow things like `x.summ` and
+    `x.summ(0)`(meaning `x.summ_along(0)`) to work. however, its like kinda a
+    terrible idea.
+- numpy and sympy forwarding :)))

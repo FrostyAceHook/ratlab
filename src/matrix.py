@@ -2192,10 +2192,11 @@ def Matrix(field, shape):
     def __hash__(s):
         return hash((s.shape, ) + tuple(s._f("hashed")(x) for x in s._cells))
 
-    def __repr__(s, short=True):
-        """
-        String representation, shortened by default or full if not 'short'.
-        """
+    def __repr__(s, short=None):
+        if short is None:
+            short = doesdflt2short()
+        short = not not short
+
         if s.isempty:
             return "my boy "*(not short) + "M.T."
 
@@ -2611,6 +2612,32 @@ def long(x, *, field=None):
     x, = castall([x], field=field)
     print(x.__repr__(short=False))
 
+def doesdflt2short():
+    """
+    True if the current default matrix print is short, false if it's long.
+    """
+    return doesdflt2short.v
+doesdflt2short.v = True
+
+class _Dflt2:
+    def __init__(self, short, doc):
+        self.short = False
+        self.__doc__ = doc
+
+    def __call__(self):
+        doesdflt2short.v = True
+
+    def __enter__(self):
+        self.store = doesdflt2short.v
+        doesdflt2short.v = self.short
+    def __exit__(self, type, value, traceback):
+        doesdflt2short.v = self.store
+        return False
+dflt2short = _Dflt2(True, "Changes the default matrix print to short. Can also "
+        "be used as a context manager to temporarily set.")
+dflt2long = _Dflt2(False, "Changes the default matrix print to long. Can also "
+        "be used as a context manager to temporarily set.")
+
 
 def stack(axis, *xs, field=None):
     """
@@ -2917,6 +2944,43 @@ def lerp(x, X, Y, extend=False, *, field=None):
 
 
 
+
+def mvars(long=None):
+    """
+    Prints all matrix variables in the current space.
+    """
+    if long is None:
+        long = not doesdflt2short()
+
+    # Grab the globals of caller.
+    frame = _inspect.currentframe()
+    try:
+        space = frame.f_back.f_globals
+    finally:
+        del frame # don leak.
+
+    # Trim down to the matrix variables.
+    mspace = {k: v for k, v in space.items() if isinstance(v, Matrix)}
+    for name in lits._injects:
+        if name not in mspace:
+            continue
+        if not _is_overridden(space, lits._field, name):
+            mspace.pop(name, None)
+
+    if not mspace:
+        print(_coloured(245, "no matrix variables."))
+    for name, value in mspace.items():
+        pre = _coloured([208, 161], [name, " = "])
+        pad = len(_nonctrl(pre))
+        lines = value.__repr__(short=not long).splitlines()
+        if not lines:
+            print(pre)
+            continue
+        lines[0] = pre + lines[0]
+        lines[1:] = [" "*pad + x for x in lines[1:]]
+        print("\n".join(lines))
+
+
 def mhelp():
     """
     Prints the signature and doc of the functions in this file (the matrix
@@ -2937,7 +3001,7 @@ def mhelp():
         if key == "identifier":
             if leading and txt[0].isupper():
                 return 38
-            if next_txt == "(" or next_txt == "[":
+            if next_txt is not None and next_txt[0] in "([":
                 return 112
             if prev_txt == "." and next_txt is None:
                 return 153
@@ -2972,12 +3036,10 @@ def mhelp():
             and name != "template"}
 
     # also chuck the other functions in this file.
-    this_func = _inspect.currentframe().f_code.co_name
     funcs = {name: obj for name, obj in globals().items()
             if obj.__doc__ is not None
-            and _inspect.isfunction(obj)
-            and obj.__module__ == __name__
-            and obj.__name__ != this_func}
+            and callable(obj)
+            and obj.__module__ == __name__}
 
     # Explicitly print a couple.
     print_entry("Matrix[field, shape]", Matrix.__doc__)
@@ -3069,6 +3131,9 @@ def mhelp():
         if func is empty:
             print_entry("Empty[field]", Empty.__doc__)
 
+        doc = func.__doc__
+        if name == "mhelp":
+            doc = "Prints this message."
 
         sig = _inspect.signature(func)
         sig = str(sig)
@@ -3078,38 +3143,4 @@ def mhelp():
         elif sig.endswith(", field=None"):
             sig = sig[:-len(", field=None")]
         expr = f"{name}({sig})"
-        print_entry(expr, func.__doc__)
-
-
-def mvars(long=False):
-    """
-    Prints all matrix variables in the current space.
-    """
-
-    # Grab the globals of caller.
-    frame = _inspect.currentframe()
-    try:
-        space = frame.f_back.f_globals
-    finally:
-        del frame # don leak.
-
-    # Trim down to the matrix variables.
-    mspace = {k: v for k, v in space.items() if isinstance(v, Matrix)}
-    for name in lits._injects:
-        if name not in mspace:
-            continue
-        if not _is_overridden(space, lits._field, name):
-            mspace.pop(name, None)
-
-    if not mspace:
-        print(_coloured(245, "no matrix variables."))
-    for name, value in mspace.items():
-        pre = _coloured([208, 161], [name, " = "])
-        pad = len(_nonctrl(pre))
-        lines = value.__repr__(short=not long).splitlines()
-        if not lines:
-            print(pre)
-            continue
-        lines[0] = pre + lines[0]
-        lines[1:] = [" "*pad + x for x in lines[1:]]
-        print("\n".join(lines))
+        print_entry(expr, doc)
