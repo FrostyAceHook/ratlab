@@ -1,3 +1,4 @@
+import matrix
 
 # Avoid super expensive import on start-up, only do it when used.
 plt = None
@@ -23,6 +24,10 @@ def plot(x, y, label=None, color=None, linestyle=None, linewidth=None,
             marker=None, markersize=None, markerfacecolor=None,
             markeredgecolor=None, alpha=None):
     init_plotting()
+    if isinstance(x, matrix.Matrix):
+        x = x.tolist_f
+    if isinstance(y, matrix.Matrix):
+        y = y.tolist_f
     plt.plot(x, y, label=label, color=color, linestyle=linestyle,
             linewidth=linewidth, marker=marker, markersize=markersize,
             markerfacecolor=markerfacecolor, markeredgecolor=markeredgecolor,

@@ -1152,6 +1152,48 @@ def Matrix(field, shape):
                     ".size for matrix cell count)")
         return len(s._cells)
 
+    def tolist(s, rtype):
+        """
+        Vector-only convert to list of 'rtype', where 'rtype' is either 'int',
+        'float', or 'complex'.
+        """
+        if not s.isvec:
+            raise TypeError(f"only vectors can convert to list, got {s.shape} "
+                    "(maybe try .ravel.tolist to get a 1d list of matrix cells)")
+        if not isinstance(rtype, type):
+            raise ValueError("expected type for 'rtype', got "
+                    f"{_tname(type(rtype))}")
+        if issubclass(rtype, int):
+            func = s._f("to_int")
+        elif issubclass(rtype, float):
+            func = s._f("to_float")
+        elif issubclass(rtype, complex):
+            func = s._f("to_complex")
+        else:
+            raise ValueError("expected one of int, float, or complex for "
+                    f"'rtype', got {_tname(rtype)}")
+        return list(func(x) for x in s._cells)
+
+    @property
+    def tolist_i(s):
+        """
+        Alias for 's.tolist(rtype=int).
+        """
+        return s.tolist(rtype=int)
+    @property
+    def tolist_f(s):
+        """
+        Alias for 's.tolist(rtype=float).
+        """
+        return s.tolist(rtype=float)
+    @property
+    def tolist_c(s):
+        """
+        Alias for 's.tolist(rtype=complex).
+        """
+        return s.tolist(rtype=complex)
+
+
     @_instconst
     def cols(s):
         """
