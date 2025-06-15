@@ -3093,6 +3093,113 @@ def lerp(x, X, Y, extend=False, *, field=None):
 
 
 
+def rootnr(f, df, x0, tol=1e-7, max_iters=100):
+    """
+    Solves the root of the given function: f(root) = 0; given its derivation
+    df(x) = [d/dx f(x)] and an initial guess for the root ~= x0.
+    """
+    if isinstance(x0, Matrix):
+        if not x0.issingle:
+            raise TypeError("cannot root find a function with a non-single "
+                    f"matrix input, got {x0.shape} shaped initial root guess")
+    x = x0
+    for _ in range(max_iters):
+        fx = f(x)
+        if isinstance(fx, Matrix):
+            if not fx.issingle:
+                raise TypeError("cannot root find a non-single matrix "
+                        f"function, got {fx.shape}")
+        dfx = df(x)
+        if isinstance(dfx, Matrix):
+            if not dfx.issingle:
+                raise TypeError("cannot root find a non-single matrix "
+                        f"function derivative, got {dfx.shape}")
+        if dfx == 0:
+            raise ZeroDivisionError("df/dx =0")
+        x_new = x - fx / dfx
+        if abs(x_new - x) < tol:
+            return x_new
+        x = x_new
+    raise RuntimeError(f"no convergence within {max_iter} iterations")
+
+def rootbi(f, a, b, tol=1e-7, max_iters=100):
+    """
+    Solves the root of the given function: f(root) = 0; given a lower and upper
+    bound of the root, a <= root <= b, where sign(f(a)) != sign(f(b)).
+    """
+    if isinstance(a, Matrix):
+        if not a.issingle:
+            raise TypeError("cannot root find a function with a non-single "
+                    f"matrix input, got {a.shape} shaped initial 'a'")
+    if isinstance(b, Matrix):
+        if not b.issingle:
+            raise TypeError("cannot root find a function with a non-single "
+                    f"matrix input, got {b.shape} shaped initial 'b'")
+    fa = f(a)
+    fb = f(b)
+    if isinstance(fa, Matrix):
+        if not fa.issingle:
+            raise TypeError("cannot root find a non-single matrix function, got "
+                    f"{fa.shape}")
+    if isinstance(fb, Matrix):
+        if not fb.issingle:
+            raise TypeError("cannot root find a non-single matrix function, got "
+                    f"{fb.shape}")
+    if abs(fa) < tol:
+        return a
+    if abs(fb) < tol:
+        return b
+    if bool(fa >= 0) == bool(fb >= 0):
+        raise ValueError("f(x) must have opposite signs at a and b, got: "
+                f"f({a}) = {fa}, and: f({b}) = {fb}")
+    for _ in range(max_iters):
+        c = (a + b) / 2
+        fc = f(c)
+        if isinstance(fc, Matrix):
+            if not fc.issingle:
+                raise TypeError("cannot root find a non-single matrix "
+                        f"function, got {fc.shape}")
+        if abs(fc) < tol or (b - a) / 2 < tol:
+            return c
+        if bool(fa >= 0) == bool(fc >= 0):
+            a, fa = c, fc
+        else:
+            b, fb = c, fc
+    raise RuntimeError(f"no convergence within {max_iter} iterations")
+
+
+
+def oderk4(f, T, x0, *, field=None):
+    """
+    Solves the given differential: f(t, x) = [d/dt x]; over the given time values
+    and using the given initial state x0. The time must be a vector, but the
+    state may be matrix of any size and the solution states will be stacked along
+    a new axis.
+    """
+    if not isinstance(T, Matrix):
+        if not _iterable(T):
+            raise TypeError(f"expected iterable for T, got {_tname(type(T))}")
+        T = tovec(T, field=field)
+    if not T.isvec:
+        raise TypeError(f"expected vector for T, got {T.shape}")
+    x0, = castall([x0], field=field)
+    field = _get_field(field, [x0])
+    if T.isempty:
+        return empty(field)
+    X = [None] * len(T)
+    X[0] = x0
+    for i in range(1, len(T)):
+        x = X[i - 1]
+        t = T[i]
+        h = T[i] - T[i - 1]
+        k1 = h * f(t, x)
+        k2 = h * f(t + h/2, x + k1/2)
+        k3 = h * f(t + h/2, x + k2/2)
+        k4 = h * f(t + h, x + k3)
+        X[i] = x + (k1 + 2*k2 + 2*k3 + k4) / 6
+    return stack(x0.ndim, X)
+
+
 
 
 
@@ -3143,6 +3250,11 @@ def mhelp():
             return "boring"
         raise Exception(f"dunno {repr(c)}")
     def colourof(txt, prev_txt, next_txt, key, leading):
+        issci = lambda t: t is not None and t[:-1].isdigit() and t.endswith("e")
+        if txt.isdigit() or issci(txt):
+            return 135
+        if (txt == "-" or txt == "+") and issci(prev_txt):
+            return 135
         if txt in {"None", "False", "True"}:
             return 135
         if key == "identifier":

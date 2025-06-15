@@ -14,8 +14,6 @@ from matrix import *
 
 import util
 
-from numerical_methods import *
-
 from plot import *
 
 from fields.rational import Rational
