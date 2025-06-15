@@ -48,12 +48,12 @@ def _EXPOSED_print_expr(value):
     if value is not None:
         print(repr(value))
 
-def _EXPOSED_print_assign(value, *targets):
+def _EXPOSED_print_assign(value, *names):
     # Only print on matrix assign.
     if not isinstance(value, _matrix.Matrix):
         return
-    txts = [y for x in targets for y in [x, " = "]]
-    cols = [208, 161] * len(targets)
+    txts = [y for x in names for y in [x, " = "]]
+    cols = [208, 161] * len(names)
     print(_coloured(cols, txts) + repr(value))
 
 
@@ -194,21 +194,25 @@ class _Transformer(_ast.NodeTransformer):
             if self.source.rstrip().endswith(";"):
                 return
 
-            targets = []
+            if isinstance(only, _ast.AugAssign):
+                targets = [only.target]
+            else:
+                targets = only.targets
+            names = []
             value = None
-            for x in only.targets:
+            for x in targets:
                 if isinstance(x, _ast.Name):
                     name = _ast.Constant(value=x.id, ctx=_ast.Load())
-                    targets.append(name)
+                    names.append(name)
                     if value is None:
                         value = _ast.Name(id=x.id, ctx=_ast.Load())
                 else:
                     name = _ast.Constant(value="...", ctx=_ast.Load())
-                    targets.append(name)
+                    names.append(name)
             if value is None:
                 return
             # Append print call.
-            new_node = self.ast_call(_EXPOSED_print_assign, value, *targets)
+            new_node = self.ast_call(_EXPOSED_print_assign, value, *names)
             new_expr = _ast.Expr(new_node)
             self.copyloc(new_expr, only)
             body.append(new_expr)
