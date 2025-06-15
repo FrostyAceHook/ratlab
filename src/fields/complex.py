@@ -96,7 +96,7 @@ class Complex(matrix.Field):
         #
         #   (a.re b.re + a.im b.im) + i (a.im b.re - a.re b.im)
         # = ---------------------------------------------------
-        #                 (b.re b.re + b.im bim)
+        #                 (b.re b.re + b.im b.im)
         re = a._re * b._re + a._im * b._im
         im = a._im * b._re - a._re * b._im
         den = b._re * b._re + b._im * b._im

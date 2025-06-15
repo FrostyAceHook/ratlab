@@ -44,9 +44,17 @@ def _EXPOSED_slice(matrix_literal, *sliced_by):
     append_me = _matrix.hstack(*sliced_by)
     return _matrix.vstack(matrix_literal, append_me)
 
-def _EXPOSED_print_nonnone(x):
-    if x is not None:
-        print(repr(x))
+def _EXPOSED_print_expr(value):
+    if value is not None:
+        print(repr(value))
+
+def _EXPOSED_print_assign(value, *targets):
+    # Only print on matrix assign.
+    if not isinstance(value, _matrix.Matrix):
+        return
+    txts = [y for x in targets for y in [x, " = "]]
+    cols = [208, 161] * len(targets)
+    print(_coloured(cols, txts) + repr(value))
 
 
 # Commands (which are invoked like `cmd()`, but `cmd` also gets transformed to
@@ -160,34 +168,62 @@ class _Transformer(_ast.NodeTransformer):
         self.in_func_name = 0
         self.console = console
 
-    def cook(self):
-        module = _ast.parse(self.source, self.filename)
-        module = self.visit(module)
-        body = module.body
-        # Console has some additional changes which require a single expression
-        # as the entire line.
-        if self.console and len(body) == 1 and isinstance(body[0], _ast.Expr):
-            expr = body[0]
-            node = expr.value
+    def console_single_thing(self, body):
+        only = body[0]
+        if isinstance(only, _ast.Expr):
+            node = only.value
             new_node = node
 
             # Check for commands.
             if self.is_named(new_node, _COMMANDS.keys()):
                 new_node = self.ast_call(_COMMANDS[new_node.id])
 
-            # Everything gets printed if non-none. However, this can be
-            # stopped by appending a semicolon.
+            # Everything gets printed if non-none. However, this can be stopped
+            # by appending a semicolon.
             if not self.source.rstrip().endswith(";"):
-                new_node = self.ast_call(_EXPOSED_print_nonnone, new_node)
+                new_node = self.ast_call(_EXPOSED_print_expr, new_node)
 
-            # Update the expr with this new node (which may still just be node).
+            # Update the only with this new node (which may still just be node).
             self.copyloc(new_node, node)
-            expr.value = new_node
+            only.value = new_node
+            return
 
+        if isinstance(only, (_ast.Assign, _ast.AugAssign)):
+            # Add a print on assign. However, this can be stopped by appending
+            # a semicolon.
+            if self.source.rstrip().endswith(";"):
+                return
+
+            targets = []
+            value = None
+            for x in only.targets:
+                if isinstance(x, _ast.Name):
+                    name = _ast.Constant(value=x.id, ctx=_ast.Load())
+                    targets.append(name)
+                    if value is None:
+                        value = _ast.Name(id=x.id, ctx=_ast.Load())
+                else:
+                    name = _ast.Constant(value="...", ctx=_ast.Load())
+                    targets.append(name)
+            if value is None:
+                return
+            # Append print call.
+            new_node = self.ast_call(_EXPOSED_print_assign, value, *targets)
+            new_expr = _ast.Expr(new_node)
+            self.copyloc(new_expr, only)
+            body.append(new_expr)
+            return
+
+    def cook(self):
+        module = _ast.parse(self.source, self.filename)
+        module = self.visit(module)
+        # Console has some additional changes which require a single thing as the
+        # the entire line.
+        if self.console and len(module.body) == 1:
+            self.console_single_thing(module.body) # poor thing.
         # Put console inputs in the history.
         if self.console:
             _HISTORY.add(self.filename)
-
         return module
 
 
