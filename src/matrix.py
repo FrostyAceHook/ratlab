@@ -3122,14 +3122,10 @@ def mvars(long=None):
         print(_coloured(245, "no matrix variables."))
     for name, value in mspace.items():
         pre = _coloured([208, 161], [name, " = "])
-        pad = len(_nonctrl(pre))
-        lines = value.__repr__(short=not long).splitlines()
-        if not lines:
-            print(pre)
-            continue
-        lines[0] = pre + lines[0]
-        lines[1:] = [" "*pad + x for x in lines[1:]]
-        print("\n".join(lines))
+        pad = " " * (len(name) + len(" = "))
+        mat = value.__repr__(short=not long)
+        mat = mat.replace("\n", "\n" + pad)
+        print(pre + mat)
 
 
 def mhelp():

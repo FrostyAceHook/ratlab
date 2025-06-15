@@ -54,7 +54,9 @@ def _EXPOSED_print_assign(value, *names):
         return
     txts = [y for x in names for y in [x, " = "]]
     cols = [208, 161] * len(names)
-    print(_coloured(cols, txts) + repr(value))
+    pad = " " * sum(len(x) for x in txts)
+    mat = repr(value).replace("\n", "\n" + pad)
+    print(_coloured(cols, txts) + mat)
 
 
 # Commands (which are invoked like `cmd()`, but `cmd` also gets transformed to
