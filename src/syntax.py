@@ -6,9 +6,12 @@ import itertools as _itertools
 import linecache as _linecache
 import os as _os
 import re as _re
+import sys as _sys
 import traceback as _traceback
 import uuid as _uuid
 import warnings as _warnings
+from importlib import abc as _importlib_abc
+from importlib.util import spec_from_file_location as _importlib_spec
 from pathlib import Path as _Path
 
 import matrix as _matrix
@@ -388,6 +391,63 @@ class _Transformer(_ast.NodeTransformer):
         return node
 
 
+class _Loader(_importlib_abc.Loader):
+    def __init__(self, fullname, path):
+        # Module name. not used by us but i think we need it.
+        self.fullname = fullname
+        # Source file path. lowkey used by us.
+        self.path = path
+
+    def create_module(self, spec):
+        return None
+
+    def exec_module(self, module):
+        with open(self.path, "r", encoding="utf-8") as f:
+            source = f.read()
+
+        # Transform and compile.
+        transformer = _Transformer(source, self.path, console=False)
+        parsed = transformer.cook()
+        compiled = compile(parsed, filename=self.path, mode="exec")
+        exec(compiled, module.__dict__)
+
+class _PathFinder(_importlib_abc.MetaPathFinder):
+    def find_spec(self, fullname, path, target=None):
+        if path is None:
+            searchme = _sys.path
+            searchme.insert(0, _os.getcwd())
+        else:
+            searchme = path
+
+        filename = fullname.rsplit(".")[-1]
+        for base in searchme:
+            base = _Path(base)
+            rat_path = base / f"{filename}.rat"
+            if rat_path.is_file():
+                loader = _Loader(fullname, rat_path)
+                return _importlib_spec(fullname, rat_path, loader=loader)
+
+            package_path = base / filename
+            init_path = package_path / "__init__.rat"
+            if init_path.is_file():
+                loader = _Loader(fullname, init_path)
+                return _importlib_spec(fullname, init_path, loader=loader,
+                        submodule_search_locations=[package_path])
+
+        return None
+
+
+@_contextlib.contextmanager
+def _use_rat_importer():
+    _sys.meta_path.insert(0, _use_rat_importer._finder)
+    try:
+        yield
+    finally:
+        _sys.meta_path.remove(_use_rat_importer._finder)
+_use_rat_importer._finder = _PathFinder()
+
+
+
 def _pretty_print_exception(exc, callout, tb=False):
     # manually coloured exception printer.
     def issquiggles(s):
@@ -514,9 +574,11 @@ def _execute(source, space, filename=None):
             space["_syntax"] = __import__(__name__)
         if space["_syntax"] is not __import__(__name__):
             raise RuntimeError("reserved '_syntax' set within variable space")
-        # Execute, with both locals and globals set to `space` to simulate
-        # module-level (filescope) code.
-        exec(compiled, space, space)
+        # Enable the rat module importer.
+        with _use_rat_importer():
+            # Execute, with both locals and globals set to `space` to simulate
+            # module-level (filescope) code.
+            exec(compiled, space, space)
     except Exception as e:
         if isinstance(e, _ExitConsoleException) and console:
             raise
