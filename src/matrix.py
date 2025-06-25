@@ -292,6 +292,9 @@ def GenericField(T):
             return ["nogh", "yeagh", "N", "Y"][a.obj + 2*short]
         return repr(a.obj)
 
+    # templated.
+    return locals()
+
 
 
 def _is_overridden(space, field, name):
@@ -657,10 +660,16 @@ def Matrix(field, shape):
     """
 
     if not isinstance(field, type):
-        raise TypeError(f"expected a type for field, got {field} of type "
+        raise TypeError(f"expected a type for field, got: {field}, of type "
                 f"{_tname(type(field))}")
     if issubclass(field, Matrix):
         raise TypeError("mate a matrix of matrices? calm down")
+
+    # Special field types:
+    # - bool (able to be used for indexing and overrides the dflt behaviour of
+    #       __bool__)
+    # - string (for all matrix repr)
+    # - float/complex (numpy internals for speed) (also expose .isnan and .isinf)
 
     # Wrap non-field classes.
     if not issubclass(field, Field):
@@ -2411,6 +2420,9 @@ def Matrix(field, shape):
         return Matrix[rtype, shape](cells)
 
 
+    # not an actual class, gotta fulfill the templated promises.
+    return locals()
+
 
 
 class Single:
@@ -3207,6 +3219,8 @@ def mvars(long=None):
     """
     Prints all matrix variables in the current space.
     """
+    from syntax import LAST_RESULT
+
     if long is None:
         long = not doesdflt2short()
 
@@ -3219,6 +3233,8 @@ def mvars(long=None):
 
     # Trim down to the matrix variables.
     mspace = {k: v for k, v in space.items() if isinstance(v, Matrix)}
+    # Dont include the "last result" variable.
+    mspace.pop(LAST_RESULT, None)
     for name in lits._injects:
         if name not in mspace:
             continue

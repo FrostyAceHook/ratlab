@@ -83,12 +83,12 @@ class _History:
         for fname in self.fnames:
             lines += _linecache.cache[fname][2]
         return "".join(lines).rstrip()
-_HISTORY = _History()
+HISTORY = _History()
 def _EXPOSED_history():
     """
     print this console's past inputs
     """
-    print(_HISTORY)
+    print(HISTORY)
 
 class _ExitConsoleException(Exception):
     pass
@@ -99,10 +99,12 @@ def _EXPOSED_quit():
     raise _ExitConsoleException()
 
 
-_COMMANDS = {"clear": _EXPOSED_clear, "history": _EXPOSED_history,
+COMMANDS = {"clear": _EXPOSED_clear, "history": _EXPOSED_history,
         "quit": _EXPOSED_quit}
 
-_KEYWORDS = ["_syntax", "lst"] + list(_COMMANDS.keys())
+LAST_RESULT = "ans"
+
+KEYWORDS = ["_syntax", "lst", LAST_RESULT] + list(COMMANDS.keys())
 
 
 class _Transformer(_ast.NodeTransformer):
@@ -176,21 +178,30 @@ class _Transformer(_ast.NodeTransformer):
     def console_single_thing(self, body):
         only = body[0]
         if isinstance(only, _ast.Expr):
-            node = only.value
-            new_node = node
+            new_node = only.value
 
             # Check for commands.
-            if self.is_named(new_node, _COMMANDS.keys()):
-                new_node = self.ast_call(_COMMANDS[new_node.id])
+            if self.is_named(new_node, COMMANDS.keys()):
+                new_node = self.ast_call(COMMANDS[new_node.id])
+
+            # Track last result.
+            last_result = _ast.Name(id=LAST_RESULT, ctx=_ast.Store())
+            tracked_expr = _ast.Assign(targets=[last_result], value=new_node)
+
+            # Update the node with tracked expr.
+            self.copyloc(tracked_expr, new_node)
+            body[0] = tracked_expr
 
             # Everything gets printed if non-none. However, this can be stopped
             # by appending a semicolon.
             if not self.source.rstrip().endswith(";"):
-                new_node = self.ast_call(_EXPOSED_print_expr, new_node)
+                # Just print var storing last result.
+                last_result = _ast.Name(id=LAST_RESULT, ctx=_ast.Load())
+                print_node = self.ast_call(_EXPOSED_print_expr, last_result)
+                print_expr = _ast.Expr(print_node)
+                self.copyloc(print_expr, body[0])
+                body.append(print_expr)
 
-            # Update the only with this new node (which may still just be node).
-            self.copyloc(new_node, node)
-            only.value = new_node
             return
 
         if isinstance(only, (_ast.Assign, _ast.AugAssign)):
@@ -232,7 +243,7 @@ class _Transformer(_ast.NodeTransformer):
             self.console_single_thing(module.body) # poor thing.
         # Put console inputs in the history.
         if self.console:
-            _HISTORY.add(self.filename)
+            HISTORY.add(self.filename)
         return module
 
 
@@ -263,27 +274,36 @@ class _Transformer(_ast.NodeTransformer):
         return node
 
     def visit_Name(self, node):
+        # Handle `last result` distinctly.
+        if self.is_named(node, LAST_RESULT):
+            if not self.console:
+                self.syntaxerrorme("cannot reference Ratlab last-result keyword "
+                        f"{repr(LAST_RESULT)} from outside console", node)
+            if not self.is_load(node):
+                self.syntaxerrorme(f"cannot directly modify {repr(LAST_RESULT)} "
+                        "(it will automatically track the last result)", node)
         # Ensure keywords aren't modified.
         if not self.is_load(node):
-            for kw in _KEYWORDS:
+            for kw in KEYWORDS:
                 if self.is_named(node, kw):
-                    self.syntaxerrorme("cannot modify ratlab keyword "
+                    self.syntaxerrorme("cannot modify Ratlab keyword "
                             f"{repr(kw)}", node)
-        for kw in _COMMANDS:
+        # Handle commands.
+        for kw in COMMANDS:
             if self.is_named(node, kw):
                 # Only available in console.
                 if not self.console:
-                    self.syntaxerrorme("cannot reference ratlab command "
+                    self.syntaxerrorme("cannot reference Ratlab command "
                             f"{repr(kw)} from outside console", node)
                 # If this is a command which isn't being called, make it be
                 # called.
                 if self.in_func_name <= 0:
-                    new_node = self.ast_call(_COMMANDS[kw])
+                    new_node = self.ast_call(COMMANDS[kw])
                     return self.copyloc(new_node, node)
                 # Otherwise, make it the correct name.
                 new_node = _ast.Attribute(
                     value=_ast.Name(id="_syntax", ctx=_ast.Load()),
-                    attr=_COMMANDS[kw].__name__,
+                    attr=COMMANDS[kw].__name__,
                     ctx=_ast.Load()
                 )
                 return self.copyloc(new_node, node)
@@ -301,9 +321,9 @@ class _Transformer(_ast.NodeTransformer):
 
         # Ensure keywords aren't modified.
         if not self.is_load(node):
-            for kw in _KEYWORDS:
-                if self.is_named(node, kw):
-                    self.syntaxerrorme("cannot modify ratlab keyword "
+            for kw in KEYWORDS:
+                if self.is_named(node.value, kw):
+                    self.syntaxerrorme("cannot modify Ratlab keyword "
                             f"{repr(kw)} attributes", node)
         return node
 
@@ -439,11 +459,16 @@ class _PathFinder(_importlib_abc.MetaPathFinder):
 
 @_contextlib.contextmanager
 def _use_rat_importer():
-    _sys.meta_path.insert(0, _use_rat_importer._finder)
+    if not _use_rat_importer._count:
+        _sys.meta_path.insert(0, _use_rat_importer._finder)
+    _use_rat_importer._count += 1
     try:
         yield
     finally:
-        _sys.meta_path.remove(_use_rat_importer._finder)
+        _use_rat_importer._count -= 1
+        if not _use_rat_importer._count:
+            _sys.meta_path.remove(_use_rat_importer._finder)
+_use_rat_importer._count = 0
 _use_rat_importer._finder = _PathFinder()
 
 
@@ -594,6 +619,11 @@ def run_console(space):
     interpreter. `space` should be a globals()-type dictionary of variables to
     expose (and it will be modified).
     """
+    # `last result` always starts with a value of none.
+    space[LAST_RESULT] = None
+    # History always starts cleared.
+    HISTORY.clear()
+
     def get_input():
         source = ""
         while True:
@@ -625,8 +655,6 @@ def run_console(space):
             _execute(source, space)
     except _ExitConsoleException:
         print(_coloured([73, 80], ["-- ", "okie leaving."]))
-    finally:
-        _HISTORY.clear()
 
 
 

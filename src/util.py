@@ -67,7 +67,8 @@ class _Cached:
 def cached(func, forwards_to=None):
     """
     Caches returns from a function, so any identical-inputs will return the same
-    object (and potentially be faster who knows).
+    object (and potentially be faster who knows). Note this is not a capped-size
+    cache, and may explode your computer but will also never forget.
     - paramed function decorator.
     """
     if forwards_to is None:
@@ -404,7 +405,8 @@ def get_locals(func, *args, **kwargs):
         ret = call()
     finally:
         # don leak the trace.
-        _sys.settrace(prev_trace)
+        if _sys.gettrace() is catch_locals:
+            _sys.settrace(prev_trace)
 
     return ret, lcls
 
@@ -413,68 +415,71 @@ def get_locals(func, *args, **kwargs):
 def templated(creator, parents=(), decorators=(), metaclass=type):
     """
     Used for templated classes. Essentially transforms a function into a class,
-    and the fully-defined type can be created via `func[params]`. Basically the
-    whole deal is that when this function is invoked, any locals that are around
-    at return are manhandled into a new class with those as attributes. Also,
-    since the returns from this function must be the same object you can
-    "forward" the created class to another call of the template function.
+    and the fully-defined type can be created via `func[params]`. The whole deal
+    is that when this function is invoked, it defines all the normal methods a
+    class would have and then returns the `locals()`, which are manhandled into a
+    new class with those as attributes. Any dictionary return is accepted for the
+    attr lookups, and also accepted is any other instantiation of this template,
+    which will just return that class.
     WARNING: to use `super()`, you must instead do `super(func[params], self)`,
              with the exact params that this class is using.
     - paramed "function" decorator.
     """
 
+    if isinstance(parents, list):
+        parents = tuple(parents)
+    if isinstance(decorators, list):
+        decorators = tuple(decorators)
     if not isinstance(parents, tuple):
         parents = (parents, )
     if not isinstance(decorators, tuple):
         decorators = (decorators, )
 
     # i luv validation.
-    assert all(isinstance(p, type) for p in parents)
-    assert all(callable(d) for d in decorators)
+    for p in parents:
+        if not isinstance(p, type):
+            raise TypeError("expected a type for each parent, got "
+                    f"{_tname(type(p))}")
+    for d in decorators:
+        if not callable(d):
+            raise TypeError("expected a callable for each decorator, got "
+                    f"{_tname(type(d))}")
 
     sig = _inspect.signature(creator)
     param_names = [p.name for p in sig.parameters.values()]
-    param_str = lambda x: x.__name__ if isinstance(x, type) else repr(x)
 
     @cached(forwards_to=creator)
     def create_class(*params):
-        # Get all the attributes of the class (which are the local vars that the
-        # function defines).
-        ret, lcls = get_locals(creator, *params)
-        if ret is not None:
-            if not isinstance(ret, type):
-                raise ValueError("non-none and non-type return from templated "
-                        "function-class")
+        # Get all the attributes of the class (which are the local vars that
+        # the function defines).
+        ret = creator(*params)
+        if isinstance(ret, type):
             if ret not in create_class.values:
-                raise ValueError("can only return other instantiations of this "
-                        "template from the template")
+                raise ValueError("expected a return of another instantiation "
+                        f"of this template, got {tname(ret)}")
             return ret
-
-        # Get the template parameters independantly.
-        params = [(name, lcls[name]) for name in param_names]
+        if not isinstance(ret, dict):
+            raise TypeError("expected dict or type return from templated "
+                    f"function-class, got {tname(type(ret))}")
+        for name in param_names:
+            if name not in ret:
+                raise ValueError("expected a returned value for template "
+                        f"parameter {repr(name)}")
 
         # Make the class name.
-        args = (f"{k}={param_str(v)}" for k,v in params)
+        param_str = lambda x: x.__name__ if isinstance(x, type) else repr(x)
+        args = (f"{name}={param_str(ret[name])}" for name in param_names)
         cls_name = f"{creator.__name__}[{', '.join(args)}]"
 
-        # Add a reference to the creator.
-        if "template" in lcls:
-            raise AttributeError("cannot assign to \"template\"")
-        lcls["template"] = Creator
-
         # Setup the class with the thangs, ensuring the specified parents.
-        cls = metaclass(cls_name, parents, lcls)
-
-        # Add the template params to the doc.
-        cls.__doc__ = creator.__doc__
-        if cls.__doc__ is None:
-            cls.__doc__ = "Templated class."
-        for name, value in params:
-            cls.__doc__ += f"\n    .{name:<10}  {param_str(value)}"
-
+        cls = metaclass(cls_name, parents, ret)
         # Apply any decorators, bottom-up.
         for dec in decorators[::-1]:
             cls = dec(cls)
+
+        # Cop creators doc.
+        if cls.__doc__ is None:
+            cls.__doc__ = creator.__doc__
 
         return cls
 
@@ -494,21 +499,34 @@ def templated(creator, parents=(), decorators=(), metaclass=type):
     def __call__(self, *args, **kwargs):
         raise TypeError("use square brackets to instantiate a templated class")
 
+    def __init__(self, creator, params):
+        self._creator = creator
+        self._params = params
+        _functools.update_wrapper(self, creator)
+
+
     attrs = {
-        "params": param_names,
-        "_creator": creator,
         "__instancecheck__": __instancecheck__,
         "__subclasscheck__": __subclasscheck__,
         "__contains__": __contains__,
         "__getitem__": __getitem__,
         "__call__": __call__,
+        "__init__": __init__,
     }
-
     CreatorCreator = type("CreatorCreator", (), attrs)
-    Creator = CreatorCreator()
-    _functools.update_wrapper(Creator, creator)
+    Creator = CreatorCreator(creator, param_names)
     return Creator
     # not confusing at all
+
+
+def take_methods(cls):
+    """
+    Returns a dictionary of the callables from the given class. Typically used to
+    implement a specialised templated class.
+    """
+    attrs = {name: getattr(cls, name) for name in dir(cls)}
+    return {k: v for k, v in attrs.items() if callable(v)}
+
 
 
 def simplest_ratio(x):

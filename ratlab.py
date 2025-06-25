@@ -51,7 +51,9 @@ def _main():
         def code_colour(s):
             if "".join([x.strip() for x in s]).isdigit():
                 return 135
-            if s.strip() in _syntax._KEYWORDS:
+            if s.strip() == "ans":
+                return 208
+            if s.strip() in (set(_syntax.KEYWORDS) | set("+-*/")):
                 return 161
             if s.strip() == ">>":
                 return 73
@@ -86,14 +88,26 @@ def _main():
 
 
         txts = []
-        for name, func in _syntax._COMMANDS.items():
+        for name, func in _syntax.COMMANDS.items():
             doc = " ".join(func.__doc__.split())
             txts.append(">> ")
             txts.append(name)
             txts.append(" " * (8 - len(name)) + f" # {doc}\n")
         msg += "\n"
         msg += wrap_string("When within the console, there are several commands "
-                           "which can be used by typing their bare name:")
+                           "which can be used by typing their bare name (or by "
+                           "calling them as nullary functions):")
+        msg += util.coloured(map(code_colour, txts), txts)
+
+        txts = [
+            ">> ", "1", " + ", "2\n",
+            "3\n",
+            ">> ", "ans\n",
+            "3\n",
+        ]
+        msg += "\n"
+        msg += wrap_string("Additionally, the last result in the console is "
+                "stored in the 'ans' label.")
         msg += util.coloured(map(code_colour, txts), txts)
 
         print(msg, end="")

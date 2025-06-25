@@ -237,8 +237,10 @@ class Complex(matrix.Field):
             if "e" not in s:
                 return coloured(135, s)
             # "xxx.xe-0y" -> "xxx.xe-y"
-            if len(s) > 2 and s[-2] == "0":
-                s = s[:-2] + s[-1]
+            # "xxx.xe+0y" -> "xxx.xey"
+            s = s.replace("e-0", "e-")
+            s = s.replace("e+", "e")
+            s = s.replace("e0", "e")
             return coloured(135, s)
             # if you wanna highlight the e, maybe try this but i couldnt find a
             # nice colour lmao.
@@ -246,8 +248,8 @@ class Complex(matrix.Field):
                 parts = s.split("e-")
                 parts.insert(1, "e-")
             else:
-                parts = s.split("e+")
-                parts.insert(1, "e+")
+                parts = s.split("e")
+                parts.insert(1, "e")
             if len(parts) != 3:
                 raise Exception(f"weirdly split string {parts}")
             return coloured([135, 105, 135], parts)
