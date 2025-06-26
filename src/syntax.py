@@ -47,16 +47,17 @@ def _EXPOSED_slice(matrix_literal, *sliced_by):
     append_me = _matrix.hstack(*sliced_by)
     return _matrix.vstack(matrix_literal, append_me)
 
-def _EXPOSED_print_expr(value):
-    if value is not None:
-        print(repr(value))
-
-def _EXPOSED_print_assign(value, *names):
-    # Only print on matrix assign.
+def _EXPOSED_print(value, *assigns):
+    # If no assigns, always print if non-none.
+    if not assigns:
+        if value is not None:
+            print(repr(value))
+        return
+    # Otherwise its an assign, and we only print on matrix assign.
     if not isinstance(value, _matrix.Matrix):
         return
-    txts = [y for x in names for y in [x, " = "]]
-    cols = [208, 161] * len(names)
+    txts = [y for x in assigns for y in [x, " = "]]
+    cols = [208, 161] * len(assigns)
     pad = " " * sum(len(x) for x in txts)
     mat = repr(value).replace("\n", "\n" + pad)
     print(_coloured(cols, txts) + mat)
@@ -98,60 +99,32 @@ def _EXPOSED_quit():
     """
     raise _ExitConsoleException()
 
+KW_LIST = "lst"
+KW_PREV = "ans"
 
 COMMANDS = {"clear": _EXPOSED_clear, "history": _EXPOSED_history,
         "quit": _EXPOSED_quit}
 
-LAST_RESULT = "ans"
+EXPOSED = {k: v for k, v in globals().items() if k.startswith("_EXPOSED")}
+DESOPXE = {v: k for k, v in EXPOSED.items()} # reversed exposed.
 
-KEYWORDS = ["_syntax", "lst", LAST_RESULT] + list(COMMANDS.keys())
+KEYWORDS = {KW_LIST, KW_PREV}
+KEYWORDS |= set(COMMANDS.keys())
+KEYWORDS |= set(EXPOSED.keys())
 
 
 class _Transformer(_ast.NodeTransformer):
-    @staticmethod
-    def ast_call(func, *args):
-        assert func.__name__.startswith("_EXPOSED_")
+    def ast_call(self, func, *args):
+        assert func in DESOPXE
         return _ast.Call(
-            func=_ast.Attribute(
-                value=_ast.Name(id="_syntax", ctx=_ast.Load()),
-                attr=func.__name__,
-                ctx=_ast.Load()
-            ),
+            func=_ast.Name(id=DESOPXE[func], ctx=_ast.Load()),
             args=list(args),
             keywords=[],
         )
-    @staticmethod
-    def copyloc(dst, src):
+    def copyloc(self, dst, src):
         _ast.copy_location(dst, src)
         _ast.fix_missing_locations(dst)
         return dst
-
-    @staticmethod
-    def is_load(node):
-        return isinstance(node.ctx, _ast.Load)
-
-    @staticmethod
-    def is_named(node, names):
-        if not isinstance(node, _ast.Name):
-            return False
-        if isinstance(names, str):
-            return node.id == names
-        return node.id in names
-
-    @staticmethod
-    def is_matlit(node):
-        if not isinstance(node, _ast.Call):
-            return False
-        func = node.func
-        if not isinstance(func, _ast.Attribute):
-            return False
-        mod = func.value
-        if not isinstance(mod, _ast.Name):
-            return False
-        if mod.id != "_syntax":
-            return False
-        return func.attr in {_EXPOSED_list.__name__, _EXPOSED_slice.__name__}
-
     def syntaxerrorme(self, msg, node):
         exc = SyntaxError(msg)
         exc.filename = self.filename
@@ -164,6 +137,20 @@ class _Transformer(_ast.NodeTransformer):
         exc.text = self.source.splitlines()[node.lineno - 1]
         raise exc
 
+    def is_load(self, node):
+        return isinstance(node.ctx, _ast.Load)
+    def is_named(self, node, names):
+        if isinstance(names, str):
+            names = {names}
+        if not isinstance(node, _ast.Name):
+            return False
+        return node.id in names
+    def is_matlit(self, node):
+        if not isinstance(node, _ast.Call):
+            return False
+        names = {_EXPOSED_list.__name__, _EXPOSED_slice.__name__}
+        return self.is_named(node.func, names)
+
 
     def __init__(self, source, filename, console):
         super().__init__()
@@ -172,77 +159,90 @@ class _Transformer(_ast.NodeTransformer):
         self.wrap_lits = False
         self.row_vector = False
         self.pierce_tuple = False
-        self.in_func_name = 0
         self.console = console
 
-    def console_single_thing(self, body):
-        only = body[0]
-        if isinstance(only, _ast.Expr):
-            new_node = only.value
+    def console_things(self, body):
+        if not body:
+            return
 
-            # Check for commands.
-            if self.is_named(new_node, COMMANDS.keys()):
-                new_node = self.ast_call(COMMANDS[new_node.id])
+        # Firstly, add the print of the last expression. Note this can be stopped
+        # by appending another semicolon.
+        last = body[-1]
+        printme = False
+        if not self.source.rstrip().endswith(";"):
+            # Assigns should contain all variable names which were assigned to.
+            # May be empty if its not an assignment.
+            assigns = []
+            # Do separate print on expr vs assign.
+            if isinstance(last, (_ast.Assign, _ast.AugAssign)):
+                if isinstance(last, _ast.AugAssign):
+                    targets = [last.target]
+                else:
+                    targets = last.targets
+                for x in targets:
+                    if isinstance(x, _ast.Name):
+                        name = _ast.Constant(value=x.id, ctx=_ast.Load())
+                        assigns.append(name)
+                        # Only print if we actually have a plain name.
+                        printme = True
+                    else:
+                        name = _ast.Constant(value="...", ctx=_ast.Load())
+                        assigns.append(name)
+            elif isinstance(last, _ast.Expr):
+                # Always print exprs.
+                printme = True
 
-            # Track last result.
-            last_result = _ast.Name(id=LAST_RESULT, ctx=_ast.Store())
-            tracked_expr = _ast.Assign(targets=[last_result], value=new_node)
-
-            # Update the node with tracked expr.
-            self.copyloc(tracked_expr, new_node)
-            body[0] = tracked_expr
-
-            # Everything gets printed if non-none. However, this can be stopped
-            # by appending a semicolon.
-            if not self.source.rstrip().endswith(";"):
-                # Just print var storing last result.
-                last_result = _ast.Name(id=LAST_RESULT, ctx=_ast.Load())
-                print_node = self.ast_call(_EXPOSED_print_expr, last_result)
+            # Create the printing node.
+            if printme:
+                # Value of thing to print is always just var storing last result.
+                prev = _ast.Name(id=KW_PREV, ctx=_ast.Load())
+                print_node = self.ast_call(_EXPOSED_print, prev, *assigns)
                 print_expr = _ast.Expr(print_node)
-                self.copyloc(print_expr, body[0])
+                self.copyloc(print_expr, last)
                 body.append(print_expr)
 
-            return
 
-        if isinstance(only, (_ast.Assign, _ast.AugAssign)):
-            # Add a print on assign. However, this can be stopped by appending
-            # a semicolon.
-            if self.source.rstrip().endswith(";"):
-                return
+        # Add the prev result tracking.
+        i = 0
+        while i < len(body) - printme:
+            node = body[i]
+            prev = _ast.Name(id=KW_PREV, ctx=_ast.Store())
+            if isinstance(node, _ast.Expr):
+                # Make the expression an assign.
+                new_node = _ast.Assign(targets=[prev], value=node.value)
+                self.copyloc(new_node, node)
+                body[i] = new_node
+                i += 1
+                continue
+            if isinstance(node, _ast.Assign):
+                # Add prev to the targets.
+                self.copyloc(prev, body[i])
+                body[i].targets.append(prev)
+                i += 1
+                continue
+            if isinstance(node, _ast.AugAssign):
+                # Add an assign to prev.
+                new_node = _ast.Assign(targets=[prev], value=node.target)
+                self.copyloc(new_node, node)
+                body.insert(i + 1, new_node)
+                i += 2
+                continue
+            # Otherwise, just set it to None.
+            none = _ast.Constant(value=None, ctx=_ast.Load())
+            new_node = _ast.Assign(targets=[prev], value=none)
+            self.copyloc(new_node, node)
+            body.insert(i + 1, new_node)
+            i += 2
+            continue
 
-            if isinstance(only, _ast.AugAssign):
-                targets = [only.target]
-            else:
-                targets = only.targets
-            names = []
-            value = None
-            for x in targets:
-                if isinstance(x, _ast.Name):
-                    name = _ast.Constant(value=x.id, ctx=_ast.Load())
-                    names.append(name)
-                    if value is None:
-                        value = _ast.Name(id=x.id, ctx=_ast.Load())
-                else:
-                    name = _ast.Constant(value="...", ctx=_ast.Load())
-                    names.append(name)
-            if value is None:
-                return
-            # Append print call.
-            new_node = self.ast_call(_EXPOSED_print_assign, value, *names)
-            new_expr = _ast.Expr(new_node)
-            self.copyloc(new_expr, only)
-            body.append(new_expr)
-            return
 
     def cook(self):
         module = _ast.parse(self.source, self.filename)
         module = self.visit(module)
-        # Console has some additional changes which require a single thing as the
-        # the entire line.
-        if self.console and len(module.body) == 1:
-            self.console_single_thing(module.body) # poor thing.
-        # Put console inputs in the history.
+        # Console has additional changes.
         if self.console:
+            self.console_things(module.body) # poor things.
+            # Also add console inputs in the history.
             HISTORY.add(self.filename)
         return module
 
@@ -262,7 +262,6 @@ class _Transformer(_ast.NodeTransformer):
         if not isinstance(node, _ast.List):
             self.row_vector = False
 
-        self.in_func_name -= 1
         new_node = super().visit(node)
         self.wrap_lits = was_wrapping_lits
         return new_node
@@ -275,13 +274,13 @@ class _Transformer(_ast.NodeTransformer):
 
     def visit_Name(self, node):
         # Handle `last result` distinctly.
-        if self.is_named(node, LAST_RESULT):
+        if self.is_named(node, KW_PREV):
             if not self.console:
                 self.syntaxerrorme("cannot reference Ratlab last-result keyword "
-                        f"{repr(LAST_RESULT)} from outside console", node)
+                        f"{repr(KW_PREV)} from outside console", node)
             if not self.is_load(node):
-                self.syntaxerrorme(f"cannot directly modify {repr(LAST_RESULT)} "
-                        "(it will automatically track the last result)", node)
+                self.syntaxerrorme(f"cannot directly modify {repr(KW_PREV)} (it "
+                        "will automatically track the last result)", node)
         # Ensure keywords aren't modified.
         if not self.is_load(node):
             for kw in KEYWORDS:
@@ -295,36 +294,29 @@ class _Transformer(_ast.NodeTransformer):
                 if not self.console:
                     self.syntaxerrorme("cannot reference Ratlab command "
                             f"{repr(kw)} from outside console", node)
-                # If this is a command which isn't being called, make it be
-                # called.
-                if self.in_func_name <= 0:
-                    new_node = self.ast_call(COMMANDS[kw])
-                    return self.copyloc(new_node, node)
-                # Otherwise, make it the correct name.
-                new_node = _ast.Attribute(
-                    value=_ast.Name(id="_syntax", ctx=_ast.Load()),
-                    attr=COMMANDS[kw].__name__,
-                    ctx=_ast.Load()
-                )
-                return self.copyloc(new_node, node)
-        return node
-
-    def visit_Call(self, node):
-        self.in_func_name = 2
-        node.func = self.visit(node.func)
-        self.in_func_name = 0
-        node.args = [self.visit(x) for x in node.args]
+                # Make it the correct name.
+                node.id = DESOPXE[COMMANDS[kw]]
+        # Nothing more to visit.
         return node
 
     def visit_Attribute(self, node):
-        node = self.generic_visit(node)
+        # No keywords have attributes.
+        for kw in KEYWORDS:
+            if self.is_named(node.value, kw):
+                self.syntaxerrorme("cannot access attributes of Ratlab keyword "
+                        f"{repr(kw)}", node)
+        # Now do visiting.
+        return self.generic_visit(node)
 
-        # Ensure keywords aren't modified.
-        if not self.is_load(node):
-            for kw in KEYWORDS:
-                if self.is_named(node.value, kw):
-                    self.syntaxerrorme("cannot modify Ratlab keyword "
-                            f"{repr(kw)} attributes", node)
+    def visit_Expr(self, node):
+        # Visit first.
+        node = self.generic_visit(node)
+        # If the entire expr is an uncalled command, make it called.
+        cmds = {DESOPXE[func] for func in COMMANDS.values()}
+        if self.is_named(node.value, cmds):
+            new_node = _ast.Call(func=node.value, args=[], keywords=[])
+            new_node = _ast.Expr(value=new_node)
+            node = self.copyloc(new_node, node)
         return node
 
     def visit_List(self, node):
@@ -362,7 +354,7 @@ class _Transformer(_ast.NodeTransformer):
         node.value = self.visit(node.value)
 
         # Find what we're doing based on what we're subscripting.
-        if self.is_named(node.value, "lst"):
+        if self.is_named(node.value, KW_LST):
             what = "list" # create a list literal.
         elif self.is_matlit(node.value):
             what = "matrix" # append a row to a matrix literal.
@@ -473,7 +465,7 @@ _use_rat_importer._finder = _PathFinder()
 
 
 
-def _pretty_print_exception(exc, callout, tb=False):
+def _pretty_print_exception(exc, callout, tb=True):
     # manually coloured exception printer.
     def issquiggles(s):
         if s is None:
@@ -577,6 +569,16 @@ def _pretty_print_exception(exc, callout, tb=False):
 
 
 def _execute(source, space, filename=None):
+    # Splice every "exposed" object into the space.
+    def splice_in(name, value):
+        if name not in space:
+            space[name] = value
+        if space[name] is not value:
+            raise RuntimeError(f"reserved label {repr(name)} illegally set "
+                    "within variable space")
+    for name, value in EXPOSED.items():
+        splice_in(name, value)
+
     # For console if filename is none.
     console = (filename is None)
     if console:
@@ -594,11 +596,6 @@ def _execute(source, space, filename=None):
         _pretty_print_exception(e, "TYPO", tb=False)
         return False
     try:
-        # Splice _syntax into this bitch.
-        if "_syntax" not in space:
-            space["_syntax"] = __import__(__name__)
-        if space["_syntax"] is not __import__(__name__):
-            raise RuntimeError("reserved '_syntax' set within variable space")
         # Enable the rat module importer.
         with _use_rat_importer():
             # Execute, with both locals and globals set to `space` to simulate
@@ -620,7 +617,7 @@ def run_console(space):
     expose (and it will be modified).
     """
     # `last result` always starts with a value of none.
-    space[LAST_RESULT] = None
+    space[KW_PREV] = None
     # History always starts cleared.
     HISTORY.clear()
 

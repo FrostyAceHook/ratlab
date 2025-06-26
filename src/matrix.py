@@ -3219,7 +3219,7 @@ def mvars(long=None):
     """
     Prints all matrix variables in the current space.
     """
-    from syntax import LAST_RESULT
+    from syntax import KW_PREV
 
     if long is None:
         long = not doesdflt2short()
@@ -3234,7 +3234,7 @@ def mvars(long=None):
     # Trim down to the matrix variables.
     mspace = {k: v for k, v in space.items() if isinstance(v, Matrix)}
     # Dont include the "last result" variable.
-    mspace.pop(LAST_RESULT, None)
+    mspace.pop(KW_PREV, None)
     for name in lits._injects:
         if name not in mspace:
             continue

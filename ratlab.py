@@ -51,10 +51,11 @@ def _main():
         def code_colour(s):
             if "".join([x.strip() for x in s]).isdigit():
                 return 135
-            if s.strip() == "ans":
-                return 208
-            if s.strip() in (set(_syntax.KEYWORDS) | set("+-*/")):
+            red = (_syntax.KEYWORDS | set("+-*/=")) - {_syntax.KW_PREV}
+            if s.strip() in red:
                 return 161
+            if s.strip().isalpha():
+                return 208
             if s.strip() == ">>":
                 return 73
             if s.lstrip().startswith("#"):
@@ -78,7 +79,8 @@ def _main():
                 "6", "]", " # a 2x3 matrix\n",
             "[", "1 2 3", "]\n",
             "[", "4 5 6", "]\n",
-            ">> ", "lst", "[", "1", ", ", "2", ", ", "3", "]", " # a list\n",
+            ">> ", _syntax.KW_LIST, "[", "1", ", ", "2", ", ", "3", "]",
+                " # a list\n",
             "[", "1", ", ", "2", ", ", "3", "]\n",
         ]
         msg += "\n"
@@ -102,12 +104,17 @@ def _main():
         txts = [
             ">> ", "1", " + ", "2\n",
             "3\n",
-            ">> ", "ans\n",
+            ">> ", _syntax.KW_PREV, "\n",
             "3\n",
+            ">> ", "x", " = ", "[", "3", " * ", "4", "]",
+                " # a single (1x1) matrix\n",
+            "x", " = ", "12\n",
+            ">> ", _syntax.KW_PREV, " + ", "3\n",
+            "15\n"
         ]
         msg += "\n"
-        msg += wrap_string("Additionally, the last result in the console is "
-                "stored in the 'ans' label.")
+        msg += wrap_string("Additionally, the most recent result in the console "
+                          f"is stored in the {repr(_syntax.KW_PREV)} label.")
         msg += util.coloured(map(code_colour, txts), txts)
 
         print(msg, end="")

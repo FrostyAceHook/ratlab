@@ -1,5 +1,4 @@
 - "remoce two chars from points to user" bro wtf does this MEAN lmao
-- only transform bare commands into calls.
 - `rotate` function which does brfilters np shift
 - shortened matrix print
 - matrix eig
