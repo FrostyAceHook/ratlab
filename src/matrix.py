@@ -2400,6 +2400,8 @@ def Matrix(field, shape):
     # not an actual class, gotta fulfill the templated promises.
     return locals()
 
+Matrix.namer = lambda field, shape: f"{shape} Matrix[{_tname(field)[1:-1]}]"
+
 
 
 class Single:

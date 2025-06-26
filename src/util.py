@@ -146,6 +146,10 @@ class instcached:
 
 
 def iterable(obj):
+    """
+    Returns true if the given object can have `__iter__` called without an
+    exception (hopefully meaning it's iterable).
+    """
     try:
         obj.__iter__()
         return True
@@ -153,15 +157,23 @@ def iterable(obj):
         return False
 
 
-def tname(t, namespaced=False):
+def tname(t, namespaced=False, quoted=True):
+    """
+    Returns a string of the given type, surrounded in single quotes. If the type
+    has the `_tname` property that will be used for the name, otherwise it will
+    be constructed from (optionally) the module and `__name__`.
+    """
     if not isinstance(t, type):
         raise TypeError(f"expected type, got {tname(type(t))}")
+    finish = lambda s: f"'{s}'" if quoted else s
+    if hasattr(t, "_tname"):
+        return finish(t._tname)
     name = t.__name__
     if not namespaced:
-        return f"'{name}'"
+        return finish(name)
     namespace = t.__module__ + "."
     namespace *= namespace not in {"__main__", "builtins"}
-    return f"'{namespace}{name}'"
+    return finish(namespace + name)
 
 
 # Hack to enable console escape codes.
@@ -411,6 +423,64 @@ def get_locals(func, *args, **kwargs):
     return ret, lcls
 
 
+class _Templated:
+    def __init__(self, creator, parents, decorators, metaclass):
+        _functools.update_wrapper(self, creator)
+        self.creator = creator
+        self.parents = parents
+        self.decorators = decorators
+        self.metaclass = metaclass
+        # Make the default namer.
+        def namer(*param_values):
+            tostr = lambda x: x.__name__ if isinstance(x, type) else repr(x)
+            args = ", ".join(map(tostr, param_values))
+            return f"{self.creator.__name__}[{args}]"
+        self._dflt_namer = namer
+        self.namer = None # may be set by user.
+        # Make the creator.
+        @cached(forwards_to=creator)
+        def makecls(*param_values):
+            # Get all the attributes of the class (which are the local vars that
+            # the function defines).
+            ret = self.creator(*param_values)
+            if isinstance(ret, type):
+                if ret not in self.creator.values:
+                    raise ValueError("expected a return of another "
+                            f"instantiation of this template, got {tname(ret)}")
+                return ret
+            if not isinstance(ret, dict):
+                raise TypeError("expected dict or type return from templated "
+                        f"function-class, got {tname(type(ret))}")
+            dflt_name = self._dflt_namer(*param_values)
+            # Create class using metaclass and parents.
+            cls = self.metaclass(dflt_name, self.parents, ret)
+            if self.namer is not None:
+                cls._tname = self.namer(*param_values)
+            # Apply any decorators, bottom-up.
+            for dec in self.decorators[::-1]:
+                cls = dec(cls)
+            # Cop creators doc.
+            if cls.__doc__ is None:
+                cls.__doc__ = self.creator.__doc__
+            return cls
+        self._makecls = makecls
+
+    def __call__(self, *args, **kwargs):
+        raise TypeError("use square brackets to instantiate a templated class")
+
+    def __getitem__(self, param_values):
+        if not isinstance(param_values, tuple):
+            param_values = (param_values, )
+        return self._makecls(*param_values)
+
+    # im literally the best
+    def __contains__(self, cls):
+        return any(cls is t for t in self._makecls.values)
+    def __instancecheck__(self, instance):
+        return isinstance(instance, self._makecls.values)
+    def __subclasscheck__(self, subclass):
+        return any(issubclass(subclass, t) for t in self._makecls.values)
+
 @incremental
 def templated(creator, parents=(), decorators=(), metaclass=type):
     """
@@ -425,7 +495,6 @@ def templated(creator, parents=(), decorators=(), metaclass=type):
              with the exact params that this class is using.
     - paramed "function" decorator.
     """
-
     if isinstance(parents, list):
         parents = tuple(parents)
     if isinstance(decorators, list):
@@ -434,7 +503,6 @@ def templated(creator, parents=(), decorators=(), metaclass=type):
         parents = (parents, )
     if not isinstance(decorators, tuple):
         decorators = (decorators, )
-
     # i luv validation.
     for p in parents:
         if not isinstance(p, type):
@@ -444,79 +512,13 @@ def templated(creator, parents=(), decorators=(), metaclass=type):
         if not callable(d):
             raise TypeError("expected a callable for each decorator, got "
                     f"{_tname(type(d))}")
-
-    sig = _inspect.signature(creator)
-    param_names = [p.name for p in sig.parameters.values()]
-
-    @cached(forwards_to=creator)
-    def create_class(*params):
-        # Get all the attributes of the class (which are the local vars that
-        # the function defines).
-        ret = creator(*params)
-        if isinstance(ret, type):
-            if ret not in create_class.values:
-                raise ValueError("expected a return of another instantiation "
-                        f"of this template, got {tname(ret)}")
-            return ret
-        if not isinstance(ret, dict):
-            raise TypeError("expected dict or type return from templated "
-                    f"function-class, got {tname(type(ret))}")
-        for name in param_names:
-            if name not in ret:
-                raise ValueError("expected a returned value for template "
-                        f"parameter {repr(name)}")
-
-        # Make the class name.
-        param_str = lambda x: x.__name__ if isinstance(x, type) else repr(x)
-        args = (f"{name}={param_str(ret[name])}" for name in param_names)
-        cls_name = f"{creator.__name__}[{', '.join(args)}]"
-
-        # Setup the class with the thangs, ensuring the specified parents.
-        cls = metaclass(cls_name, parents, ret)
-        # Apply any decorators, bottom-up.
-        for dec in decorators[::-1]:
-            cls = dec(cls)
-
-        # Cop creators doc.
-        if cls.__doc__ is None:
-            cls.__doc__ = creator.__doc__
-
-        return cls
-
-    def __instancecheck__(self, instance): # im literally the best
-        return isinstance(instance, create_class.values)
-    def __subclasscheck__(self, subclass):
-        return any(issubclass(subclass, t) for t in create_class.values)
-
-    def __contains__(self, cls):
-        return cls in create_class.values
-
-    def __getitem__(self, params):
-        if not isinstance(params, tuple):
-            params = (params, )
-        return create_class(*params)
-
-    def __call__(self, *args, **kwargs):
-        raise TypeError("use square brackets to instantiate a templated class")
-
-    def __init__(self, creator, params):
-        self._creator = creator
-        self._params = params
-        _functools.update_wrapper(self, creator)
-
-
-    attrs = {
-        "__instancecheck__": __instancecheck__,
-        "__subclasscheck__": __subclasscheck__,
-        "__contains__": __contains__,
-        "__getitem__": __getitem__,
-        "__call__": __call__,
-        "__init__": __init__,
-    }
-    CreatorCreator = type("CreatorCreator", (), attrs)
-    Creator = CreatorCreator(creator, param_names)
-    return Creator
-    # not confusing at all
+    if not isinstance(metaclass, type):
+        raise TypeError("expected a type for the metaclass, got "
+                f"{_tname(type(metaclass))}")
+    if not issubclass(metaclass, type):
+        raise TypeError("expected a type that inherits from type for the "
+                f"metaclass, got: {_tname(metaclass)}")
+    return _Templated(creator, parents, decorators, metaclass)
 
 
 def take_methods(cls):

@@ -354,7 +354,7 @@ class _Transformer(_ast.NodeTransformer):
         node.value = self.visit(node.value)
 
         # Find what we're doing based on what we're subscripting.
-        if self.is_named(node.value, KW_LST):
+        if self.is_named(node.value, KW_LIST):
             what = "list" # create a list literal.
         elif self.is_matlit(node.value):
             what = "matrix" # append a row to a matrix literal.
