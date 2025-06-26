@@ -23,6 +23,10 @@ class Field:
     def consts(cls):
         return {}
 
+    @_classconst
+    def exposes(cls):
+        return {}
+
     @classmethod
     def atan2(cls, y, x):
         if "pi" in cls.consts:
@@ -103,6 +107,13 @@ class ExampleField(Field):
     def consts(cls): # map of str to elements, which will be mapped into the
                      # variable space on field selection.
         return {"e": cls(2.71828), "pi": cls(3.14159)}
+
+    @_classconst
+    def exposes(cls): # map of str to type, where the keys are object attributes
+                      # that should be exposed in the matrix and the values are
+                      # the (field) type of the attribute.
+        cls().isnan = True # "isnan" must be an object property.
+        return {"isnan": bool}
 
     @classmethod
     def add(cls, a, b): # a+b
@@ -2243,6 +2254,16 @@ def Matrix(field, shape):
         return s * (180 / s.pi)
 
 
+    @_instconst
+    def obj(s):
+        """
+        Cast a single to the object it contains.
+        """
+        if not s.issingle:
+            raise TypeError("expected single for scalar cast to object, got "
+                    f"{s.shape}")
+        return s._cells[0]
+
     def __bool__(s):
         """
         Cast to bool, returning true iff all elements are non-zero.
@@ -2360,63 +2381,19 @@ def Matrix(field, shape):
 
 
     # Its so dangerous bruh.
-    def __getattr__(s, attr, rtype=None):
+    def __getattr__(s, attr):
         """
         If a non-matrix attribute is accessed, it will be retrived from each
-        element instead.
+        element instead (if the elements also expose it).
         """
         cells = object.__getattribute__(s, "_cells") # cooked.
         field = object.__getattribute__(s, "field")
         shape = object.__getattribute__(s, "shape")
-        bad = False
-        checked_elements = False
-        if attr.startswith("_"):
-            bad = True
-        elif attr in vars(ExampleField).keys():
-            bad = True
-        elif cells:
-            try:
-                # need tuple to eval now.
-                cells = tuple(getattr(x, attr) for x in cells)
-            except AttributeError:
-                bad = True
-                checked_elements = True
-        else:
-            obj = None
-            try:
-                s._need("zero", "test for attribute")
-                obj = s._f("zero")
-            except NotImplementedError:
-                try:
-                    s._need("one", "test for attribute")
-                    obj = s._f("one")
-                except NotImplementedError:
-                    pass
-            if obj is None:
-                bad = True
-            else:
-                try:
-                    x = getattr(obj, attr)
-                    if rtype is None:
-                        rtype = type(x)
-                except Exception:
-                    bad = True
-                    checked_elements = True
-        if bad:
-            extra = ""
-            if checked_elements:
-                extra = f" (and neither do the {_tname(field)} elements)"
+        if attr not in field.exposes:
             raise AttributeError(f"{_tname(type(s))} object has no attribute "
-                    f"{repr(attr)}{extra}")
-        if not cells and rtype is None:
-            rtype = field
-        if rtype is None:
-            rtype = type(cells[0])
-        for cell in cells:
-            if not isinstance(cell, rtype):
-                raise TypeError(f"expected {_tname(rtype)} typed return from "
-                        f"'.__getattr__({repr(attr)})' for consistency, got "
-                        f"{_tname(type(cell))})")
+                    f"{repr(attr)}")
+        rtype = field.exposes[attr]
+        cells = (getattr(x, attr) for x in cells)
         return Matrix[rtype, shape](cells)
 
 
