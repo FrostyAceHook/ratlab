@@ -444,7 +444,7 @@ class _Templated:
             # the function defines).
             ret = self.creator(*param_values)
             if isinstance(ret, type):
-                if ret not in self.creator.values:
+                if ret not in self._makecls.values:
                     raise ValueError("expected a return of another "
                             f"instantiation of this template, got {tname(ret)}")
                 return ret
