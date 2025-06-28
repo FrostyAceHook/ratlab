@@ -28,6 +28,10 @@ class Field:
         return {}
 
     @classmethod
+    def eq(cls, a, b):
+        return cls.issame(a, b)
+
+    @classmethod
     def atan2(cls, y, x):
         if "pi" in cls.consts:
             pi = cls.consts["pi"]
@@ -166,19 +170,22 @@ class ExampleField(Field):
         return cls()
 
     @classmethod
-    def diff(cls, y, x): # (d/dx)(y)
+    def diff(cls, y, x): # (d/dx y)
         return cls()
     @classmethod
-    def intt(cls, y, x): # int y dx
+    def intt(cls, y, x): # (int y dx)
         return cls()
     @classmethod
-    def def_intt(cls, y, x, a, b): # int_a^b y dx
+    def def_intt(cls, y, x, a, b): # (int(a..b) y dx)
         return cls()
 
     @classmethod
     def conj(cls, a): # a = x+iy, conj(a) = x-iy
         return cls()
 
+    @classmethod
+    def issame(cls, a, b): # a is identical to b, must return bool
+        return True
     # Comparisons don't necessarily have bool returns, they may also return any
     # Field type (including this class). However, when this returned object is
     # cast to bool, it must be true iff the original comparison is always true.
@@ -190,10 +197,6 @@ class ExampleField(Field):
     @classmethod
     def lt(cls, a, b): # a < b
         return ...
-
-    @classmethod
-    def issame(cls, a, b): # a is identical to b, must return bool
-        return True
 
     @classmethod
     def hashed(cls, a): # hash(a)
@@ -320,7 +323,45 @@ def _is_overridden(space, field, name):
     try:
         return not expect.issame(got)
     except Exception:
-        return True # assume the worst.
+        return True # assume nothing but the worst.
+
+def _get_field(field, xs=()):
+    if field is None:
+        if xs:
+            field = xs[0].field
+        else:
+            if lits._field is None:
+                raise RuntimeError("must specify a field using 'lits'")
+            field = lits._field
+    return field
+
+def _maybe_unpack(xs):
+    if len(xs) != 1:
+        return xs
+    x = xs[0]
+    # dont unpack all iterables lmao.
+    if isinstance(x, (Matrix, str, bytes, dict)):
+        return xs
+    if not _iterable(x):
+        return xs
+    return tuple(x)
+
+def _get_space(depth=1):
+    # Get the globals of the frame `depth` calls above the caller (so depth+1
+    # calls above this function)
+    frame = None
+    try:
+        for i in range(depth + 2):
+            if i == 0:
+                frame = _inspect.currentframe()
+            else:
+                frame = frame.f_back
+            if frame is None:
+                # should always find i=0 and i=1 (current and caller).
+                raise RuntimeError(f"call depth too short, got {i - 2}/{depth}")
+        return frame.f_globals
+    finally:
+        del frame # don leak.
 
 
 def lits(field, inject=True):
@@ -336,55 +377,33 @@ def lits(field, inject=True):
         raise TypeError("expected a valid field class, got "
                 f"{_tname(type(field))}") from e
 
-    if inject:
-        # Grab the globals of caller.
-        frame = _inspect.currentframe()
-        try:
-            space = frame.f_back.f_globals
-        finally:
-            del frame # don leak.
-        for name in lits._injects:
-            if _is_overridden(space, lits._field, name):
-                continue
-            if field is None:
-                space.pop(name, None)
-            else:
-                try:
-                    space[name] = getattr(Single[field], name)
-                except Exception:
-                    pass
+    prev_field = lits._field
     lits._field = field
+    if not inject:
+        return
+    # Inject constants into the space.
+    space = _get_space()
+    for name in lits._injects:
+        # Dont wipe vars the user has set.
+        if _is_overridden(space, prev_field, name):
+            continue
+        if field is None:
+            space.pop(name, None)
+            continue
+        try:
+            space[name] = getattr(Single[field], name)
+        except Exception:
+            pass
 lits._field = None
 lits._injects = ("e", "pi")
-
-def _get_field(field, xs=()):
-    if field is None:
-        if xs:
-            field = xs[0].field
-        else:
-            if lits._field is None:
-                raise RuntimeError("specify a field using 'lits'")
-            field = lits._field
-    return field
-
-def _maybe_unpack(xs):
-    if len(xs) == 0 or len(xs) > 1:
-        return xs
-    x = xs[0]
-    if isinstance(x, Matrix):
-        return xs
-    if not _iterable(x):
-        return xs
-    if isinstance(x, str): # dont unpack strings lmao.
-        return xs
-    return tuple(x)
-
 
 
 class Shape:
     """
     Sequence of the length of each dimension, with implicitly infinite trailing
-    1s (or 0s if empty).
+    1s (or 0s if empty). Note that the first dimension is the number of rows and
+    the second is the number of columns (further dimensions have no intrinsic
+    meaning, other than repeating matrices).
     """
 
     def __init__(s, *lens):
@@ -662,6 +681,8 @@ class Shape:
 
 
 
+NO_SEED = object() # :(
+
 
 # Matrices.
 @_templated(decorators=_immutable)
@@ -671,8 +692,8 @@ def Matrix(field, shape):
     """
 
     if not isinstance(field, type):
-        raise TypeError(f"expected a type for field, got: {field}, of type "
-                f"{_tname(type(field))}")
+        raise TypeError(f"expected a type for field, got: {repr(field)}, of "
+                f"type {_tname(type(field))}")
     if issubclass(field, Matrix):
         raise TypeError("mate a matrix of matrices? calm down")
 
@@ -741,7 +762,7 @@ def Matrix(field, shape):
 
                 "hashed": "cannot hash",
 
-                "rep": "cannot string represent",
+                "rep": "cannot stringify",
             }
             msg = f"{thing[method]} over field {_tname(cls.field)}{extra}"
             raise NotImplementedError(msg)
@@ -778,7 +799,7 @@ def Matrix(field, shape):
             if not isinstance(cell, s.field):
                 raise TypeError(f"expected cells of type {_tname(s.field)}, got "
                         f"{_tname(type(cell))} (occured at index {i}, had "
-                        f"value: {cell})")
+                        f"value: {repr(cell)})")
         if len(cells) != shape.size:
             raise TypeError(f"expected {shape.size} cells to matched flattened "
                     f"size of {shape}, got {len(cells)}")
@@ -1628,40 +1649,50 @@ def Matrix(field, shape):
         return type(s).applyto(func, s, *os, rtype=rtype)
 
 
-    def _fold(s, func, seed, axis, right=False, over_field=True):
+    def _fold(s, func, seed=NO_SEED, axis=None, right=False, over_field=True):
         # `over_field` is for a field returning func which operates directly
         # on the field elements, not on them wrapped in a single matrix.
 
         if right:
-            f = func
-            order = reversed
-        else:
             def f(a, b):
                 return func(b, a)
+            order = reversed
+        else:
+            f = func
             order = lambda x: x
+
+        if s.isempty and seed is NO_SEED:
+            raise TypeError("must specify 'seed' when folding over empty")
 
         if axis is None:
             rawcells = order(s._cells)
             cells = rawcells if over_field else map(single, rawcells)
             for x in cells:
-                seed = f(x, seed)
+                if seed is NO_SEED:
+                    seed = x
+                    continue
+                seed = f(seed, x)
             return single(seed) if over_field else seed
         for x in order(s.along(axis)):
-            seed = x._apply(f, x, seed, over_field=over_field)
+            if seed is NO_SEED:
+                seed = x
+                continue
+            seed = x._apply(f, seed, x, over_field=over_field)
         return seed
 
-    def fold(s, func, seed, axis=None, right=False):
+    def fold(s, func, seed=NO_SEED, axis=None, right=False):
         """
         Constructs a matrix from the results of sequentially evaluating 'func'
         with the running value and the next value. Looks like:
-            'func( ... func(func(seed, m[0]), m[1]), ... m[-1])'
+            'func( ... func(func(m[0], m[1]), m[2]), ... m[-1])'
         Or if 'right':
-            'func(m[0], ... func(m[-2], func(m[-1], seed)) ... )'
-        If 'axis' is none, this folding is performed along the ravelled array,
-        otherwise it is performed along that axis in parallel. 'seed' may be
-        anything which satisfies the function, and it may be a matrix of the
-        correct perpendicular size to seed a fold along an axis with different
-        values for each run.
+            'func(m[0], ... func(m[-3], func(m[-2], m[-1])) ... )'
+        If 'seed' is not none, acts as-if seed was inserted at the start of the
+        sequence (or the end if 'right'). 'seed' may be anything which satisfies
+        the function, and it may be a matrix of the correct perpendicular size to
+        seed a fold along an axis with different values for each run. If 'axis'
+        is none, this folding is performed along the ravelled array, otherwise it
+        is performed along that axis in parallel.
         """
         if not callable(func):
             raise TypeError("expected callable 'func', got "
@@ -1672,7 +1703,7 @@ def Matrix(field, shape):
                         f"{_tname(type(axis))}")
             if axis < 0:
                 raise ValueError(f"axis cannot be negative, got {axis}")
-        return s._fold(func, seed, axis, right, over_field=False)
+        return s._fold(func, seed=seed, axis=axis, right=right, over_field=False)
 
 
     def __pos__(s):
@@ -1929,6 +1960,21 @@ def Matrix(field, shape):
         return (s - s.conj) / (2 * s.i)
 
 
+    @_instconst
+    def sign(s):
+        """
+        Evaluates to the integer -1, 0, or 1 corresponding to <0, =0, and >0.
+        Throws if unable to categorise.
+        """
+        if not s.issingle:
+            raise NotImplementedError("lemme whip up specialised bool first")
+        neg = bool(s <= 0)
+        pos = bool(s >= 0)
+        if neg + pos == 0:
+            raise ValueError("could not determine sign")
+        return pos - neg # one of -1, 0, or 1.
+
+
     def __eq__(s, o):
         """
         Element-wise equality (cast return to bool to determine if all pairs are
@@ -2083,10 +2129,7 @@ def Matrix(field, shape):
         Additive sum of the values along the given axis. If 'axis' is none,
         returns the sum over all elements.
         """
-        zero = s._f("zero")
-        if s.isempty:
-            return zero
-        return s._fold(s._f("add"), zero, axis)
+        return s._fold(s._f("add"), s._f("zero"), axis=axis)
 
     @_instconst
     def prod(s):
@@ -2099,10 +2142,7 @@ def Matrix(field, shape):
         Multiplicative product of the values along the given axis. If 'axis' is
         none, returns the product over all elements.
         """
-        one = s._f("one")
-        if s.isempty:
-            return one
-        return s._fold(s._f("mul"), one, axis)
+        return s._fold(s._f("mul"), s._f("one"), axis=axis)
 
     @_instconst
     def minn(s):
@@ -2117,18 +2157,9 @@ def Matrix(field, shape):
         is kept.
         """
         if s.isempty:
-            if axis is None:
-                raise TypeError("cannot find minimum of empty")
-            # otherwise they're at-least expecting a matrix return, its vaguely
-            # reasonable to handle an empty.
-            return s
+            raise TypeError("cannot find minimum of empty")
         lt = s._f("lt")
-        f = lambda a, b: b if lt(b, a) else a
-        if axis is None:
-            seed = s._cells[0]
-        else:
-            seed = s.along(axis)[0]
-        return s._fold(f, seed, axis)
+        return s._fold(lambda a, b: b if lt(b, a) else a, axis=axis)
 
     @_instconst
     def maxx(s):
@@ -2143,16 +2174,9 @@ def Matrix(field, shape):
         is kept.
         """
         if s.isempty:
-            if axis is None:
-                raise TypeError("cannot find maximum of empty")
-            return s
+            raise TypeError("cannot find maximum of empty")
         lt = s._f("lt")
-        f = lambda a, b: b if lt(a, b) else a
-        if axis is None:
-            seed = s._cells[0]
-        else:
-            seed = s.along(axis)[0]
-        return s._fold(f, seed, axis)
+        return s._fold(lambda a, b: b if lt(a, b) else a, axis=axis)
 
     @_instconst
     def mean(s):
@@ -2166,9 +2190,7 @@ def Matrix(field, shape):
         returns the arithmetic mean over all elements.
         """
         if s.isempty:
-            if axis is None:
-                raise TypeError("cannot find arithmetic mean of empty")
-            return s
+            raise TypeError("cannot find arithmetic mean of empty")
         n = s.size if axis is None else s.shape[axis]
         return s.summ_along(axis) / n
     @_instconst
@@ -2195,9 +2217,7 @@ def Matrix(field, shape):
         returns the geometric mean over all elements.
         """
         if s.isempty:
-            if axis is None:
-                raise TypeError("cannot find geometric mean of empty")
-            return s
+            raise TypeError("cannot find geometric mean of empty")
         n = s.size if axis is None else s.shape[axis]
         return s.prod_along(axis).root(n)
 
@@ -2213,9 +2233,7 @@ def Matrix(field, shape):
         returns the harmonic mean over all elements.
         """
         if s.isempty:
-            if axis is None:
-                raise TypeError("cannot find harmonic mean of empty")
-            return s
+            raise TypeError("cannot find harmonic mean of empty")
         n = s.size if axis is None else s.shape[axis]
         return n / (s.one / s).summ_along(axis)
 
@@ -2232,9 +2250,7 @@ def Matrix(field, shape):
         'axis' is none, returns the quadratic mean over all elements.
         """
         if s.isempty:
-            if axis is None:
-                raise TypeError("cannot find quadratic mean of empty")
-            return s
+            raise TypeError("cannot find quadratic mean of empty")
         n = s.size if axis is None else s.shape[axis]
         return ((s * s).summ_along(axis) / n).sqrt
 
@@ -2317,28 +2333,29 @@ def Matrix(field, shape):
         if s.isempty:
             return "my boy "*(not short) + "M.T."
 
-        field_rep = lambda x: s._f("rep")(x, short)
+        rep_ = s._f("rep")
+        rep = lambda x: rep_(x, short)
 
         if s.issingle:
-            return field_rep(s._cells[0])
+            return rep(s._cells[0])
 
         if short and not s.isvec:
             # Shorten elements of zero to a single dot.
-            def rep(x):
-                if rep.can_eq_zero and s._f("eq")(x, s._f("zero")):
+            def repme(x):
+                if repme.can_eq_zero and repme.eq(x, repme.zero):
                     return "."
-                return field_rep(x)
-            rep.can_eq_zero = True
+                return rep(x)
+            repme.can_eq_zero = True
             try:
-                s._need("eq")
-                s._need("zero")
+                repme.eq = s._f("eq")
+                repme.zero = s._f("zero")
             except NotImplementedError:
-                rep.can_eq_zero = False
+                repme.can_eq_zero = False
         else:
-            rep = field_rep
+            repme = rep
 
         # cheeky matrix of the reps to make access easy.
-        reps = Matrix[GenericField[str], s.shape](rep(x) for x in s._cells)
+        reps = Matrix[GenericField[str], s.shape](repme(x) for x in s._cells)
         width = max(len(_nonctrl(r.obj)) for r in reps._cells)
         return reps._repr_str(short, width, s.lastaxis, allow_flat=True)
 
@@ -2358,11 +2375,11 @@ def Matrix(field, shape):
 
         # 2d print.
 
-        # Print col vecs as rows with "'", if allowed.
+        # Print col vecs as rows with marked transpose, if allowed.
         suffix = ""
         height = s.shape[0]
         if allow_flat and s.iscol:
-            suffix = _coloured(40, "'")
+            suffix = _coloured(40, "ᵀ")
             height = s.shape[1]
         cols = []
         for i, r in enumerate(s._cells):
@@ -2664,6 +2681,12 @@ def imag(x, *, field=None):
     """
     x, = castall([x], field=field)
     return x.imag
+def sign(x, *, field=None):
+    """
+    Alias for 'x.sign'.
+    """
+    x, = castall([x], field=field)
+    return x.sign
 def summ(x, axis=None, *, field=None):
     """
     Alias for 'x.summ_along(axis)'.
@@ -2874,10 +2897,9 @@ def repalong(x, axis, count, *, field=None):
 
 def tovec(*xs, field=None):
     """
-    Concatenated column vector of the given iterables.
+    Concatenated column vector of the given values and iterables.
     """
     # dont maybe unpack xs lmao.
-    field = field
     cells = []
     for x in xs:
         if not _iterable(x):
@@ -2885,7 +2907,7 @@ def tovec(*xs, field=None):
         if isinstance(x, Matrix):
             if not x.isvec:
                 raise TypeError("expected vectors to concatenate into column, "
-                        f"got {_tname(type(x))}")
+                        f"got {x.shape}")
             cells.extend(x._cells)
             if field is None:
                 field = x.field
@@ -2893,8 +2915,6 @@ def tovec(*xs, field=None):
         for y in x:
             if not isinstance(y, Matrix):
                 y, = castall([y], field=field)
-                cells.append(y._cells[0])
-                continue
             if not y.issingle:
                 raise TypeError("expected iterable to contain singles to "
                         f"concatenate into column, got {y.shape}")
@@ -3043,8 +3063,8 @@ def lerp(x, X, Y, extend=False, *, field=None):
     if X.size == 1:
         def flat_interpolate_so_its_not_really_an_interpolate_at_all(z):
             if not extend and z != X:
-                raise ValueError("expected 'x' within the range of 'X', "
-                        f"got: {z}, which is outside: {xlo} .. {xhi}")
+                raise ValueError("expected 'x' within the range of 'X', got: "
+                        f"{z}, which is outside: {xlo} .. {xhi}")
             return Ys[0]
         return x.apply(flat_interpolate_so_its_not_really_an_interpolate_at_all)
     if xlo == xhi:
@@ -3084,10 +3104,10 @@ def lerp(x, X, Y, extend=False, *, field=None):
 
 
 
-def rootnr(f, df, x0, tol=1e-7, max_iters=100):
+def rootnr(f, df, x0, tol=1e-8, max_iters=120):
     """
     Solves the root of the given function: f(root) = 0; given its derivation
-    df(x) = [d/dx f(x)] and an initial guess for the root ~= x0.
+    df(x) = (d/dx f(x)) and an initial guess for the root ~= x0.
     """
     if isinstance(x0, Matrix):
         if not x0.issingle:
@@ -3106,14 +3126,14 @@ def rootnr(f, df, x0, tol=1e-7, max_iters=100):
                 raise TypeError("cannot root find a non-single matrix "
                         f"function derivative, got {dfx.shape}")
         if dfx == 0:
-            raise ZeroDivisionError("df/dx =0")
+            raise ZeroDivisionError("(d/dx f(x)) =0")
         x_new = x - fx / dfx
         if abs(x_new - x) < tol:
             return x_new
         x = x_new
     raise RuntimeError(f"no convergence within {max_iter} iterations")
 
-def rootbi(f, a, b, tol=1e-7, max_iters=100):
+def rootbi(f, a, b, tol=1e-8, max_iters=120):
     """
     Solves the root of the given function: f(root) = 0; given a lower and upper
     bound of the root, a <= root <= b, where sign(f(a)) != sign(f(b)).
@@ -3140,9 +3160,16 @@ def rootbi(f, a, b, tol=1e-7, max_iters=100):
         return a
     if abs(fb) < tol:
         return b
-    if bool(fa >= 0) == bool(fb >= 0):
+    def sign(x, fx):
+        neg = bool(fx <= 0)
+        pos = bool(fx >= 0)
+        if neg + pos == 0:
+            raise ValueError("could not determine sign of f(x), got: "
+                    f"f({repr(x)}) = {repr(fx)}")
+        return pos - neg
+    if sign(a, fa) == sign(b, fb):
         raise ValueError("f(x) must have opposite signs at a and b, got: "
-                f"f({a}) = {fa}, and: f({b}) = {fb}")
+                f"f({repr(a)}) = {repr(fa)}, and: f({repr(b)}) = {repr(fb)}")
     for _ in range(max_iters):
         c = (a + b) / 2
         fc = f(c)
@@ -3152,7 +3179,7 @@ def rootbi(f, a, b, tol=1e-7, max_iters=100):
                         f"function, got {fc.shape}")
         if abs(fc) < tol or (b - a) / 2 < tol:
             return c
-        if bool(fa >= 0) == bool(fc >= 0):
+        if sign(c, fc) == sign(a, fa):
             a, fa = c, fc
         else:
             b, fb = c, fc
@@ -3162,17 +3189,17 @@ def rootbi(f, a, b, tol=1e-7, max_iters=100):
 
 def oderk4(f, T, x0, *, field=None):
     """
-    Solves the given differential: f(t, x) = [d/dt x]; over the given time values
+    Solves the given differential: f(t, x) = (d/dt x); over the given time values
     and using the given initial state x0. The time must be a vector, but the
     state may be matrix of any size and the solution states will be stacked along
     a new axis.
     """
     if not isinstance(T, Matrix):
         if not _iterable(T):
-            raise TypeError(f"expected iterable for T, got {_tname(type(T))}")
+            raise TypeError(f"expected iterable for 'T', got {_tname(type(T))}")
         T = tovec(T, field=field)
     if not T.isvec:
-        raise TypeError(f"expected vector for T, got {T.shape}")
+        raise TypeError(f"expected vector for 'T', got {T.shape}")
     x0, = castall([x0], field=field)
     field = _get_field(field, [x0])
     if T.isempty:
@@ -3203,14 +3230,8 @@ def mvars(long=None):
     if long is None:
         long = not doesdflt2short()
 
-    # Grab the globals of caller.
-    frame = _inspect.currentframe()
-    try:
-        space = frame.f_back.f_globals
-    finally:
-        del frame # don leak.
-
     # Trim down to the matrix variables.
+    space = _get_space()
     mspace = {k: v for k, v in space.items() if isinstance(v, Matrix)}
     # Dont include the "last result" variable.
     mspace.pop(KW_PREV, None)

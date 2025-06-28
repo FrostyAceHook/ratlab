@@ -5,6 +5,7 @@ import math as _math
 import os as _os
 import re as _re
 import sys as _sys
+import weakref as _weakref
 from pathlib import Path as _Path
 from types import GeneratorType as _GeneratorType
 
@@ -34,34 +35,57 @@ def incremental(func):
 
 class _Cached:
     def __init__(self, func, sig):
-        self.cache = {}
+        self._cache = {}
         self.func = func
         self.sig = sig
         _functools.update_wrapper(self, func)
+    def _get(self, key):
+        return self._cache[key]
+    def _has(self, key):
+        return key in self._cache
+    def _set(self, key, value):
+        self._cache[key] = value
 
-    def keyof(self, *args, **kwargs):
+    def _keyof(self, *args, **kwargs):
         bound_args = self.sig.bind(*args, **kwargs)
         bound_args.apply_defaults()
         return tuple(bound_args.arguments.items())
 
-    def __contains__(self, args):
-        if not isinstance(args, tuple):
-            args = (args, )
-        return self.iscached(*args)
-
     def iscached(self, *args, **kwargs):
-        key = self.keyof(*args, **kwargs)
-        return key in self.cache
-
-    @property
-    def values(self):
-        return tuple(self.cache.values())
+        key = self._keyof(*args, **kwargs)
+        return key in self._cache
 
     def __call__(self, *args, **kwargs):
-        key = self.keyof(*args, **kwargs)
-        if key not in self.cache:
-            self.cache[key] = self.func(*args, **kwargs)
-        return self.cache[key]
+        key = self._keyof(*args, **kwargs)
+        if key not in self._cache:
+            value = self.func(*args, **kwargs)
+            self._set(key, value)
+            return value
+        return self._get(key)
+
+class _WeakCached(_Cached):
+    # Need an object wrapper to ensure all types can be weakrefed.
+    class _Wrapped:
+        def __init__(self, value):
+            self.value = value
+        def __repr__(self):
+            return f"_Wrapped({self.value})"
+
+    def __init__(self, func, sig):
+        super().__init__(func, sig)
+        self._cache = _weakref.WeakValueDictionary()
+
+    def _get(self, key):
+        # Unwrap if we wrapped it.
+        value = self._cache[key]
+        if isinstance(value, self._Wrapped):
+            return value.value
+        return value
+    def _set(self, key, value):
+        # Wrap non-weakrefable values.
+        if not hasattr(value, "__weakref__"):
+            value = self._Wrapped(value)
+        self._cache[key] = value
 
 @incremental
 def cached(func, forwards_to=None):
@@ -76,6 +100,20 @@ def cached(func, forwards_to=None):
     else:
         sig = _inspect.signature(forwards_to)
     return _Cached(func, sig)
+
+@incremental
+def weakcached(func, forwards_to=None):
+    """
+    Same as `cached` but doesn't increment reference counts for the cached
+    values, so they won't continue to be cached once nothing else references
+    them.
+    - paramed function decorator.
+    """
+    if forwards_to is None:
+        sig = _inspect.signature(func)
+    else:
+        sig = _inspect.signature(forwards_to)
+    return _WeakCached(func, sig)
 
 
 
@@ -426,25 +464,31 @@ def get_locals(func, *args, **kwargs):
 class _Templated:
     def __init__(self, creator, parents, decorators, metaclass):
         _functools.update_wrapper(self, creator)
+
+        # Create a base class which the others can inherit from. This class will
+        # have the parents, and then decorators and metaclass will be used for
+        # the instantiated classes.
+        self.Base = type(creator.__name__, parents, {})
         self.creator = creator
-        self.parents = parents
         self.decorators = decorators
         self.metaclass = metaclass
+
         # Make the default namer.
         def namer(*param_values):
             tostr = lambda x: x.__name__ if isinstance(x, type) else repr(x)
             args = ", ".join(map(tostr, param_values))
-            return f"{self.creator.__name__}[{args}]"
+            return f"{self.Base.__name__}[{args}]"
         self._dflt_namer = namer
         self.namer = None # may be set by user.
+
         # Make the creator.
-        @cached(forwards_to=creator)
+        @weakcached(forwards_to=creator)
         def makecls(*param_values):
             # Get all the attributes of the class (which are the local vars that
             # the function defines).
             ret = self.creator(*param_values)
             if isinstance(ret, type):
-                if ret not in self._makecls.values:
+                if not issubclass(ret, self.Base):
                     raise ValueError("expected a return of another "
                             f"instantiation of this template, got {tname(ret)}")
                 return ret
@@ -452,8 +496,8 @@ class _Templated:
                 raise TypeError("expected dict or type return from templated "
                         f"function-class, got {tname(type(ret))}")
             dflt_name = self._dflt_namer(*param_values)
-            # Create class using metaclass and parents.
-            cls = self.metaclass(dflt_name, self.parents, ret)
+            # Create class using metaclass and inheriting from the base.
+            cls = self.metaclass(dflt_name, (self.Base, ), ret)
             if self.namer is not None:
                 cls._tname = self.namer(*param_values)
             # Apply any decorators, bottom-up.
@@ -474,12 +518,10 @@ class _Templated:
         return self._makecls(*param_values)
 
     # im literally the best
-    def __contains__(self, cls):
-        return any(cls is t for t in self._makecls.values)
     def __instancecheck__(self, instance):
-        return isinstance(instance, self._makecls.values)
+        return isinstance(instance, self.Base)
     def __subclasscheck__(self, subclass):
-        return any(issubclass(subclass, t) for t in self._makecls.values)
+        return issubclass(subclass, self.Base)
 
 @incremental
 def templated(creator, parents=(), decorators=(), metaclass=type):

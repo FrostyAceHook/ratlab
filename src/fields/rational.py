@@ -18,8 +18,8 @@ class Rational(matrix.Field):
             raise ZeroDivisionError("x/0")
         gcd = math.gcd(numerator, denominator)
         # note gcd(0,x)==x, therefore collapses 0/1
-        self.nu = numerator // gcd
-        self.de = denominator // gcd
+        self.numer = numerator // gcd
+        self.denom = denominator // gcd
 
 
     @classmethod
@@ -36,15 +36,15 @@ class Rational(matrix.Field):
 
     @classmethod
     def to_int(cls, a):
-        if a.de != 1:
+        if a.denom != 1:
             raise NotImplementedError()
-        return a.nu
+        return a.numer
     @classmethod
     def to_float(cls, a):
-        return a.nu / a.de
+        return a.numer / a.denom
     @classmethod
     def to_complex(cls, a):
-        return complex(a.nu / a.de)
+        return complex(a.numer / a.denom)
 
     @classconst
     def zero(cls):
@@ -53,62 +53,54 @@ class Rational(matrix.Field):
     def one(cls):
         return cls(1, 1)
 
+    @classconst
+    def exposes(cls):
+        return {"numer": int, "denom": int}
+
     @classmethod
     def add(cls, a, b):
-        return cls(a.nu * b.de + b.nu * a.de, a.de * b.de)
+        return cls(a.numer * b.denom + b.numer * a.denom, a.denom * b.denom)
     @classmethod
     def sub(cls, a, b):
-        return cls(a.nu * b.de - b.nu * a.de, a.de * b.de)
+        return cls(a.numer * b.denom - b.numer * a.denom, a.denom * b.denom)
     @classmethod
     def absolute(cls, a):
-        return cls(abs(a.nu), a.de)
+        return cls(abs(a.numer), a.denom)
 
     @classmethod
     def mul(cls, a, b):
-        return cls(a.nu * b.nu, a.de * b.de)
+        return cls(a.numer * b.numer, a.denom * b.denom)
     @classmethod
     def div(cls, a, b):
-        return cls(a.nu * b.de, a.de * b.nu)
+        return cls(a.numer * b.denom, a.denom * b.numer)
 
     @classmethod
-    def power(cls, a, b):
-        raise NotImplementedError("haven don it yet")
-    @classmethod
-    def root(cls, a, b):
-        raise NotImplementedError("haven don it yet")
-    @classmethod
-    def log(cls, a, b):
-        raise NotImplementedError("haven don it yet")
-
-    @classmethod
-    def eq(cls, a, b):
-        return a.nu == b.nu and a.de == b.de
+    def issame(cls, a, b):
+        return a.numer == b.numer and a.denom == b.denom
     @classmethod
     def lt(cls, a):
-        return a.nu * b.de < b.nu * a.de
+        return a.numer * b.denom < b.numer * a.denom
 
     @classmethod
     def hashed(cls, a):
-        return hash((a.nu, a.de))
+        return hash((a.numer, a.denom))
 
     @classmethod
-    def repr_short(cls, a):
-        s = cls.repr_long(a)
-        return f"≈{(a.nu / a.de):.6g}" if len(s) > 10 else s
-
-    @classmethod
-    def repr_long(cls, a):
-        return str(a.nu) + (a.de != 1) * f"/{a.de}"
+    def rep(cls, a, short):
+        s = str(a.numer) + (a.denom != 1) * f"/{a.denom}"
+        if short and len(s) > 10:
+            s = f"≈{(a.numer / a.denom):.6g}"
+        return s
 
     def exp_as_string(self):
-        if self.de == 1:
-            if self.nu == 1:
+        if self.denom == 1:
+            if self.numer == 1:
                 return ""
             superscripts = {
                 "-": "⁻", "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴",
                 "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹",
             }
-            return "".join(superscripts[c] for c in str(self.nu))
+            return "".join(superscripts[c] for c in str(self.numer))
         lookup = {
             Rational(1, 2): "½", Rational(1, 3): "⅓", Rational(2, 3): "⅔",
             Rational(1, 4): "¼", Rational(3, 4): "¾", Rational(1, 5): "⅕",

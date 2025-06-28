@@ -40,7 +40,7 @@ class Complex(matrix.Field):
             raise ValueError("cannot cast nan to int")
         if a._im:
             raise ValueError(f"cannot cast non-real to int, got: {a}")
-        if math.isinf(a._re) or a._re != int(a._re):
+        if not a._re.is_integer():
             raise ValueError(f"cannot cast non-integer to int, got: {a}")
         return int(a._re)
     @classmethod
@@ -187,16 +187,22 @@ class Complex(matrix.Field):
         return cls(a._re, -a._im)
 
     @classmethod
+    def issame(cls, a, b):
+        if a.isnan or b.isnan:
+            return a.isnan == b.isnan
+        return a._re == b._re and a._im == b._im
+    @classmethod
     def eq(cls, a, b):
         if a.isnan or b.isnan:
             return a.isnan == b.isnan
         def iseq(x, y, ulps=15):
             if math.isinf(x) or math.isinf(y):
                 return x == y
+            # dont let zero and one be equal unless exact.
+            if x == 0.0 or y == 0.0 or abs(x) == 1.0 or abs(y) == 1.0:
+                return x == y
             # we do tricks around here (c my beloved).
-            def toint(z):
-                u, = struct.unpack("=q", struct.pack("=d", z))
-                return u ^ (u >> 63)
+            toint = lambda z: struct.unpack("=q", struct.pack("=d", z))[0]
             ux = toint(abs(x))
             uy = toint(abs(y))
             if (x < 0.0) != (y < 0.0):
@@ -210,12 +216,6 @@ class Complex(matrix.Field):
         if a._im or b._im: # complex is unorderable.
             raise ValueError(f"cannot order non-real, got: {a}, and: {b}")
         return a._re < b._re
-
-    @classmethod
-    def issame(cls, a, b):
-        if a.isnan or b.isnan:
-            return a.isnan == b.isnan
-        return a._re == b._re and a._im == b._im
 
     @classmethod
     def hashed(cls, a):
