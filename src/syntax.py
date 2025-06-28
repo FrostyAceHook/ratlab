@@ -15,7 +15,8 @@ from importlib.util import spec_from_file_location as _importlib_spec
 from pathlib import Path as _Path
 
 import matrix as _matrix
-from util import tname as _tname, coloured as _coloured
+from bg import bg as _bg
+from util import coloured as _coloured
 
 
 
@@ -610,6 +611,31 @@ def _execute(source, space, filename=None):
 
 
 
+def new_space():
+    # Grab all the default ratlab modules.
+    import matrix
+    import plot
+    from fields.rational import Rational
+    from fields.complex import Complex
+    # import fields.units as u
+
+    import math # just convenient.
+
+    space = locals()
+
+    # Import * from matrix and plot.
+    for module in [matrix, plot]:
+        for name, value in vars(module).items():
+            if name.startswith("_"):
+                continue
+            space[name] = value
+
+    # Set an initial field (modifying the `space` and not our globals).
+    exec("lits(Complex)", space, space)
+
+    return space
+
+
 def run_console(space):
     """
     Starts a command-line interface which is basically just an embedded python
@@ -626,8 +652,13 @@ def run_console(space):
         while True:
             try:
                 print(_coloured(73, ".. " if source else ">> "), end="")
+
+                # Delay the start of background loading (since its a tad slow to
+                # start up) as late as possible to reduce loading time.
+                _bg.start()
+
                 line = input()
-            except EOFError:
+            except (EOFError, KeyboardInterrupt):
                 # they ctrl+c-ed my ass.
                 print()
                 raise _ExitConsoleException()
@@ -661,6 +692,9 @@ def run_file(space, path, has_next):
     dictionary of variables to expose (and it will be modified).
     """
     path = _Path(path)
+
+    # Start bg loading asap (nothing to wait for, unlike console).
+    _bg.start()
 
     def esc(path):
         s = str(path)
@@ -715,7 +749,6 @@ def run_file(space, path, has_next):
         cols[2:2] = pcols
         print(_coloured(cols, txts))
         quit()
-
 
     # Handle missing/invalid paths.
     bad = False

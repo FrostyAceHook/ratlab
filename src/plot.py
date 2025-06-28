@@ -1,18 +1,12 @@
-import matrix
 
-# Avoid super expensive import on start-up, only do it when used.
-plt = None
-def init_plotting():
-    global plt
-    if plt is None:
-        import matplotlib.pyplot as plt
-        plt.ion() # get it
+import matrix as _matrix
+from bg import bg as _bg
 
 
-def figure(xlabel=None, ylabel=None, title=None, grid=False):
-    init_plotting()
-    plt.figure(figsize=(8, 5))
-    plt.grid(grid)
+def figure(title=None, xlabel=None, ylabel=None, grid=False, figsize=(8, 5)):
+    plt = _bg.plt
+    plt.figure(figsize=figsize)
+    plt.grid(not not grid)
     if xlabel is not None:
         plt.xlabel(xlabel)
     if ylabel is not None:
@@ -23,10 +17,10 @@ def figure(xlabel=None, ylabel=None, title=None, grid=False):
 def plot(x, y, label=None, color=None, linestyle=None, linewidth=None,
             marker=None, markersize=None, markerfacecolor=None,
             markeredgecolor=None, alpha=None):
-    init_plotting()
-    if isinstance(x, matrix.Matrix):
+    plt = _bg.plt
+    if isinstance(x, _matrix.Matrix):
         x = x.tolist_f
-    if isinstance(y, matrix.Matrix):
+    if isinstance(y, _matrix.Matrix):
         y = y.tolist_f
     plt.plot(x, y, label=label, color=color, linestyle=linestyle,
             linewidth=linewidth, marker=marker, markersize=markersize,

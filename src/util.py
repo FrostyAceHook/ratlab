@@ -1,13 +1,10 @@
 import functools as _functools
 import inspect as _inspect
-import itertools as _itertools
 import math as _math
 import os as _os
 import re as _re
 import sys as _sys
 import weakref as _weakref
-from pathlib import Path as _Path
-from types import GeneratorType as _GeneratorType
 
 
 

@@ -1,31 +1,14 @@
 
-# Hack src/ into the path so we can import.
-import os as _os
-import sys as _sys
-_sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), "src"))
+# Hack src/ into the path so we can import. Note this also allows the user code
+# to import from here.
+import os
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
-
-# Standard ratlab modules.
-
-import math # just useful.
-
-import matrix
-from matrix import *
-
+import syntax
 import util
 
-from plot import *
-
-from fields.rational import Rational
-from fields.complex import Complex
-# import fields.units as u
-
-# from eng import *
-
-import syntax as _syntax
-
-
-def _main():
+def main():
     # Print big beautiful logo (the creation of which put Stuart Inc. trillions
     # of dollars further into debt).
     # gradient from cyan to gold to cyan.
@@ -41,17 +24,18 @@ def _main():
     print(util.coloured(col, rat))
     print(util.coloured(col, bot))
 
-    args = _sys.argv[1:]
+    args = sys.argv[1:]
+    cfargs = [x.casefold() for x in args]
 
     # Help msg.
-    lowerargs = [x.lower() for x in args]
-    if any(m in lowerargs for m in ["-h", "/h", "--help", "?", "-?", "/?"]):
+    help_flags = ["-h", "/h", "--help", "?", "-?", "/?"]
+    if any(flag.casefold() in cfargs for flag in help_flags):
         def wrap_string(s):
             return util.entry(s, width=76, lead=0) + "\n"
         def code_colour(s):
             if "".join([x.strip() for x in s]).isdigit():
                 return 135
-            red = (_syntax.KEYWORDS | set("+-*/=")) - {_syntax.KW_PREV}
+            red = (syntax.KEYWORDS | set("+-*/=")) - {syntax.KW_PREV}
             if s.strip() in red:
                 return 161
             if s.strip().isalpha():
@@ -73,13 +57,12 @@ def _main():
                            "path, an interactive console is started. If no "
                            "arguments are given, starts a console.")
 
-
         txts = [
             ">> ", "[", "1", ", ", "2", ", ", "3", "][", "4", ", ", "5", ", ",
                 "6", "]", " # a 2x3 matrix\n",
             "[", "1 2 3", "]\n",
             "[", "4 5 6", "]\n",
-            ">> ", _syntax.KW_LIST, "[", "1", ", ", "2", ", ", "3", "]",
+            ">> ", syntax.KW_LIST, "[", "1", ", ", "2", ", ", "3", "]",
                 " # a list\n",
             "[", "1", ", ", "2", ", ", "3", "]\n",
         ]
@@ -88,9 +71,8 @@ def _main():
                            "modules and added syntax for matrices:")
         msg += util.coloured(map(code_colour, txts), txts)
 
-
         txts = []
-        for name, func in _syntax.COMMANDS.items():
+        for name, func in syntax.COMMANDS.items():
             doc = " ".join(func.__doc__.split())
             txts.append(">> ")
             txts.append(name)
@@ -104,37 +86,33 @@ def _main():
         txts = [
             ">> ", "1", " + ", "2\n",
             "3\n",
-            ">> ", _syntax.KW_PREV, "\n",
+            ">> ", syntax.KW_PREV, "\n",
             "3\n",
             ">> ", "x", " = ", "[", "3", " * ", "4", "]",
                 " # a single (1x1) matrix\n",
             "x", " = ", "12\n",
-            ">> ", _syntax.KW_PREV, " + ", "3\n",
+            ">> ", syntax.KW_PREV, " + ", "3\n",
             "15\n"
         ]
         msg += "\n"
         msg += wrap_string("Additionally, the most recent result in the console "
-                          f"is stored in the {repr(_syntax.KW_PREV)} label.")
+                          f"is stored in the {repr(syntax.KW_PREV)} label.")
         msg += util.coloured(map(code_colour, txts), txts)
 
         print(msg, end="")
-        quit()
+        sys.exit(0)
 
     # If no files, default to cli.
     if not args:
         args = ["-"]
 
-    # Public globals as initial variable space.
-    space = {k: v for k, v in globals().items() if not k.startswith("_")}
-    # And set an initial field (modifying the `space` and not our globals).
-    exec("lits(Complex)", space, space)
-
     # Read and execute each input file, treating "-" as a cli.
+    space = syntax.new_space()
     for i, path in enumerate(args):
         if path.strip() == "-":
-            _syntax.run_console(space)
+            syntax.run_console(space)
         else:
-            _syntax.run_file(space, path, i < len(args) - 1)
+            syntax.run_file(space, path, i < len(args) - 1)
 
 if __name__ == "__main__":
-    _main()
+    main()
