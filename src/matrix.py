@@ -21,11 +21,11 @@ class Field:
 
     @_classconst
     def consts(cls):
-        return {}
+        return dict()
 
     @_classconst
     def exposes(cls):
-        return {}
+        return dict()
 
     @classmethod
     def eq(cls, a, b):
@@ -33,10 +33,9 @@ class Field:
 
     @classmethod
     def atan2(cls, y, x):
-        if "pi" in cls.consts:
-            pi = cls.consts["pi"]
-        else:
-            pi = cls.from_float(_math.pi)
+        if "pi" not in cls.consts:
+            raise NotImplementedError("cannot represent pi")
+        pi = cls.consts["pi"]
         two = cls.from_int(2)
 
         if cls.lt(cls.zero, x):
@@ -113,11 +112,10 @@ class ExampleField(Field):
         return {"e": cls(2.71828), "pi": cls(3.14159)}
 
     @_classconst
-    def exposes(cls): # map of str to type, where the keys are object attributes
-                      # that should be exposed in the matrix and the values are
-                      # the (field) type of the attribute.
-        cls().isnan = True # "isnan" must be an object property.
-        return {"isnan": bool}
+    def exposes(cls): # map of str attribute names to their type. these attrs
+                      # will be exposed in the matrices.
+        cls().attr = True # "attr" must be an object property.
+        return {"attr": bool}
 
     @classmethod
     def add(cls, a, b): # a+b
@@ -681,7 +679,10 @@ class Shape:
 
 
 
-NO_SEED = object() # :(
+class NO_SEED:
+    def __repr__(self):
+        return "NO_SEED"
+NO_SEED = NO_SEED() # :(
 
 
 # Matrices.
@@ -850,7 +851,7 @@ def Matrix(field, shape):
     @_classconst
     def e(cls):
         """
-        Single euler's number.
+        Single euler's number (2.71828...).
         """
         if "e" in cls.field.consts:
             e = cls.field.consts["e"]
@@ -861,7 +862,7 @@ def Matrix(field, shape):
     @_classconst
     def pi(cls):
         """
-        Single pi.
+        Single pi (3.14159...).
         """
         if "pi" in cls.field.consts:
             pi = cls.field.consts["pi"]
@@ -1135,7 +1136,7 @@ def Matrix(field, shape):
             cells[newshape.offset(new)] = s._cells[s.shape.offset(old)]
         return Matrix[s.field, newshape](tuple(cells), _checkme=False)
 
-    def repalong(s, axis, count):
+    def rep_along(s, axis, count):
         """
         Repeats this matrix 'count' times along 'axis'.
         """
@@ -1218,19 +1219,19 @@ def Matrix(field, shape):
     @property
     def tolist_i(s):
         """
-        Alias for 's.tolist(rtype=int).
+        Alias for 'm.tolist(rtype=int).
         """
         return s.tolist(rtype=int)
     @property
     def tolist_f(s):
         """
-        Alias for 's.tolist(rtype=float).
+        Alias for 'm.tolist(rtype=float).
         """
         return s.tolist(rtype=float)
     @property
     def tolist_c(s):
         """
-        Alias for 's.tolist(rtype=complex).
+        Alias for 'm.tolist(rtype=complex).
         """
         return s.tolist(rtype=complex)
 
@@ -1372,207 +1373,6 @@ def Matrix(field, shape):
                 if s.at[i, j] != s.at[j, i]:
                     return False
         return True
-
-
-    @_instconst
-    def det(s):
-        """
-        Determinant, for 2D square matrices.
-        """
-        if s.ndim > 2:
-            raise TypeError("only 2D matrices have a determinant, got "
-                    f"{s.shape}")
-        if not s.issquare:
-            raise TypeError(f"only square matrices a determinant, got {s.shape}")
-
-        if s.isempty:
-            return 1 # det([]) defined as 1.
-        if s.issingle:
-            return s # det(x) = x.
-
-        zero = s._f("zero")
-        mul = s._f("mul")
-        add = s._f("add")
-        sub = s._f("sub")
-
-        def submatrix(cells, size, row):
-            return [cells[i + j*size]
-                    for j in range(1, size)
-                    for i in range(size)
-                    if i != row]
-
-        def determinant(cells, size):
-            if size == 2:
-                a, c, b, d = cells
-                return sub(mul(a, d), mul(b, c))
-            det = zero
-            for row in range(size):
-                subcells = submatrix(cells, size, row)
-                subsize = size - 1
-                subdet = determinant(subcells, subsize)
-                if row & 1:
-                    det = sub(det, mul(cells[row], subdet))
-                else:
-                    det = add(det, mul(cells[row], subdet))
-            return det
-
-        return single(determinant(s._cells, s.shape[0]), field=s.field)
-
-    @_instconst
-    def trace(s):
-        """
-        Sum of diagonal elements, for 2D square matrices.
-        """
-        if s.ndim > 2:
-            raise TypeError(f"only 2D matrices have a trace, got {s.shape}")
-        if not s.issquare:
-            raise TypeError(f"only square matrices have a trace, got {s.shape}")
-        return s.diag.summ
-
-    @_instconst
-    def mag(s):
-        """
-        Euclidean distance, for vectors.
-        """
-        if not s.isvec:
-            raise TypeError(f"only vectors have a magnitude, got {s.shape}")
-        return (s & s).sqrt
-
-
-    @_instconst
-    def rref(s):
-        """
-        Reduced row echelon form, for 2D matrices.
-        """
-        if s.ndim > 2:
-            raise TypeError(f"only 2D matrices can be rrefed, got {s.shape}")
-
-        eqz = lambda x: s._f("eq")(x, s._f("zero"))
-        eqo = lambda x: s._f("eq")(x, s._f("one"))
-        add = lambda a, b: s._f("add")(a, b)
-        mul = lambda a, b: s._f("mul")(a, b)
-        neg = lambda x: s._f("sub")(s._f("zero"), x)
-        rec = lambda x: s._f("div")(s._f("one"), x)
-
-        cells = list(s._cells)
-        rows, cols = s.shape[0], s.shape[1]
-
-        def row_swap(row1, row2):
-            for j in range(cols):
-                k1 = row1 + j * rows
-                k2 = row2 + j * rows
-                cells[k1], cells[k2] = cells[k2], cells[k1]
-
-        def row_mul(row, by):
-            for j in range(cols):
-                idx = row + j * rows
-                cells[idx] = mul(by, cells[idx])
-
-        def row_add(src, dst, by):
-            for i in range(cols):
-                src_k = src + i * rows
-                dst_k = dst + i * rows
-                cells[dst_k] = add(cells[dst_k], mul(by, cells[src_k]))
-
-        lead = 0
-        for r in range(rows):
-            if lead >= cols:
-                break
-
-            i = r
-            while eqz(cells[i + lead * rows]):
-                i += 1
-                if i == rows:
-                    i = r
-                    lead += 1
-                    if lead == cols:
-                        break
-            if lead == cols:
-                break
-            row_swap(i, r)
-
-            idx = r + lead * rows
-            pivot_value = cells[idx]
-            if not eqz(pivot_value):
-                row_mul(r, rec(pivot_value))
-            # Check its 1.
-            pivot_value = cells[idx]
-            if not eqo(pivot_value):
-                raise ValueError(f"could not make cell =one, cell is: "
-                        f"{pivot_value}")
-
-            for i in range(rows):
-                if i != r:
-                    idx = i + lead * rows
-                    row_lead_value = cells[idx]
-                    if not eqz(row_lead_value):
-                        row_add(r, i, neg(row_lead_value))
-                    # Check its 0.
-                    row_lead_value = cells[idx]
-                    if not eqz(row_lead_value):
-                        raise ValueError("could not make cell =zero, cell is: "
-                                f"{row_lead_value}")
-
-            lead += 1
-
-        return Matrix[s.field, s.shape](cells)
-
-    @_instconst
-    def pivots(s):
-        """
-        Tuple of RREF pivot column indices.
-        """
-        rref = s.rref
-        return tuple(i for i, c in enumerate(rref.cols)
-                if 1 == sum(not s._f("eq")(x, s._f("zero")) for x in c)
-                and 1 == sum(not s._f("eq")(x, s._f("one")) for x in c))
-
-    @_instconst
-    def nonpivots(s):
-        """
-        Tuple of RREF non-pivot column indices.
-        """
-        return tuple(j for j in range(s.shape[1]) if j not in s.pivots)
-
-
-    @_instconst
-    def colspace(s):
-        """
-        Basis for column space.
-        """
-        return tuple(s.cols[p] for p in s.pivots)
-
-    @_instconst
-    def rowspace(s):
-        """
-        Basis for row space.
-        """
-        rref = s.rref
-        nonzeros = (i for i, r in enumerate(rref.rows)
-                    if any(s._f("eq")(x, s._f("zero")) for x in r))
-        return tuple(rref.rows[i].T for i in nonzeros)
-
-    @_instconst
-    def nullspace(s):
-        """
-        Basis for null space.
-        """
-        sys = s.rref # implied zero-vec augment.
-        def find_first_one(xs):
-            for i, x in enumerate(xs):
-                if s._f("eq")(x, s._f("one")):
-                    return i
-            return None
-        pivotat = tuple(find_first_one(sys.rows[i]) for i in range(s.shape[0]))
-        basis = [[s._f("zero")]*s.shape[1] for _ in sys.nonpivots]
-        for n, j in enumerate(sys.nonpivots):
-            for i in range(s.shape[0]):
-                if pivotat[i] is None or pivotat[i] > j:
-                    basis[n][j] = 1
-                    break
-                basis[n][pivotat[i]] = -sys.at[i, j]
-        return tuple(Matrix[s.field, (s.shape[1], )](x) for x in basis)
-
 
 
     @classmethod
@@ -1875,6 +1675,20 @@ def Matrix(field, shape):
         return s._apply(s._f("atan"), s)
 
     @_instconst
+    def torad(s):
+        """
+        Converts degrees to radians, alias for 'm * (180/pi)'.
+        """
+        # maybe preverse largest subproducts.
+        return s / (180 / s.pi)
+    @_instconst
+    def todeg(s):
+        """
+        Converts radians to degrees, alias for 'm * (pi/180)'.
+        """
+        return s * (180 / s.pi)
+
+    @_instconst
     def sind(s):
         """
         Element-wise trigonometric sine, with input in degrees.
@@ -1959,7 +1773,12 @@ def Matrix(field, shape):
             return s
         return (s - s.conj) / (2 * s.i)
 
-
+    @_instconst
+    def abs(s):
+        """
+        Element-wise absolution.
+        """
+        return s._apply(s._f("absolute"), s)
     @_instconst
     def sign(s):
         """
@@ -2007,6 +1826,70 @@ def Matrix(field, shape):
         return s._apply(s._f("issame"), s, o)
 
 
+    @_instconst
+    def det(s):
+        """
+        Determinant, for 2D square matrices.
+        """
+        if s.ndim > 2:
+            raise TypeError("only 2D matrices have a determinant, got "
+                    f"{s.shape}")
+        if not s.issquare:
+            raise TypeError(f"only square matrices a determinant, got {s.shape}")
+
+        if s.isempty:
+            return 1 # det([]) defined as 1.
+        if s.issingle:
+            return s # det(x) = x.
+
+        zero = s._f("zero")
+        mul = s._f("mul")
+        add = s._f("add")
+        sub = s._f("sub")
+
+        def submatrix(cells, size, row):
+            return [cells[i + j*size]
+                    for j in range(1, size)
+                    for i in range(size)
+                    if i != row]
+
+        def determinant(cells, size):
+            if size == 2:
+                a, c, b, d = cells
+                return sub(mul(a, d), mul(b, c))
+            det = zero
+            for row in range(size):
+                subcells = submatrix(cells, size, row)
+                subsize = size - 1
+                subdet = determinant(subcells, subsize)
+                if row & 1:
+                    det = sub(det, mul(cells[row], subdet))
+                else:
+                    det = add(det, mul(cells[row], subdet))
+            return det
+
+        return single(determinant(s._cells, s.shape[0]), field=s.field)
+
+    @_instconst
+    def trace(s):
+        """
+        Sum of diagonal elements, for 2D square matrices.
+        """
+        if s.ndim > 2:
+            raise TypeError(f"only 2D matrices have a trace, got {s.shape}")
+        if not s.issquare:
+            raise TypeError(f"only square matrices have a trace, got {s.shape}")
+        return s.diag.summ
+
+    @_instconst
+    def mag(s):
+        """
+        Euclidean distance, for vectors.
+        """
+        if not s.isvec:
+            raise TypeError(f"only vectors have a magnitude, got {s.shape}")
+        return (s & s).sqrt
+
     def __and__(s, o):
         """
         Vector dot product.
@@ -2032,7 +1915,7 @@ def Matrix(field, shape):
 
     def __or__(s, o):
         """
-        3D vector cross product.
+        3-element vector cross product.
         """
         o, = s.cast(o)
         if not s.isvec or not o.isvec:
@@ -2050,10 +1933,11 @@ def Matrix(field, shape):
             sub(mul(az, bx), mul(ax, bz)),
             sub(mul(ax, by), mul(ay, bx)),
         )
-        newshape = Shape((3, 1)) # column vector takes precedence.
-        if s.isrow and o.isrow:
-            # but keep row vector if both are.
-            newshape = Shape((1, 3))
+        # If both vectors are the same shape, keep it. Otherwise use colvec.
+        if s.shape == o.shape:
+            newshape = s.shape
+        else:
+            newshape = (3, )
         return Matrix[s.field, newshape](cells)
     def __ror__(s, o):
         o, = s.cast(o)
@@ -2070,7 +1954,7 @@ def Matrix(field, shape):
         if s.shape[1] != o.shape[0]:
             raise TypeError("need equal inner dimension lengths for matrix "
                     f"multiplication, got {s.shape} @ {o.shape}")
-        newshape = Shape([s.shape[0], o.shape[1]])
+        newshape = Shape(s.shape[0], o.shape[1])
         if not newshape:
             return empty(s.field)
         mul = s._f("mul")
@@ -2093,8 +1977,7 @@ def Matrix(field, shape):
 
     def __xor__(s, exp):
         """
-        Matrix power (repeated self matrix multiplication, with possible
-        inverse).
+        Matrix power (repeated self matrix multiplication, possibly inversed).
         """
         if isinstance(exp, Matrix) and exp.issingle:
             exp = int(exp)
@@ -2119,9 +2002,145 @@ def Matrix(field, shape):
 
 
     @_instconst
+    def rref(s):
+        """
+        Reduced row echelon form, for 2D matrices.
+        """
+        if s.ndim > 2:
+            raise TypeError(f"only 2D matrices can be rrefed, got {s.shape}")
+
+        eqz = lambda x: s._f("eq")(x, s._f("zero"))
+        eqo = lambda x: s._f("eq")(x, s._f("one"))
+        add = lambda a, b: s._f("add")(a, b)
+        mul = lambda a, b: s._f("mul")(a, b)
+        neg = lambda x: s._f("sub")(s._f("zero"), x)
+        rec = lambda x: s._f("div")(s._f("one"), x)
+
+        cells = list(s._cells)
+        rows, cols = s.shape[0], s.shape[1]
+
+        def row_swap(row1, row2):
+            for j in range(cols):
+                k1 = row1 + j * rows
+                k2 = row2 + j * rows
+                cells[k1], cells[k2] = cells[k2], cells[k1]
+
+        def row_mul(row, by):
+            for j in range(cols):
+                idx = row + j * rows
+                cells[idx] = mul(by, cells[idx])
+
+        def row_add(src, dst, by):
+            for i in range(cols):
+                src_k = src + i * rows
+                dst_k = dst + i * rows
+                cells[dst_k] = add(cells[dst_k], mul(by, cells[src_k]))
+
+        lead = 0
+        for r in range(rows):
+            if lead >= cols:
+                break
+
+            i = r
+            while eqz(cells[i + lead * rows]):
+                i += 1
+                if i == rows:
+                    i = r
+                    lead += 1
+                    if lead == cols:
+                        break
+            if lead == cols:
+                break
+            row_swap(i, r)
+
+            idx = r + lead * rows
+            pivot_value = cells[idx]
+            if not eqz(pivot_value):
+                row_mul(r, rec(pivot_value))
+            # Check its 1.
+            pivot_value = cells[idx]
+            if not eqo(pivot_value):
+                raise ValueError(f"couldn't make cell =1, cell is: "
+                        f"{repr(pivot_value)}")
+
+            for i in range(rows):
+                if i != r:
+                    idx = i + lead * rows
+                    row_lead_value = cells[idx]
+                    if not eqz(row_lead_value):
+                        row_add(r, i, neg(row_lead_value))
+                    # Check its 0.
+                    row_lead_value = cells[idx]
+                    if not eqz(row_lead_value):
+                        raise ValueError("couldn't make cell =0, cell is: "
+                                f"{repr(row_lead_value)}")
+
+            lead += 1
+
+        return Matrix[s.field, s.shape](cells)
+
+    @_instconst
+    def pivots(s):
+        """
+        Tuple of RREF pivot column indices.
+        """
+        rref = s.rref
+        return tuple(i for i, c in enumerate(rref.cols)
+                if 1 == sum(not s._f("eq")(x, s._f("zero")) for x in c)
+                and 1 == sum(not s._f("eq")(x, s._f("one")) for x in c))
+
+    @_instconst
+    def nonpivots(s):
+        """
+        Tuple of RREF non-pivot column indices.
+        """
+        return tuple(j for j in range(s.shape[1]) if j not in s.pivots)
+
+
+    @_instconst
+    def colspace(s):
+        """
+        Tuple of basis vectors for column space.
+        """
+        return tuple(s.cols[p] for p in s.pivots)
+
+    @_instconst
+    def rowspace(s):
+        """
+        Tuple of basis vectors for row space.
+        """
+        sys = s.rref
+        nonzeros = (i for i, r in enumerate(sys.rows)
+                    if any(s._f("eq")(x, s._f("zero")) for x in r))
+        return tuple(sys.rows[i].T for i in nonzeros)
+
+    @_instconst
+    def nullspace(s):
+        """
+        Tuple of basis vectors for null space.
+        """
+        sys = s.rref # implied zero-vec augment.
+        def find_first_one(xs):
+            for i, x in enumerate(xs):
+                if s._f("eq")(x, s._f("one")):
+                    return i
+            return None
+        pivotat = tuple(find_first_one(sys.rows[i]) for i in range(s.shape[0]))
+        basis = [[s._f("zero")]*s.shape[1] for _ in sys.nonpivots]
+        for n, j in enumerate(sys.nonpivots):
+            for i in range(s.shape[0]):
+                if pivotat[i] is None or pivotat[i] > j:
+                    basis[n][j] = 1
+                    break
+                basis[n][pivotat[i]] = -sys.at[i, j]
+        return tuple(Matrix[s.field, (s.shape[1], )](x) for x in basis)
+
+
+
+    @_instconst
     def summ(s):
         """
-        Sum of all elements, alias for 's.summ_along(None)'.
+        Sum of all elements, alias for 'm.summ_along(None)'.
         """
         return s.summ_along(None)
     def summ_along(s, axis):
@@ -2134,7 +2153,7 @@ def Matrix(field, shape):
     @_instconst
     def prod(s):
         """
-        Product of all elements, alias for 's.prod_along(None)'.
+        Product of all elements, alias for 'm.prod_along(None)'.
         """
         return s.prod_along(None)
     def prod_along(s, axis):
@@ -2147,7 +2166,7 @@ def Matrix(field, shape):
     @_instconst
     def minn(s):
         """
-        Minimum of all elements, alias for 's.minn_along(None)'.
+        Minimum of all elements, alias for 'm.minn_along(None)'.
         """
         return s.minn_along(None)
     def minn_along(s, axis):
@@ -2164,7 +2183,7 @@ def Matrix(field, shape):
     @_instconst
     def maxx(s):
         """
-        Maximum of all elements, alias for 's.maxx_along(None)'.
+        Maximum of all elements, alias for 'm.maxx_along(None)'.
         """
         return s.maxx_along(None)
     def maxx_along(s, axis):
@@ -2181,7 +2200,7 @@ def Matrix(field, shape):
     @_instconst
     def mean(s):
         """
-        Arithmetic mean of all elements, alias for 's.mean_along(None)'.
+        Arithmetic mean of all elements, alias for 'm.mean_along(None)'.
         """
         return s.mean_along(None)
     def mean_along(s, axis):
@@ -2196,19 +2215,19 @@ def Matrix(field, shape):
     @_instconst
     def ave(s):
         """
-        Alias for 's.mean'.
+        Alias for 'm.mean'.
         """
         return s.mean
     def ave_along(s, axis):
         """
-        Alias for 's.mean_along(axis)'.
+        Alias for 'm.mean_along(axis)'.
         """
         return s.mean_along(axis)
 
     @_instconst
     def geomean(s):
         """
-        Geometric mean of all elements, alias for 's.geomean_along(None)'.
+        Geometric mean of all elements, alias for 'm.geomean_along(None)'.
         """
         return s.geomean_along(None)
     def geomean_along(s, axis):
@@ -2224,7 +2243,7 @@ def Matrix(field, shape):
     @_instconst
     def harmean(s):
         """
-        Harmonic mean of all elements, alias for 's.harmean_along(None)'.
+        Harmonic mean of all elements, alias for 'm.harmean_along(None)'.
         """
         return s.harmean_along(None)
     def harmean_along(s, axis):
@@ -2241,7 +2260,7 @@ def Matrix(field, shape):
     def quadmean(s):
         """
         Quadratic mean (root-mean-square) of all elements, alias for
-        's.quadmean_along(None)'.
+        'm.quadmean_along(None)'.
         """
         return s.quadmean_along(None)
     def quadmean_along(s, axis):
@@ -2253,21 +2272,6 @@ def Matrix(field, shape):
             raise TypeError("cannot find quadratic mean of empty")
         n = s.size if axis is None else s.shape[axis]
         return ((s * s).summ_along(axis) / n).sqrt
-
-
-    @_instconst
-    def torad(s):
-        """
-        Converts degrees to radians, alias for 's * (180/pi)'.
-        """
-        # maybe preverse largest subproducts.
-        return s / (180 / s.pi)
-    @_instconst
-    def todeg(s):
-        """
-        Converts radians to degrees, alias for 's * (pi/180)'.
-        """
-        return s * (180 / s.pi)
 
 
     @_instconst
@@ -2397,27 +2401,24 @@ def Matrix(field, shape):
         del _repr_str
 
 
-    # Its so dangerous bruh.
-    def __getattr__(s, attr):
-        """
-        If a non-matrix attribute is accessed, it will be retrived from each
-        element instead (if the elements also expose it).
-        """
-        cells = object.__getattribute__(s, "_cells") # cooked.
-        field = object.__getattribute__(s, "field")
-        shape = object.__getattribute__(s, "shape")
-        if attr not in field.exposes:
-            raise AttributeError(f"{_tname(type(s))} object has no attribute "
-                    f"{repr(attr)}")
-        rtype = field.exposes[attr]
-        cells = (getattr(x, attr) for x in cells)
-        return Matrix[rtype, shape](cells)
-
-
     # not an actual class, gotta fulfill the templated promises.
-    return locals()
+    ret = locals()
 
-Matrix.namer = lambda field, shape: f"{shape} Matrix[{_tname(field)[1:-1]}]"
+    # Add the methods which expose the attributes the field says to.
+    for attr, rtype in field.exposes.items():
+        def getter(s, attr=attr, rtype=rtype): # capture current attr and rtype.
+            cells = (getattr(x, attr) for x in s._cells)
+            return Matrix[rtype, s.shape](cells)
+        getter = _instconst(getter)
+        getter.__name__ = attr
+        getter.__doc__ = getattr(field, attr).__doc__
+        ret[attr] = getter
+
+    # Done.
+    return ret
+
+
+Matrix.namer = lambda F, s: f"{s} Matrix[{_tname(F, quoted=False)}]"
 
 
 
@@ -2438,11 +2439,11 @@ def single(x, *, field=None):
         field = type(x)
     return Single[field]((x, ))
 
-def issingle(a):
+def issingle(x):
     """
-    True iff 'a' is a matrix with only one cell.
+    True iff 'x' is a matrix with only one cell.
     """
-    return isinstance(a, Matrix) and a.issingle
+    return isinstance(x, Matrix) and x.issingle
 
 
 class Empty:
@@ -2460,11 +2461,11 @@ def empty(field):
     """
     return Empty[field](())
 
-def isempty(a):
+def isempty(x):
     """
-    True iff 'a' is a matrix with no cells.
+    True iff 'x' is a matrix with no cells.
     """
-    return isinstance(a, Matrix) and a.isempty
+    return isinstance(x, Matrix) and x.isempty
 
 
 
@@ -2474,7 +2475,7 @@ def castall(xs, broadcast=True, *, field=None):
     (optionally) broadcast to the same shape.
     """
     if not _iterable(xs):
-        raise TypeError(f"expected iterable for xs, got {_tname(type(xs))}")
+        raise TypeError(f"expected an iterable for xs, got {_tname(type(xs))}")
     xs = list(xs)
     if not xs:
         return ()
@@ -2488,15 +2489,33 @@ def castall(xs, broadcast=True, *, field=None):
 
 
 
+def det(x, *, field=None):
+    """
+    Alias for 'x.det'.
+    """
+    x, = castall([x], field=field)
+    return x.det
+def trace(x, *, field=None):
+    """
+    Alias for 'x.trace'.
+    """
+    x, = castall([x], field=field)
+    return x.trace
+def mag(x, *, field=None):
+    """
+    Alias for 'x.mag'.
+    """
+    x, = castall([x], field=field)
+    return x.mag
 def dot(x, y, *, field=None):
     """
-    Dot product, alias for 'x & y'.
+    Alias for 'x & y'.
     """
     x, y = castall([x, y], field=field, broadcast=False)
     return x & y
 def cross(x, y, *, field=None):
     """
-    Cross product, alias for 'x | y'.
+    Alias for 'x | y'.
     """
     x, y = castall([x, y], field=field, broadcast=False)
     return x | y
@@ -2602,6 +2621,19 @@ def atan2(y, x, *, field=None):
     """
     y, x = castall([y, x], field=field)
     return y._apply(y._f("atan2"), y, x)
+def torad(degrees, *, field=None):
+    """
+    Alias for 'degrees.torad'.
+    """
+    x, = castall([degrees], field=field)
+    # maybe preverse largest subproducts.
+    return x.torad
+def todeg(radians, *, field=None):
+    """
+    Alias for 'radians.todeg'.
+    """
+    x, = castall([radians], field=field)
+    return x.todeg
 def sind(x, *, field=None):
     """
     Alias for 'x.sind'.
@@ -2687,6 +2719,48 @@ def sign(x, *, field=None):
     """
     x, = castall([x], field=field)
     return x.sign
+def issame(x, y, *, field=None):
+    """
+    Alias for 'x.issame(y)'.
+    """
+    x, y = castall([x, y], field=field)
+    return x.issame(y)
+def rref(x, *, field=None):
+    """
+    Alias for 'x.rref'.
+    """
+    x, = castall([x], field=field)
+    return x.rref
+def pivots(x, *, field=None):
+    """
+    Alias for 'x.pivots'.
+    """
+    x, = castall([x], field=field)
+    return x.pivots
+def nonpivots(x, *, field=None):
+    """
+    Alias for 'x.nonpivots'.
+    """
+    x, = castall([x], field=field)
+    return x.nonpivots
+def colspace(x, *, field=None):
+    """
+    Alias for 'x.colspace'.
+    """
+    x, = castall([x], field=field)
+    return x.colspace
+def rowspace(x, *, field=None):
+    """
+    Alias for 'x.rowspace'.
+    """
+    x, = castall([x], field=field)
+    return x.rowspace
+def nullspace(x, *, field=None):
+    """
+    Alias for 'x.nullspace'.
+    """
+    x, = castall([x], field=field)
+    return x.nullspace
 def summ(x, axis=None, *, field=None):
     """
     Alias for 'x.summ_along(axis)'.
@@ -2748,19 +2822,6 @@ def logmean(x, y, *, field=None):
     x, y = castall([x, y], field=field)
     f = lambda a, b: a if (a == b) else (a - b) / (a / b).ln
     return x.apply(f, y)
-def torad(degrees, *, field=None):
-    """
-    Alias for 'degrees.torad'.
-    """
-    x, = castall([degrees], field=field)
-    # maybe preverse largest subproducts.
-    return x.torad
-def todeg(radians, *, field=None):
-    """
-    Alias for 'radians.todeg'.
-    """
-    x, = castall([radians], field=field)
-    return x.todeg
 
 
 def short(x, *, field=None):
@@ -2787,6 +2848,7 @@ doesdflt2short.v = True
 class _Dflt2:
     def __init__(self, short, doc):
         self.short = False
+        self.store = None
         self.__doc__ = doc
 
     def __call__(self):
@@ -2796,7 +2858,9 @@ class _Dflt2:
         self.store = doesdflt2short.v
         doesdflt2short.v = self.short
     def __exit__(self, type, value, traceback):
-        doesdflt2short.v = self.store
+        if self.store is not None:
+            doesdflt2short.v = self.store
+            self.store = None
         return False
 dflt2short = _Dflt2(True, "Changes the default matrix print to short. Can also "
         "be used as a context manager to temporarily set.")
@@ -2888,12 +2952,12 @@ def rep(x, *counts, field=None):
     x, = castall([x], field=field)
     return x.rep(*counts)
 
-def repalong(x, axis, count, *, field=None):
+def rep_along(x, axis, count, *, field=None):
     """
     Repeats the given matrix 'count' times along 'axis'.
     """
     x, = castall([x], field=field)
-    return x.repalong(axis, count)
+    return x.rep_along(axis, count)
 
 def tovec(*xs, field=None):
     """
@@ -3251,11 +3315,12 @@ def mvars(long=None):
         print(pre + mat)
 
 
-def mhelp():
+def mhelp(*, field=None):
     """
     Prints the signature and doc of the functions in this file (the matrix
     functions).
     """
+    field = _get_field(field)
     width = 100
     def classify(c):
         if c.isalnum() or c == "_":
@@ -3271,7 +3336,7 @@ def mhelp():
             return 135
         if (txt == "-" or txt == "+") and issci(prev_txt):
             return 135
-        if txt in {"None", "False", "True"}:
+        if txt in {"None", "False", "True", "NO_SEED"}:
             return 135
         if key == "identifier":
             if leading and txt[0].isupper():
@@ -3303,11 +3368,12 @@ def mhelp():
         name = _coloured(cols, txts)
         print(_entry(name, desc, width=width, pwidth=22, lead=2))
 
-    Mat = Single[Field]
+    Mat = Empty[field]
     attrs = {name: attr for name, attr in vars(Mat).items()
             if attr.__doc__ is not None
             and name != "__module__"
             and name != "__doc__"
+            and name != "_tname"
             and name != "template"}
 
     # also chuck the other functions in this file.
@@ -3416,6 +3482,8 @@ def mhelp():
         sig = sig[1:-1]
         if sig.endswith(", *, field=None"):
             sig = sig[:-len(", *, field=None")]
+        elif sig.endswith("*, field=None"):
+            sig = sig[:-len("*, field=None")]
         elif sig.endswith(", field=None"):
             sig = sig[:-len(", field=None")]
         expr = f"{name}({sig})"

@@ -1,16 +1,18 @@
 import math
 
 import matrix
-from util import classconst, immutable, simplest_ratio
+from util import tname, classconst, immutable, simplest_ratio
 
 
 @immutable
 class Rational(matrix.Field):
     def __init__(self, numerator, denominator=1):
         if not isinstance(numerator, int):
-            raise TypeError("numerator must be an int")
+            raise TypeError("expected an integer numerator, got "
+                    f"{tname(type(numerator))}")
         if not isinstance(denominator, int):
-            raise TypeError("denominator must be an int")
+            raise TypeError("expected an integer denominator, got "
+                    f"{tname(type(denominator))}")
         if denominator < 0:
             numerator = -numerator
             denominator = -denominator
@@ -18,8 +20,20 @@ class Rational(matrix.Field):
             raise ZeroDivisionError("x/0")
         gcd = math.gcd(numerator, denominator)
         # note gcd(0,x)==x, therefore collapses 0/1
-        self.numer = numerator // gcd
-        self.denom = denominator // gcd
+        self._nu = numerator // gcd
+        self._de = denominator // gcd
+    @property
+    def numer(s):
+        """
+        Element-wise numerator.
+        """
+        return type(s)(s._nu)
+    @property
+    def denom(s):
+        """
+        Element-wise denominator.
+        """
+        return type(s)(s._de)
 
 
     @classmethod
@@ -36,71 +50,71 @@ class Rational(matrix.Field):
 
     @classmethod
     def to_int(cls, a):
-        if a.denom != 1:
+        if a._de != 1:
             raise NotImplementedError()
-        return a.numer
+        return a._nu
     @classmethod
     def to_float(cls, a):
-        return a.numer / a.denom
+        return a._nu / a._de
     @classmethod
     def to_complex(cls, a):
-        return complex(a.numer / a.denom)
+        return complex(a._nu / a._de)
 
     @classconst
     def zero(cls):
-        return cls(0, 1)
+        return cls(0)
     @classconst
     def one(cls):
-        return cls(1, 1)
+        return cls(1)
 
     @classconst
     def exposes(cls):
-        return {"numer": int, "denom": int}
+        return {"numer": cls, "denom": cls}
 
     @classmethod
     def add(cls, a, b):
-        return cls(a.numer * b.denom + b.numer * a.denom, a.denom * b.denom)
+        return cls(a._nu * b._de + b._nu * a._de, a._de * b._de)
     @classmethod
     def sub(cls, a, b):
-        return cls(a.numer * b.denom - b.numer * a.denom, a.denom * b.denom)
+        return cls(a._nu * b._de - b._nu * a._de, a._de * b._de)
     @classmethod
     def absolute(cls, a):
-        return cls(abs(a.numer), a.denom)
+        return cls(abs(a._nu), a._de)
 
     @classmethod
     def mul(cls, a, b):
-        return cls(a.numer * b.numer, a.denom * b.denom)
+        return cls(a._nu * b._nu, a._de * b._de)
     @classmethod
     def div(cls, a, b):
-        return cls(a.numer * b.denom, a.denom * b.numer)
+        return cls(a._nu * b._de, a._de * b._nu)
 
     @classmethod
     def issame(cls, a, b):
-        return a.numer == b.numer and a.denom == b.denom
+        return a._nu == b._nu and a._de == b._de
     @classmethod
     def lt(cls, a):
-        return a.numer * b.denom < b.numer * a.denom
+        return a._nu * b._de < b._nu * a._de
 
     @classmethod
     def hashed(cls, a):
-        return hash((a.numer, a.denom))
+        return hash((a._nu, a._de))
 
     @classmethod
     def rep(cls, a, short):
-        s = str(a.numer) + (a.denom != 1) * f"/{a.denom}"
+        s = str(a._nu) + (a._de != 1) * f"/{a._de}"
         if short and len(s) > 10:
-            s = f"≈{(a.numer / a.denom):.6g}"
+            s = f"≈{(a._nu / a._de):.6g}"
         return s
 
     def exp_as_string(self):
-        if self.denom == 1:
-            if self.numer == 1:
+        if self._de == 1:
+            if self._nu == 1:
                 return ""
             superscripts = {
                 "-": "⁻", "0": "⁰", "1": "¹", "2": "²", "3": "³", "4": "⁴",
                 "5": "⁵", "6": "⁶", "7": "⁷", "8": "⁸", "9": "⁹",
             }
-            return "".join(superscripts[c] for c in str(self.numer))
+            return "".join(superscripts[c] for c in str(self._nu))
         lookup = {
             Rational(1, 2): "½", Rational(1, 3): "⅓", Rational(2, 3): "⅔",
             Rational(1, 4): "¼", Rational(3, 4): "¾", Rational(1, 5): "⅕",

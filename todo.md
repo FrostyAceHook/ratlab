@@ -1,7 +1,6 @@
 - "remoce two chars from points to user" bro wtf does this MEAN lmao
 - numpy backing + remove generic field
 - add `reshape`
-- exposed attrs as actual class attributes + docs.
 - super specialised bool matrix:
     - doesnt support `__bool__` unless single
     - is always iterable, to allow `all` and `any`

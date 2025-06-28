@@ -19,9 +19,15 @@ class Complex(matrix.Field):
             isnan = True
             re = float("nan")
             im = float("nan")
-        self.isnan = isnan
+        self._isnan = isnan
         self._re = re
         self._im = im
+    @property
+    def isnan(s):
+        """
+        Element-wise true iff the value is NaN (not a number).
+        """
+        return s._isnan
 
 
     @classmethod
@@ -36,7 +42,7 @@ class Complex(matrix.Field):
 
     @classmethod
     def to_int(cls, a):
-        if a.isnan:
+        if a._isnan:
             raise ValueError("cannot cast nan to int")
         if a._im:
             raise ValueError(f"cannot cast non-real to int, got: {a}")
@@ -45,14 +51,14 @@ class Complex(matrix.Field):
         return int(a._re)
     @classmethod
     def to_float(cls, a):
-        if a.isnan:
+        if a._isnan:
             return float("nan")
         if a._im:
             raise ValueError(f"cannot cast non-real to float, got: {a}")
         return a._re
     @classmethod
     def to_complex(cls, a):
-        if a.isnan:
+        if a._isnan:
             return complex("nan+nanj")
         return complex(a._re, a._im)
 
@@ -69,23 +75,23 @@ class Complex(matrix.Field):
 
     @classmethod
     def add(cls, a, b):
-        if a.isnan or b.isnan:
+        if a._isnan or b._isnan:
             return cls(isnan=True)
         return cls(a._re + b._re, a._im + b._im)
     @classmethod
     def sub(cls, a, b):
-        if a.isnan or b.isnan:
+        if a._isnan or b._isnan:
             return cls(isnan=True)
         return cls(a._re - b._re, a._im - b._im)
     @classmethod
     def absolute(cls, a):
-        if a.isnan:
+        if a._isnan:
             return cls(isnan=True)
         return cls(math.sqrt(a._re * a._re + a._im * a._im))
 
     @classmethod
     def mul(cls, a, b):
-        if a.isnan or b.isnan:
+        if a._isnan or b._isnan:
             return cls(isnan=True)
         # (a.re + i a.im)(b.re + i b.im)
         # = a.re b.re - a.im b.im + i (a.im b.re + a.re b.im)
@@ -94,7 +100,7 @@ class Complex(matrix.Field):
         return cls(re, im)
     @classmethod
     def div(cls, a, b):
-        if a.isnan or b.isnan:
+        if a._isnan or b._isnan:
             return cls(isnan=True)
         # (a.re + i a.im)/(b.re + i b.im)
         #
@@ -112,14 +118,14 @@ class Complex(matrix.Field):
 
     @classmethod
     def power(cls, a, b):
-        if a.isnan or b.isnan:
+        if a._isnan or b._isnan:
             return cls(isnan=True)
         a = complex(a._re, a._im)
         b = complex(b._re, b._im)
         return cls.from_complex(a ** b)
     @classmethod
     def root(cls, a, b):
-        if a.isnan or b.isnan:
+        if a._isnan or b._isnan:
             return cls(isnan=True)
         if b._re == 0.0 and b._im == 0.0:
             raise ZeroDivisionError("x ^ (1/0)")
@@ -128,7 +134,7 @@ class Complex(matrix.Field):
         return cls.from_complex(a ** (1 / b))
     @classmethod
     def log(cls, a, b):
-        if a.isnan or b.isnan:
+        if a._isnan or b._isnan:
             return cls(isnan=True)
         a = complex(a._re, a._im)
         b = complex(b._re, b._im)
@@ -136,44 +142,44 @@ class Complex(matrix.Field):
 
     @classmethod
     def sin(cls, a):
-        if a.isnan:
+        if a._isnan:
             return cls(isnan=True)
         a = complex(a._re, a._im)
         return cls.from_complex(cmath.sin(a))
     @classmethod
     def cos(cls, a):
-        if a.isnan:
+        if a._isnan:
             return cls(isnan=True)
         a = complex(a._re, a._im)
         return cls.from_complex(cmath.cos(a))
     @classmethod
     def tan(cls, a):
-        if a.isnan:
+        if a._isnan:
             return cls(isnan=True)
         a = complex(a._re, a._im)
         return cls.from_complex(cmath.tan(a))
 
     @classmethod
     def asin(cls, a):
-        if a.isnan:
+        if a._isnan:
             return cls(isnan=True)
         a = complex(a._re, a._im)
         return cls.from_complex(cmath.asin(a))
     @classmethod
     def acos(cls, a):
-        if a.isnan:
+        if a._isnan:
             return cls(isnan=True)
         a = complex(a._re, a._im)
         return cls.from_complex(cmath.acos(a))
     @classmethod
     def atan(cls, a):
-        if a.isnan:
+        if a._isnan:
             return cls(isnan=True)
         a = complex(a._re, a._im)
         return cls.from_complex(cmath.atan(a))
     @classmethod
     def atan2(cls, y, x):
-        if y.isnan or x.isnan:
+        if y._isnan or x._isnan:
             return cls(isnan=True)
         if y._im != 0.0 or x._im != 0.0:
             raise ValueError(f"cannot use atan2 with non-real, got: {y}, and: "
@@ -182,19 +188,19 @@ class Complex(matrix.Field):
 
     @classmethod
     def conj(cls, a):
-        if a.isnan:
+        if a._isnan:
             return cls(isnan=True)
         return cls(a._re, -a._im)
 
     @classmethod
     def issame(cls, a, b):
-        if a.isnan or b.isnan:
-            return a.isnan == b.isnan
+        if a._isnan or b._isnan:
+            return a._isnan == b._isnan
         return a._re == b._re and a._im == b._im
     @classmethod
     def eq(cls, a, b):
-        if a.isnan or b.isnan:
-            return a.isnan == b.isnan
+        if a._isnan or b._isnan:
+            return a._isnan == b._isnan
         def iseq(x, y, ulps=15):
             if math.isinf(x) or math.isinf(y):
                 return x == y
@@ -211,8 +217,8 @@ class Complex(matrix.Field):
         return iseq(a._re, b._re) and iseq(a._im, b._im)
     @classmethod
     def lt(cls, a, b):
-        if a.isnan or b.isnan:
-            return a.isnan < b.isnan
+        if a._isnan or b._isnan:
+            return a._isnan < b._isnan
         if a._im or b._im: # complex is unorderable.
             raise ValueError(f"cannot order non-real, got: {a}, and: {b}")
         return a._re < b._re
@@ -223,7 +229,7 @@ class Complex(matrix.Field):
 
     @classmethod
     def rep(cls, a, short):
-        if a.isnan:
+        if a._isnan:
             return "nan"
         re = a._re
         im = a._im
