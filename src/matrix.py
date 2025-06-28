@@ -5,8 +5,8 @@ import types as _types
 
 from util import (
     coloured as _coloured, nonctrl as _nonctrl, entry as _entry, tname as _tname,
-    iterable as _iterable, immutable as _immutable, templated as _templated,
-    classconst as _classconst, instconst as _instconst,
+    objtname as _objtname, iterable as _iterable, immutable as _immutable,
+    templated as _templated, classconst as _classconst, instconst as _instconst,
 )
 
 
@@ -224,7 +224,7 @@ def GenericField(T):
 
     def __init__(self, v):
         if not isinstance(v, T):
-            raise TypeError(f"expected {_tname(T)}, got {_tname(type(v))}")
+            raise TypeError(f"expected {_tname(T)}, got {_objtname(v)}")
         self.obj = v
 
     @classmethod
@@ -372,8 +372,8 @@ def lits(field, inject=True):
         if field is not None:
             Single[field]
     except Exception as e:
-        raise TypeError("expected a valid field class, got "
-                f"{_tname(type(field))}") from e
+        raise TypeError(f"expected a valid field class, got {_objtname(field)}")\
+                from e
 
     prev_field = lits._field
     lits._field = field
@@ -409,7 +409,7 @@ class Shape:
         for l in lens:
             if not isinstance(l, int):
                 raise TypeError("dimension lengths must be ints, got "
-                        f"{_tname(type(l))}")
+                        f"{_objtname(l)}")
         if any(l < 0 for l in lens):
             raise ValueError(f"dimension lengths cannot be negative, got {lens}")
         # Trim any trailing 1s (note this collapses single to ()).
@@ -499,8 +499,7 @@ class Shape:
         """
         # Oob dimensions are implicitly 1 (unless empty, in which case 0).
         if not isinstance(axis, int):
-            raise TypeError("expected an integer axis, got "
-                    f"{_tname(type(axis))}")
+            raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
         if axis < 0:
             raise ValueError(f"axis cannot be negative, got: {axis}")
         if axis >= s.ndim:
@@ -512,8 +511,7 @@ class Shape:
         New shape with the given length along 'axis'.
         """
         if not isinstance(axis, int):
-            raise TypeError("expected an integer axis, got "
-                    f"{_tname(type(axis))}")
+            raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
         if axis < 0:
             raise ValueError(f"axis cannot be negative, got: {axis}")
         if s.isempty:
@@ -527,8 +525,7 @@ class Shape:
         New shape with the given length inserted at 'axis'.
         """
         if not isinstance(axis, int):
-            raise TypeError("expected an integer axis, got "
-                    f"{_tname(type(axis))}")
+            raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
         if axis < 0:
             raise ValueError(f"axis cannot be negative, got: {axis}")
         if s.isempty:
@@ -542,13 +539,11 @@ class Shape:
         New shape with the given shape inserted at 'axis'.
         """
         if not isinstance(axis, int):
-            raise TypeError("expected an integer axis, got "
-                    f"{_tname(type(axis))}")
+            raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
         if axis < 0:
             raise ValueError(f"axis cannot be negative, got: {axis}")
         if not isinstance(shape, Shape):
-            raise TypeError("expected a Shape shape, got "
-                    f"{_tname(type(shape))}")
+            raise TypeError(f"expected a Shape shape, got {_objtname(shape)}")
         if shape.isempty:
             raise TypeError("expected a non-empty shape to insert")
         if s.isempty:
@@ -564,8 +559,7 @@ class Shape:
         for empty shapes.
         """
         if not isinstance(axis, int):
-            raise TypeError("expected an integer axis, got "
-                    f"{_tname(type(axis))}")
+            raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
         if axis < 0:
             raise ValueError(f"axis cannot be negative, got: {axis}")
         if s.isempty:
@@ -611,8 +605,7 @@ class Shape:
         if s.isempty:
             raise ValueError("cannot find stride of empty")
         if not isinstance(axis, int):
-            raise TypeError(f"expected an integer axis, got "
-                    f"{_tname(type(axis))}")
+            raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
         if axis < 0:
             raise ValueError(f"axis cannot be negative, got {axis}")
         axis = min(axis, s.ndim)
@@ -650,7 +643,7 @@ class Shape:
             raise ValueError("cannot index empty")
         if not isinstance(offset, int):
             raise TypeError(f"expected an integer offset, got "
-                    f"{_tname(type(offset))}")
+                    f"{_objtname(offset)}")
         if offset < 0:
             raise ValueError(f"offset cannot be negative, got {offset}")
         if offset >= s.size:
@@ -667,8 +660,8 @@ class Shape:
         ijk = _maybe_unpack(ijk)
         for ii, i in enumerate(ijk):
             if not isinstance(i, int):
-                raise TypeError("expected an integer index, got "
-                        f"{_tname(type(i))} at index {ii}")
+                raise TypeError(f"expected an integer index, got {_objtname(i)} "
+                        f"at index {ii}")
         oldijk = ijk
         ijk = [i + (i < 0) * s[ii] for ii, i in enumerate(ijk)]
         for ii, i in enumerate(ijk):
@@ -693,8 +686,7 @@ def Matrix(field, shape):
     """
 
     if not isinstance(field, type):
-        raise TypeError(f"expected a type for field, got: {repr(field)}, of "
-                f"type {_tname(type(field))}")
+        raise TypeError(f"expected a type for field, got {_objtname(field)}")
     if issubclass(field, Matrix):
         raise TypeError("mate a matrix of matrices? calm down")
 
@@ -785,7 +777,7 @@ def Matrix(field, shape):
         # `cells` is a flattened iterable of each cell, progressing through the
         # matrix in the order of shape (so col-major for 2d).
         if not _iterable(cells):
-            raise TypeError(f"cells must be iterable, got {_tname(type(cells))}")
+            raise TypeError(f"cells must be iterable, got {_objtname(cells)}")
 
         # Often when a function returns from a new field, its not appropriately
         # wrapped, but we only make this exemption for non-field types.
@@ -799,8 +791,8 @@ def Matrix(field, shape):
         for i, cell in enumerate(cells):
             if not isinstance(cell, s.field):
                 raise TypeError(f"expected cells of type {_tname(s.field)}, got "
-                        f"{_tname(type(cell))} (occured at index {i}, had "
-                        f"value: {repr(cell)})")
+                        f"{_objtname(cell)} (occured at index {i}, had value: "
+                        f"{repr(cell)})")
         if len(cells) != shape.size:
             raise TypeError(f"expected {shape.size} cells to matched flattened "
                     f"size of {shape}, got {len(cells)}")
@@ -968,7 +960,7 @@ def Matrix(field, shape):
             elif type(x) in convs.keys():
                 cell = cls._f(convs[type(x)])(x)
             if cell is None:
-                raise TypeError(f"{_tname(type(x))} cannot be cast to "
+                raise TypeError(f"{_objtname(x)} cannot be cast to "
                         f"{_tname(cls.field)}")
             return single(cell, field=cls.field)
         xs = [conv(x) for x in xs]
@@ -1016,7 +1008,7 @@ def Matrix(field, shape):
                 if isinstance(i, int):
                     return [i]
                 raise TypeError("expected an integer or slice access, got "
-                        f"{_tname(type(i))} for axis {ii}")
+                        f"{_objtname(i)} for axis {ii}")
             ijk += (slice(None), ) * (s.ndim - len(ijk))
             slices = [process(i, ii) for ii, i in enumerate(ijk)]
             for axis, idxs in enumerate(slices):
@@ -1062,7 +1054,7 @@ def Matrix(field, shape):
         Tuple of perpendicular matrices along the given axis.
         """
         if not isinstance(axis, int):
-            raise TypeError(f"expected integer axis, got {_tname(type(axis))}")
+            raise TypeError(f"expected integer axis, got {_objtname(axis)}")
         if axis < 0:
             raise ValueError(f"cannot have negative axis, got: {axis}")
         # Empty is empty.
@@ -1083,8 +1075,7 @@ def Matrix(field, shape):
         """
         for axis in order:
             if not isinstance(axis, int):
-                raise TypeError(f"expected integer axis, got "
-                        f"{_tname(type(axis))}")
+                raise TypeError(f"expected integer axis, got {_objtname(axis)}")
         if any(axis < 0 for axis in order):
             raise ValueError(f"cannot have negative axes, got: {order}")
         if len(set(order)) != len(order):
@@ -1120,7 +1111,7 @@ def Matrix(field, shape):
         for count in counts:
             if not isinstance(count, int):
                 raise TypeError("expected an integer count, got "
-                        f"{_tname(type(count))}")
+                        f"{_objtname(count)}")
         if any(count < 0 for count in counts):
             raise ValueError(f"cannot have negative counts, got: {counts}")
         mul = counts + (1, ) * (s.ndim - len(counts))
@@ -1141,8 +1132,7 @@ def Matrix(field, shape):
         Repeats this matrix 'count' times along 'axis'.
         """
         if not isinstance(axis, int):
-            raise TypeError(f"expected an integer axis, got "
-                    f"{_tname(type(axis))}")
+            raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
         if axis < 0:
             raise ValueError(f"axis cannot be negative, got: {axis}")
         return s.rep((1, )*axis + (count, ))
@@ -1173,7 +1163,7 @@ def Matrix(field, shape):
             pass
         else:
             raise TypeError("expected integer or slice to index vector, got "
-                    f"{_tname(type(i))}")
+                    f"{_objtname(i)}")
         xs = s._cells.__getitem__(i)
         if not isinstance(xs, tuple):
             xs = (xs, )
@@ -1204,7 +1194,7 @@ def Matrix(field, shape):
                     "(maybe try .ravel.tolist to get a 1d list of matrix cells)")
         if not isinstance(rtype, type):
             raise ValueError("expected type for 'rtype', got "
-                    f"{_tname(type(rtype))}")
+                    f"{_objtname(rtype)}")
         if issubclass(rtype, int):
             func = s._f("to_int")
         elif issubclass(rtype, float):
@@ -1398,7 +1388,7 @@ def Matrix(field, shape):
                         raise TypeError("'func' cannot return an empty matrix")
             elif not isinstance(ret, rtype):
                 raise TypeError(f"expected {_tname(rtype)} typed return from "
-                        f"'func' for consistency, got {_tname(type(ret))})")
+                        f"'func' for consistency, got {_objtname(ret)})")
             return ret
 
         # Do me.
@@ -1435,11 +1425,10 @@ def Matrix(field, shape):
         return will have these elements appended into new axes.
         """
         if not callable(func):
-            raise TypeError("expected callable 'func', got "
-                    f"{_tname(type(func))}")
+            raise TypeError(f"expected callable 'func', got {_objtname(func)}")
         if rtype is not None and isinstance(rtype, type):
             raise TypeError("expected none or type for 'rtype', got "
-                    f"{_tname(type(rtype))}")
+                    f"{_objtname(rtype)}")
         return cls._apply(func, *xs, rtype=rtype, over_field=False)
 
     def apply(s, func, *os, rtype=None):
@@ -1495,12 +1484,11 @@ def Matrix(field, shape):
         is performed along that axis in parallel.
         """
         if not callable(func):
-            raise TypeError("expected callable 'func', got "
-                    f"{_tname(type(func))}")
+            raise TypeError(f"expected callable 'func', got {_objtname(func)}")
         if axis is not None:
             if not isinstance(axis, int):
                 raise TypeError("expected an integer axis, got "
-                        f"{_tname(type(axis))}")
+                        f"{_objtname(axis)}")
             if axis < 0:
                 raise ValueError(f"axis cannot be negative, got {axis}")
         return s._fold(func, seed=seed, axis=axis, right=right, over_field=False)
@@ -1980,13 +1968,16 @@ def Matrix(field, shape):
         Matrix power (repeated self matrix multiplication, possibly inversed).
         """
         if isinstance(exp, Matrix) and exp.issingle:
-            exp = int(exp)
+            try:
+                exp = int(exp)
+            except Exception as e:
+                raise TypeError("expected an integer exponent") from e
         if not isinstance(exp, int):
             raise TypeError("expected an integer exponent, got "
-                    f"{_tname(type(exp))}")
+                    f"{_objtname(exp)}")
         if not s.issquare:
             raise TypeError("only square matrices have exponentiation, got "
-                    f"{s.shape})")
+                    f"{s.shape}")
         if exp < 0:
             return s.inv ^ (-exp)
         power = s.eye
@@ -2299,7 +2290,7 @@ def Matrix(field, shape):
         x = s._f("to_int")(s._cells[0])
         if not isinstance(x, int):
             raise TypeError("expected 'to_int' to return an int, got "
-                    f"{_tname(type(x))}")
+                    f"{_objtname(x)}")
         return x
     def __float__(s):
         """
@@ -2311,7 +2302,7 @@ def Matrix(field, shape):
         x = s._f("to_float")(s._cells[0])
         if not isinstance(x, float):
             raise TypeError("expected 'to_float' to return a float, got "
-                    f"{_tname(type(x))}")
+                    f"{_objtname(x)}")
         return x
     def __complex__(s):
         """
@@ -2323,7 +2314,7 @@ def Matrix(field, shape):
         x = s._f("to_complex")(s._cells[0])
         if not isinstance(x, complex):
             raise TypeError("expected 'to_complex' to return a complex, got "
-                    f"{_tname(type(x))}")
+                    f"{_objtname(x)}")
         return x
 
     def __hash__(s):
@@ -2475,7 +2466,7 @@ def castall(xs, broadcast=True, *, field=None):
     (optionally) broadcast to the same shape.
     """
     if not _iterable(xs):
-        raise TypeError(f"expected an iterable for xs, got {_tname(type(xs))}")
+        raise TypeError(f"expected an iterable for xs, got {_objtname(xs)}")
     xs = list(xs)
     if not xs:
         return ()
@@ -2876,7 +2867,7 @@ def stack(axis, *xs, field=None):
     xs = castall(xs, field=field, broadcast=False)
     field = _get_field(field, xs)
     if not isinstance(axis, int):
-        raise TypeError(f"expected an integer axis, got {_tname(type(axis))}")
+        raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
     if axis < 0:
         raise ValueError(f"axis cannot be negative, got {axis}")
 
@@ -2995,7 +2986,7 @@ def eye(n, *, field=None):
     """
     field = _get_field(field)
     if not isinstance(n, int):
-        raise TypeError(f"expected an integer size, got {_tname(type(n))}")
+        raise TypeError(f"expected an integer size, got {_objtname(n)}")
     if n < 0:
         raise ValueError(f"cannot have negative size, got: {n}")
     return Matrix[field, (n, n)].eye
@@ -3009,8 +3000,7 @@ def zeros(*counts, field=None):
     counts = _maybe_unpack(counts)
     for count in counts:
         if not isinstance(count, int):
-            raise TypeError("expected an integer count, got "
-                    f"{_tname(type(count))}")
+            raise TypeError(f"expected an integer count, got {_objtname(count)}")
     if any(count < 0 for count in counts):
         raise ValueError(f"cannot have negative counts, got: {counts}")
     if len(counts) == 1:
@@ -3026,8 +3016,7 @@ def ones(*counts, field=None):
     counts = _maybe_unpack(counts)
     for count in counts:
         if not isinstance(count, int):
-            raise TypeError("expected an integer count, got "
-                    f"{_tname(type(count))}")
+            raise TypeError(f"expected an integer count, got {_objtname(count)}")
     if any(count < 0 for count in counts):
         raise ValueError(f"cannot have negative counts, got: {counts}")
     if len(counts) == 1:
@@ -3054,7 +3043,7 @@ def linspace(x0, x1, n, *, field=None):
     Vector of 'n' linearly spaced values starting at 'x0' and ending at 'x1'.
     """
     if not isinstance(n, int):
-        raise TypeError(f"expected an integer n, got {_tname(type(n))}")
+        raise TypeError(f"expected an integer n, got {_objtname(n)}")
     if n < 0:
         raise ValueError(f"expected n >= 0, got: {n}")
     x0, x1 = castall([x0, x1], field=field)
@@ -3079,7 +3068,7 @@ def logspace(x0, x1, n, *, field=None):
     'x1'.
     """
     if not isinstance(n, int):
-        raise TypeError(f"expected an integer n, got {_tname(type(n))}")
+        raise TypeError(f"expected an integer n, got {_objtname(n)}")
     if n < 0:
         raise ValueError(f"expected n >= 0, got: {n}")
     x0, x1 = castall([x0, x1], field=field)
@@ -3260,7 +3249,7 @@ def oderk4(f, T, x0, *, field=None):
     """
     if not isinstance(T, Matrix):
         if not _iterable(T):
-            raise TypeError(f"expected iterable for 'T', got {_tname(type(T))}")
+            raise TypeError(f"expected iterable for 'T', got {_objtname(T)}")
         T = tovec(T, field=field)
     if not T.isvec:
         raise TypeError(f"expected vector for 'T', got {T.shape}")

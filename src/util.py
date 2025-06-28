@@ -213,6 +213,13 @@ def tname(t, namespaced=False, quoted=True):
     namespace *= namespace not in {"__main__", "builtins"}
     return finish(namespace + name)
 
+def objtname(obj, namespaced=False, quoted=True):
+    """
+    Alias for 'tname(type(obj))'.
+    """
+    return tname(type(obj), namespaced=namespaced, quoted=quoted)
+
+
 
 # Hack to enable console escape codes.
 _os.system("")
