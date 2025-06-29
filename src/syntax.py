@@ -650,18 +650,19 @@ def run_console(space):
     def get_input():
         source = ""
         while True:
+            print(_coloured(73, ".. " if source else ">> "), end="")
+
+            # Delay the start of background loading (since its a tad slow to
+            # start up) as late as possible to reduce loading time.
+            _bg.start()
+
             try:
-                print(_coloured(73, ".. " if source else ">> "), end="")
-
-                # Delay the start of background loading (since its a tad slow to
-                # start up) as late as possible to reduce loading time.
-                _bg.start()
-
                 line = input()
             except (EOFError, KeyboardInterrupt):
                 # they ctrl+c-ed my ass.
                 print()
                 raise _ExitConsoleException()
+
             source += "\n"*(not not source) + line
             if not line:
                 break

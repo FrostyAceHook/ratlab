@@ -66,10 +66,9 @@ def _task_matplotlib():
 
 
 bg = _Tasks({
-    "numpy": _task_import("numpy"),
+    "np": _task_import("numpy"),
     "scipy": _task_import("scipy"),
-    "pandas": _task_import("pandas"),
-    "beans": _task_import("beans"),
+    "pd": _task_import("pandas"),
     "plt": _task_matplotlib,
 })
 bg.__doc__ = """

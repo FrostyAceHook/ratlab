@@ -33,7 +33,7 @@ def main():
         def wrap_string(s):
             return util.entry(s, width=76, lead=0) + "\n"
         def code_colour(s):
-            if "".join([x.strip() for x in s]).isdigit():
+            if "".join(x.strip() for x in s).isdigit():
                 return 135
             red = (syntax.KEYWORDS | set("+-*/=")) - {syntax.KW_PREV}
             if s.strip() in red:
@@ -65,6 +65,10 @@ def main():
             ">> ", syntax.KW_LIST, "[", "1", ", ", "2", ", ", "3", "]",
                 " # a list\n",
             "[", "1", ", ", "2", ", ", "3", "]\n",
+            ">> ", "[ [", "1", "][", "2", "], [", "3", "][", "4", "] ]",
+                " # hstack two 2-element vectors (2x1 matrices)\n",
+            "[", "1 3", "]\n",
+            "[", "2 4", "]\n",
         ]
         msg += "\n"
         msg += wrap_string("Ratlab is essentially Python with pre-loaded "

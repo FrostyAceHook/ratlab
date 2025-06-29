@@ -748,10 +748,9 @@ def Matrix(field, shape):
 
                 "conj": "cannot do complex conjugation",
 
+                "issame": "cannot check if identical",
                 "eq": "cannot do equality",
                 "lt": "cannot do ordering",
-
-                "issame": "cannot check if identical",
 
                 "hashed": "cannot hash",
 
@@ -1025,7 +1024,44 @@ def Matrix(field, shape):
     @_instconst
     def at(s):
         """
-        Submatrix of the given indices (may be a single cell).
+        Submatrix of the given indices (may be a single cell). There are two
+        modes of access: indexing and masking.
+        - Indexing
+            Performed when sets of integers are given for each axis, the set
+            product of which will be compiled into the returned matrix. The order
+            of axis access is the same as shape, and is implicitly infinite with
+            appended ':'s.
+            m.at[0, 1] # row 0, column 1, of every 2d matrix.
+            m.at[i, j, k] == m.at[i, j, k, :, :, :, ...]
+            GETTING:
+                Each axis may be a bare integer, a slice, or a sequence of
+                integers. All indices must be in bounds for their axis (except
+                slices), and repetition of indices within an axis is allowed.
+            SETTING:
+                Each axis may be a bare integer, a slice, or a sequence of
+                integers. All indices must be in bounds for their axis (except
+                slices), but repetition of indices within an axis is not allowed.
+                The rhs matrix must be shape-compatible with the accessed shape.
+                If the rhs matrix is empty, this is equivalent to ignoring all
+                given indices (note this also requires the missing indices to
+                produce a hyperrectangular shape (aka a valid matrix shape)).
+        - Masking
+            Performed when a single shape-compatible boolean matrix is given.
+            This creates a vector of the canon matrix traversal where the entry
+            is only included if the mask entry is true.
+            m.at[[True, False][False, True]] # access diag of 2x2 matrix.
+            GETTING:
+                Mask must be a shape-compatible boolean matrix. Returns the
+                vector of entries corresponding to mask trues.
+            SETTING:
+                Mask must be a shape-compatible boolean matrix. The rhs matrix
+                must be a vector of the same length as the masked access. All
+                entries in the accessed matrix which correspond to true in the
+                mask will be replaced by the corresponding element from the rhs.
+                If the rhs matrix is empty, this is equivalent to a reshaped
+                access of the inverted mask (note this also requires the inverted
+                mask to produce a hyperrectangular shape (aka a valid matrix
+                shape)).
         """
         return _At(s)
 
@@ -2337,15 +2373,16 @@ def Matrix(field, shape):
         if short and not s.isvec:
             # Shorten elements of zero to a single dot.
             def repme(x):
-                if repme.can_eq_zero and repme.eq(x, repme.zero):
+                if repme.can_dot and repme.issame(x, repme.zero):
                     return "."
                 return rep(x)
-            repme.can_eq_zero = True
+            repme.can_dot = False
             try:
-                repme.eq = s._f("eq")
+                repme.issame = s._f("issame")
                 repme.zero = s._f("zero")
+                repme.can_dot = True
             except NotImplementedError:
-                repme.can_eq_zero = False
+                pass
         else:
             repme = rep
 
