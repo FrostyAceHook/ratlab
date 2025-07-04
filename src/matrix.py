@@ -181,20 +181,23 @@ class ExampleField(Field):
 
 
 
-def _is_overridden(space, field, name):
+def _is_overridden(space, name, getter, field):
     if name not in space:
         return False
     if field is None:
         return True
     got = space[name]
     try:
-        expect = getattr(Single[field], name)
+        expect = getter(field)
     except Exception:
         return True # assume nothing but the worst.
     if type(got) is not type(expect):
         return True
     try:
-        return not expect.issame(got)
+        if isinstance(expect, Matrix):
+            return not expect.issame(got)
+        else:
+            return expect != got
     except Exception:
         return True # assume nothing but the worst.
 
@@ -255,21 +258,24 @@ def lits(field, inject=True, *, space=None):
     # Inject constants into the space.
     if space is None:
         space = _get_space()
-    for name in lits._injects:
+    for name, getter in lits._injects.items():
         # Dont wipe vars the user has set.
-        if _is_overridden(space, prev_field, name):
+        if _is_overridden(space, name, getter, prev_field):
             continue
         didset = False
         if field is not None:
             try:
-                space[name] = getattr(Single[field], name)
+                space[name] = getter(field)
                 didset = True
             except Exception:
                 pass
         if not didset:
             space.pop(name, None)
 lits._field = None
-lits._injects = ("e", "pi")
+lits._injects = {
+    "e": (lambda field: Single[field].e),
+    "pi": (lambda field: Single[field].pi),
+}
 
 
 """
@@ -4062,10 +4068,11 @@ def mvars(long=None):
     mspace = {k: v for k, v in space.items() if isinstance(v, Matrix)}
     # Dont include the "last result" variable.
     mspace.pop(KW_PREV, None)
-    for name in lits._injects:
+    # Dont include default injected vars.
+    for name, getter in lits._injects.items():
         if name not in mspace:
             continue
-        if not _is_overridden(space, lits._field, name):
+        if not _is_overridden(space, name, getter, lits._field):
             mspace.pop(name, None)
 
     if not mspace:
