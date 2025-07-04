@@ -1,5 +1,4 @@
 - "remoce two chars from points to user" bro wtf does this MEAN lmao
-- rename 's' to 'm' in matrix lmao
 - make syntax space genuinely delay required numpy import
 - make 'injects':
     ```lits._injects = {
