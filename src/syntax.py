@@ -10,13 +10,14 @@ import sys as _sys
 import traceback as _traceback
 import uuid as _uuid
 import warnings as _warnings
+from importlib import import_module as _importlib_import_module
 from importlib import abc as _importlib_abc
 from importlib.util import spec_from_file_location as _importlib_spec
 from pathlib import Path as _Path
 
 import matrix as _matrix
 from bg import bg as _bg
-from util import coloured as _coloured
+from util import coloured as _coloured, objtname as _objtname
 
 
 
@@ -255,8 +256,9 @@ class _Transformer(_ast.NodeTransformer):
         was_wrapping_lits = self.wrap_lits
 
         propagate_to = (_ast.BoolOp, _ast.NamedExpr, _ast.BinOp, _ast.UnaryOp,
-            _ast.Compare, _ast.IfExp, _ast.Constant, _ast.Attribute,
+            _ast.Compare, _ast.IfExp, _ast.Constant,
             _ast.Tuple # also requires `pierce_tuple`.
+            # _ast.Attribute, # maybe nice, but probably a little to extreme.
         )
         if not isinstance(node, propagate_to):
             self.wrap_lits = False
@@ -305,6 +307,7 @@ class _Transformer(_ast.NodeTransformer):
 
     def visit_Attribute(self, node):
         # No keywords have attributes.
+        # TODO: kwprev kinda does have attributes.
         for kw in KEYWORDS:
             if self.is_named(node.value, kw):
                 self.syntaxerrorme("cannot access attributes of Ratlab keyword "
@@ -573,16 +576,6 @@ def _pretty_print_exception(exc, callout, tb=True):
 
 
 def _execute(source, space, filename=None):
-    # Splice every "exposed" object into the space.
-    def splice_in(name, value):
-        if name not in space:
-            space[name] = value
-        if space[name] is not value:
-            raise RuntimeError(f"reserved label {repr(name)} illegally set "
-                    "within variable space")
-    for name, value in EXPOSED.items():
-        splice_in(name, value)
-
     # For console if filename is none.
     console = (filename is None)
     if console:
@@ -602,9 +595,9 @@ def _execute(source, space, filename=None):
     try:
         # Enable the rat module importer.
         with _use_rat_importer():
-            # Execute, with both locals and globals set to `space` to simulate
-            # module-level (filescope) code.
-            exec(compiled, space, space)
+            # Execute, with both locals and globals to simulate module-level
+            # (filescope) code.
+            exec(compiled, space.variables, space.variables)
     except Exception as e:
         if isinstance(e, _ExitConsoleException) and console:
             raise
@@ -614,35 +607,63 @@ def _execute(source, space, filename=None):
 
 
 
-def new_space():
-    # Grab all the default ratlab modules.
-    import matrix
-    import plot
-    # from fields.rational import Rational
-    # from fields.complex import Complex
-    # import fields.units as u
+class Space:
+    def __init__(self, initial_field=_matrix.Complex):
+        self._variables = None
+        self._initial_field = initial_field
 
-    import math # just convenient.
+    @property
+    def variables(self):
+        if not self.initialised:
+            raise RuntimeError("space is not initialised")
+        return self._variables
 
-    space = locals()
+    @property
+    def initialised(self):
+        return self._variables is not None
 
-    # Setup important parameters.
-    space["__name__"] = "__main__"
-    space["__doc__"] = None
-    space["__package__"] = None
-    space["__builtins__"] = __builtins__
+    def initialise(self):
+        if self.initialised:
+            return
 
-    # Import * from matrix and plot.
-    for module in [matrix, plot]:
-        for name, value in vars(module).items():
-            if name.startswith("_"):
+        # Make initial space important parameters.
+        variables = {
+            "__name__": "__main__",
+            # dont set __file__.
+            "__doc__": None,
+            "__package__": None,
+            "__builtins__": __builtins__,
+        }
+
+        # Grab all the default ratlab modules.
+        importme = {
+            "matrix": ("matrix", True),
+            "plot": ("plot", True),
+            "math": ("math", False),
+        }
+        modules = {name: _importlib_import_module(path)
+                   for name, (path, _) in importme.items()}
+        variables |= modules
+        for name, (_, star) in importme.items():
+            if not star:
                 continue
-            space[name] = value
+            for name, value in vars(modules[name]).items():
+                if name.startswith("_"):
+                    continue
+                variables[name] = value
 
-    # Set an initial field (modifying the `space` and not our globals).
-    exec("lits(Complex)", space, space)
+        # Set an initial field (modifying the `space` and not our globals).
+        _matrix.lits(self._initial_field, inject=True, space=variables)
 
-    return space
+        # Splice every "exposed" object into the space.
+        for name, value in EXPOSED.items():
+            if name in variables:
+                raise RuntimeError(f"? exposed {repr(name)} already set")
+            variables[name] = value
+
+        # Done.
+        self._variables = variables
+
 
 
 def run_console(space):
@@ -651,10 +672,8 @@ def run_console(space):
     interpreter. `space` should be a globals()-type dictionary of variables to
     expose (and it will be modified).
     """
-    # `last result` always starts with a value of none.
-    space[KW_PREV] = None
-    # History always starts cleared.
-    HISTORY.clear()
+    if not isinstance(space, Space):
+        raise TypeError(f"expected a Space, got {_objtname(space)}")
 
     def get_input():
         source = ""
@@ -687,10 +706,23 @@ def run_console(space):
                 break
         return source
 
+    first = True
     try:
         while True:
             source = get_input()
+
+            # Delay space init until after first input to reduce loading times.
+            if first:
+                space.initialise()
+                # `last result` always starts with a value of none.
+                space.variables[KW_PREV] = None
+                # History always starts cleared.
+                HISTORY.clear()
+
+                first = False
+
             _execute(source, space)
+
     except _ExitConsoleException:
         print(_coloured([73, 80], ["-- ", "okie leaving."]))
 
@@ -701,10 +733,15 @@ def run_file(space, path, has_next):
     Executes the file at the given path. `space` should be a globals()-type
     dictionary of variables to expose (and it will be modified).
     """
+    if not isinstance(space, Space):
+        raise TypeError(f"expected a Space, got {_objtname(space)}")
     path = _Path(path)
 
     # Start bg loading asap (nothing to wait for, unlike console).
     _bg.start()
+
+    # Initialise space asap (again, unlike console).
+    space.initialise()
 
     def esc(path):
         s = str(path)

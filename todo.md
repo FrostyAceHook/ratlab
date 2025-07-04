@@ -1,5 +1,4 @@
 - "remoce two chars from points to user" bro wtf does this MEAN lmao
-- make syntax space genuinely delay required numpy import
 - `flip` and `flipud`/`fliplr`
 - rename `rep` to `tile` and make `rep` do the numpy thing.
 - `rotate` function which does brfilters np shift
@@ -30,6 +29,7 @@
 - rename 'syntax' to 'engine'
 - add `mat` keyword where mat[] makes matrices and alternate execution method
     (-x, --bare-lists, --bare-matrices) to change what bare [] makes.
+- `ans` should be able to access attrs of it but never be set?
 - make a good readme
 - remove the concept of 'lits' and instead make rigorous promotion structure?
 - sympy integration

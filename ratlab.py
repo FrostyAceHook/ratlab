@@ -111,7 +111,7 @@ def main():
         args = ["-"]
 
     # Read and execute each input file, treating "-" as a cli.
-    space = syntax.new_space()
+    space = syntax.Space()
     for i, path in enumerate(args):
         if path.strip() == "-":
             syntax.run_console(space)
