@@ -1,3 +1,5 @@
+import cmath as _cmath
+import functools as _functools
 import inspect as _inspect
 import itertools as _itertools
 import math as _math
@@ -7,305 +9,175 @@ from util import (
     coloured as _coloured, nonctrl as _nonctrl, entry as _entry, tname as _tname,
     objtname as _objtname, iterable as _iterable, immutable as _immutable,
     templated as _templated, classconst as _classconst, instconst as _instconst,
+    maybe_unpack as _maybe_unpack, add_to as _add_to,
 )
+from bg import bg as _bg
 
 
-# Derive from to indicate it may implement field methods.
+
 class Field:
+    """
+    Base class for implementing operation over elements. Cannot do operations on
+    entire matrices, only performs for single elements of those matrices. See
+    'ExampleField' descriptions of all methods, as this class implements only the
+    mandatory methods.
+    """
 
-    # few methods have defaults, see `ExampleField` for all methods.
+    @classmethod
+    def dtype(cls):
+        return _bg.np.dtype(object)
 
-    @_classconst
-    def from_bool(cls, x):
-        return cls.one if x else cls.zero
+    @classmethod
+    def fromobj(cls, obj):
+        if isinstance(obj, bool):
+            return cls.one() if obj else cls.zero()
+        raise TypeError(f"cannot create {_tname(cls)} from {_objtname(obj)} "
+                f"(value: {obj})")
 
-    @_classconst
+    @classmethod
     def consts(cls):
         return dict()
 
-    @_classconst
-    def exposes(cls):
-        return dict()
-
-    @classmethod
-    def eq(cls, a, b):
-        return cls.issame(a, b)
-
-    @classmethod
-    def atan2(cls, y, x):
-        if "pi" not in cls.consts:
-            raise NotImplementedError("cannot represent pi")
-        pi = cls.consts["pi"]
-        two = cls.from_int(2)
-
-        if cls.lt(cls.zero, x):
-            return cls.atan(cls.div(y, x))
-        elif cls.lt(x, cls.zero):
-            if cls.lt(cls.zero, y):
-                return cls.add(cls.atan(cls.div(y, x)), pi)
-            else:
-                return cls.sub(cls.atan(cls.div(y, x)), pi)
-        elif cls.eq(x, cls.zero):
-            if cls.lt(cls.zero, y):
-                return cls.div(pi, two)
-            elif cls.lt(y, cls.zero):
-                return cls.div(cls.sub(cls.zero, pi), two)
-            elif cls.eq(y, cls.zero):
-                return cls.zero # atan(0/0)
-            else:
-                raise TypeError(f"value '{repr(y)}' could not be ordered "
-                        f"against zero ('{repr(cls.zero)}')")
-        else:
-            raise TypeError(f"value '{repr(x)}' could not be ordered against "
-                    f"zero ('{repr(cls.zero)}')")
-
-    def __repr__(s):
-        return s.rep(s, False)
 
 
 
-# Example field type, demonstrating maximum functionality. Note no internals are
-# included, only the return type is specified.
 class ExampleField(Field):
+    """
+    Example field type, demonstrating maximum functionality. Note no internals
+    are included, only the argument and return types of each method are
+    specified.
+    """
 
     @classmethod
-    def from_bool(cls, x): # bool -> cls
-        assert isinstance(x, bool)
-        return cls()
-    @classmethod
-    def from_int(cls, x): # int -> cls
-        assert isinstance(x, int)
-        return cls()
-    @classmethod
-    def from_float(cls, x): # float -> cls
-        assert isinstance(x, float)
-        return cls()
-    @classmethod
-    def from_complex(cls, x): # complex -> cls
-        assert isinstance(x, complex)
-        return cls()
-    @classmethod
-    def from_str(cls, x): # str -> cls (note this isnt atoi)
-        assert isinstance(x, str)
-        return cls()
+    def dtype(cls): # backing numpy array dtype.
+        return object
 
     @classmethod
-    def to_int(cls, a): # int(a)
-        return 0
+    def fromobj(cls, obj):
+        return ...
+
     @classmethod
-    def to_float(cls, a): # float(a)
-        return 0.0
+    def to_int(cls, a):
+        return int()
     @classmethod
-    def to_complex(cls, a): # complex(a)
-        return 0.0j
+    def to_float(cls, a):
+        return float()
+    @classmethod
+    def to_complex(cls, a):
+        return complex()
 
-    @_classconst
-    def zero(cls): # additive identity.
-        return cls(0)
-    @_classconst
-    def one(cls): # multiplicative identity.
-        return cls(1)
-
-    @_classconst
-    def consts(cls): # map of str to elements, which will be mapped into the
-                     # variable space on field selection.
-        return {"e": cls(2.71828), "pi": cls(3.14159)}
-
-    @_classconst
-    def exposes(cls): # map of str attribute names to their type. these attrs
-                      # will be exposed in the matrices.
-        cls().attr = True # "attr" must be an object property.
-        return {"attr": bool}
+    @classmethod
+    def consts(cls): # map of str to elements, all optional.
+        # The names below are all specially recognised, otherwise it may be
+        # anything.
+        return {
+            "__0__": 0, # additive identity.
+            "__1__": 0, # multiplicative identity.
+            "__i__": 1j, # imaginary unit.
+            "__e__": 2.71828, # euler's number.
+            "__pi__": 3.14159, # pi.
+        }
 
     @classmethod
     def add(cls, a, b): # a+b
-        return cls()
+        return ... # something this field can still operate on.
     @classmethod
     def sub(cls, a, b): # a-b
-        return cls()
+        return ...
+
     @classmethod
-    def absolute(cls, a): # |a|
-        return cls()
+    def abs(cls, a): # |a|
+        return ...
+    @classmethod
+    def real(cls, a): # Re(a), but dont implement if non-complex
+        return ...
+    @classmethod
+    def imag(cls, a): # Im(a), but dont implement if non-complex
+        return ...
 
     @classmethod
     def mul(cls, a, b): # a*b
-        return cls()
+        return ...
     @classmethod
     def div(cls, a, b): # a/b
-        return cls()
+        return ...
 
     @classmethod
     def power(cls, a, b): # a^b
-        return cls()
+        return ...
     @classmethod
     def root(cls, a, b): # a^(1/b)
-        return cls()
+        return ...
     @classmethod
     def log(cls, a, b): # log_a(b)
-        return cls()
+        return ...
 
     @classmethod
     def sin(cls, a): # sin(a)
-        return cls()
+        return ...
     @classmethod
     def cos(cls, a): # cos(a)
-        return cls()
+        return ...
     @classmethod
     def tan(cls, a): # tan(a)
-        return cls()
+        return ...
 
     @classmethod
     def asin(cls, a): # sin^-1(a)
-        return cls()
+        return ...
     @classmethod
     def acos(cls, a): # cos^-1(a)
-        return cls()
+        return ...
     @classmethod
     def atan(cls, a): # tan^-1(a)
-        return cls()
+        return ...
     @classmethod
     def atan2(cls, y, x): # tan^-1(y / x), but quadrant-aware.
-        return cls()
+        return ...
 
     @classmethod
     def diff(cls, y, x): # (d/dx y)
-        return cls()
+        return ...
     @classmethod
     def intt(cls, y, x): # (int y dx)
-        return cls()
+        return ...
     @classmethod
     def def_intt(cls, y, x, a, b): # (int(a..b) y dx)
-        return cls()
-
-    @classmethod
-    def conj(cls, a): # a = x+iy, conj(a) = x-iy
-        return cls()
+        return ...
 
     @classmethod
     def issame(cls, a, b): # a is identical to b, must return bool
         return True
-    # Comparisons don't necessarily have bool returns, they may also return any
-    # Field type (including this class). However, when this returned object is
-    # cast to bool, it must be true iff the original comparison is always true.
-    # Note that the return type of comparisons must be consistent across calls
-    # with different values (but eq may be different from lt).
+
     @classmethod
     def eq(cls, a, b): # a == b
-        return ...
+        return bool() # common for comparison to return bool, but again, can be
+                      # any field.
+    @classmethod
+    def neq(cls, a, b): # a != b
+        return bool()
+        # another common impl:
+        return not cls.eq(a, b)
     @classmethod
     def lt(cls, a, b): # a < b
-        return ...
+        return bool()
+    @classmethod
+    def le(cls, a, b): # a <= b
+        return bool()
+        return cls.lt(a, b) or cls.eq(a, b)
 
     @classmethod
     def hashed(cls, a): # hash(a)
-        return hash(0)
+        return hash()
 
     @classmethod
     def rep(cls, a, short): # repr(a), with short+long form.
+        assert isinstance(short, bool)
         if short:
             return "d ... j"
         return "dujjdujj"
 
 
-
-
-# Generic wrapper for any type which isnt a field, attempting to make it one.
-@_templated(parents=Field, decorators=_immutable)
-def GenericField(T):
-    if T in {tuple, list, dict, _types.FunctionType,
-            _types.BuiltinFunctionType, _types.MethodType,
-            _types.BuiltinMethodType}:
-        raise TypeError("it cannot be good if we tryna make a matrix outta "
-                f"{_tname(T)}")
-
-    @classmethod
-    def _generic(cls, x):
-        return GenericField[type(x)](x)
-
-    def __init__(self, v):
-        if not isinstance(v, T):
-            raise TypeError(f"expected {_tname(T)}, got {_objtname(v)}")
-        self.obj = v
-
-    @classmethod
-    def from_bool(cls, x):
-        return cls(T(x))
-    @classmethod
-    def from_int(cls, x):
-        return cls(T(x))
-    @classmethod
-    def from_float(cls, x):
-        return cls(T(x))
-    @classmethod
-    def from_complex(cls, x):
-        return cls(T(x))
-    @classmethod
-    def from_str(cls, x):
-        if issubclass(T, (bool, int, float)): # dont do parsing.
-            raise NotImplementedError()
-        return cls(T(x))
-
-    @classmethod
-    def to_int(cls, a):
-        return int(a.obj)
-    @classmethod
-    def to_float(cls, a):
-        return float(a.obj)
-    @classmethod
-    def to_complex(cls, a):
-        return complex(a.obj)
-
-    @_classconst
-    def zero(cls):
-        return cls(T(0))
-    @_classconst
-    def one(cls):
-        return cls(T(1))
-
-    @classmethod
-    def add(cls, a, b):
-        return cls._generic(a.obj + b.obj)
-    @classmethod
-    def sub(cls, a, b):
-        return cls._generic(a.obj - b.obj)
-    @classmethod
-    def absolute(cls, a):
-        return cls._generic(abs(a.obj))
-
-    @classmethod
-    def mul(cls, a, b):
-        return cls._generic(a.obj * b.obj)
-    @classmethod
-    def div(cls, a, b):
-        return cls._generic(a.obj / b.obj)
-
-    @classmethod
-    def power(cls, a, b):
-        return cls._generic(a.obj ** b.obj)
-    @classmethod
-    def root(cls, a, b):
-        return cls._generic(a.obj ** (T(1) / b.obj))
-
-    @classmethod
-    def eq(cls, a, b):
-        return a.obj == b.obj
-    @classmethod
-    def lt(cls, a, b):
-        return a.obj < b.obj
-
-    @classmethod
-    def hashed(cls, a):
-        return hash(a.obj)
-
-    @classmethod
-    def rep(cls, a, short):
-        if T is bool:
-            # most pythonic python ever written?
-            return ["nogh", "yeagh", "N", "Y"][a.obj + 2*short]
-        return repr(a.obj)
-
-    # templated.
-    return locals()
 
 
 
@@ -315,7 +187,10 @@ def _is_overridden(space, field, name):
     if field is None:
         return True
     got = space[name]
-    expect = getattr(Single[field], name)
+    try:
+        expect = getattr(Single[field], name)
+    except Exception:
+        return True # assume nothing but the worst.
     if type(got) is not type(expect):
         return True
     try:
@@ -332,17 +207,6 @@ def _get_field(field, xs=()):
                 raise RuntimeError("must specify a field using 'lits'")
             field = lits._field
     return field
-
-def _maybe_unpack(xs):
-    if len(xs) != 1:
-        return xs
-    x = xs[0]
-    # dont unpack all iterables lmao.
-    if isinstance(x, (Matrix, str, bytes, dict)):
-        return xs
-    if not _iterable(x):
-        return xs
-    return tuple(x)
 
 def _get_space(depth=1):
     # Get the globals of the frame `depth` calls above the caller (so depth+1
@@ -361,8 +225,17 @@ def _get_space(depth=1):
     finally:
         del frame # don leak.
 
+def _maybe_unpack_mats(xs):
+    return _maybe_unpack(xs, dont_unpack=Matrix)
 
-def lits(field, inject=True):
+def _maybe_unpack_ints(xs):
+    xs = _maybe_unpack_mats(xs)
+    if len(xs) == 1 and isinstance(xs[0], Matrix) and xs[0].isvec:
+        return tuple(xs[0].numpyvec(int))
+    return xs
+
+
+def lits(field, inject=True, *, space=None):
     """
     Sets the current/default field to the given field and injects constants such
     as 'e' and 'pi' into the globals.
@@ -380,20 +253,221 @@ def lits(field, inject=True):
     if not inject:
         return
     # Inject constants into the space.
-    space = _get_space()
+    if space is None:
+        space = _get_space()
     for name in lits._injects:
         # Dont wipe vars the user has set.
         if _is_overridden(space, prev_field, name):
             continue
-        if field is None:
+        didset = False
+        if field is not None:
+            try:
+                space[name] = getattr(Single[field], name)
+                didset = True
+            except Exception:
+                pass
+        if not didset:
             space.pop(name, None)
-            continue
-        try:
-            space[name] = getattr(Single[field], name)
-        except Exception:
-            pass
 lits._field = None
 lits._injects = ("e", "pi")
+
+
+"""
+Cheeky rant about how matrix interals will interoperate with numpy, since we have
+both different shaping logic and different memory layout expectations.
+
+Firstly, for empty the canonical shape and backing is:
+    shape = (0,)
+    npshape = (0,)
+    backing = np.array([])
+
+Now for the general case, consider a matrix shape of:
+    shape = (l0, l1, l2, ...)
+    # meaning 'l2' matrices each with 'l0' rows and 'l1' columns.
+Numpy would order that same shape as:
+    npshape = (..., l2, l0, l1)
+Aka, a 2d transpose and a reverse. So, when converting from matrix shape to array
+shape, use:
+    npshape = shape[2::-1] + shape[:2]
+This means the numpy shape is always 2d, but this actually solves another problem
+where numpy distinguishes between more cases than us:
+    npshape=(1, 2, 3)  |  shape=(2, 3)
+       npshape=(2, 3)  |  shape=(2, 3)
+Since we consider all shapes implicitly infinite, the above are equivalent. To
+ensure consistent matrix operation when using the numpy arrays, we keep it 2D.
+Note also that conversion from npshape to shape is not needed (currently :)), so
+handling this in reverse is not considered.
+Nevermind :(
+Going from a numpy shape, firstly treat 1d as column vector, secondly perform the
+inverse to-numpy permutation, thirdly discard trailing 1s.
+
+Now for the memory layout issue. Matrix expects memory to be laid out where each
+additional axis is consider blocks of the previous data, so for a 3d example:
+    [ [1 3]
+      [2 4] ]
+    [ [5 7]
+      [6 8] ]
+The in-memory flattened layout is sorted ascending. If this memory was
+interpreted as a numpy array of the converted npshape, it would look like:
+    "C"-style ordering:
+    [ [1 2]
+      [3 4] ]
+    [ [5 6]
+      [7 8] ]
+    "F"-style ordering:
+    [ [1 5]
+      [3 7] ]
+    [ [2 6]
+      [4 8] ]
+Yikes, neither are correct. Therefore, we can only pick one out of:
+    - consistent memory layout
+    - consistent data interpretation
+    # where consistent means the matrix and the backing array agree.
+Note this interpretation is irrelevant for vector shapes, so we will only
+consider non-vector matrices when deciding. The two essentially mean that:
+    For consistent memory layout:
+      - Any non-element-wise operations (like matrix multiply, .at, .along, etc.)
+        require re-ordering the backing array into data-correct, then applying
+        the numpy operation, then re-ordering to layout-correct again.
+      - .tonumpy requires a re-order.
+      - requires extra shape handling to convert from shape -> npshape ->
+        np_consistent_memory_layout_shape
+    For consistent data interpretation:
+      - Any operations defined by memory layout (like .ravel, .reshape, .etc)
+        require re-ordering the backing array into layout-correct, then applying
+        the numpy operation, then re-ordering to data-correct again.
+I'm going to pick consistent data interpretation, to prioritise operations like
+matrix multiply over operations like reshape (plus .ravel is most used for
+vectors and there's no speed penalty there).
+"""
+
+
+class Permuter:
+    """
+    Sequence of axis indices representing a new axis ordering, with implicitly
+    infinite trailing entries which are their own index (meaning no-op).
+    """
+
+    def __init__(p, *order):
+        """
+        Creates a permuter for the given axis ordering.
+        """
+        if len(order) == 1 and isinstance(order[0], Shape):
+            order = order[0]._order
+        else:
+            order = _maybe_unpack_ints(order)
+            for l in order:
+                if not isinstance(l, int):
+                    raise TypeError("dimension lengths must be ints, got "
+                            f"{_objtname(l)}")
+            if any(l < 0 for l in order):
+                raise ValueError(f"dimension lengths cannot be negative, got: "
+                        f"{order}")
+            # Check ordering is logical.
+            if len(set(order)) != len(order):
+                raise ValueError(f"cannot duplicate axes, got: {order}")
+            if order and max(order) != len(order) - 1:
+                assert max(order) > len(order) - 1
+                raise ValueError(f"missing axis for swap, axis {max(order)} is "
+                        "dangling")
+        # Trim any trailing no-ops.
+        while order and order[-1] == len(order) - 1:
+            order = order[:-1]
+        p._order = order
+    @classmethod
+    def tonumpy(cls, ndim):
+        """
+        Permutation from matrix shape of the number of dimensions to the
+        equivalent numpy shape.
+        """
+        if not isinstance(ndim, int):
+            raise TypeError("expected an integer number of dimensions, got "
+                    f"{_objtname(ndim)}")
+        if ndim < 0:
+            raise ValueError("cannot have a negative number of dimensions, "
+                    f"got: {ndim}")
+        return Permuter(tuple(range(ndim - 1, 1, -1)) + (0, 1))
+    @classmethod
+    def fromnumpy(cls, ndim):
+        """
+        Inverse permutation of 'P.tonumpy(ndim)'.
+        """
+        if not isinstance(ndim, int):
+            raise TypeError("expected an integer number of dimensions, got "
+                    f"{_objtname(ndim)}")
+        if ndim < 0:
+            raise ValueError("cannot have a negative number of dimensions, "
+                    f"got: {ndim}")
+        return Permuter.tonumpy(ndim).inv
+
+
+    def order(p, ndim):
+        """
+        Tuple of permutation for the given number of dimensions.
+        """
+        if not isinstance(ndim, int):
+            raise TypeError("expected an integer number of dimensions, got "
+                    f"{_objtname(ndim)}")
+        if ndim < 0:
+            raise ValueError("cannot have a negative number of dimensions, "
+                    f"got: {ndim}")
+        order = p._order
+        # Add ids for remaining.
+        order += tuple(range(len(order), ndim))
+        return order
+
+    @_instconst
+    def ndim(p):
+        """
+        Highest permuted axis index.
+        """
+        return len(p._order)
+
+    @_instconst
+    def inv(p):
+        """
+        Inversion of this permutation, reversing its effects.
+        """
+        inv = [None] * len(p._order)
+        for i, axis in enumerate(p._order):
+            inv[axis] = i
+        return Permuter(inv)
+
+    def __iter__(p):
+        raise TypeError("cannot iterate permuter (for the (likely) intended "
+                "behaviour iterate 'p.order(p.ndim)')")
+
+    def __len__(p):
+        raise TypeError("all permuters are implicitly infinite (for the number "
+                "of dimensions use 's.ndim')")
+
+    def __getitem__(p, i):
+        """
+        Returns the new axis for this index.
+        """
+        if not isinstance(i, int):
+            raise TypeError(f"expected integer index, got {_objtname(i)}")
+        if i >= len(p._order):
+            return i
+        return p._order[i]
+
+    def __call__(p, *seq):
+        """
+        Returns the permutation of the given sequence.
+        """
+        if len(seq) == 1 and isinstance(seq[0], (Permuter, Shape)):
+            seq = seq[0]
+            rtype = type(seq)
+            ndim = seq.ndim
+        else:
+            seq = _maybe_unpack(seq)
+            rtype = tuple
+            ndim = len(seq)
+        return rtype(seq[axis] for axis in p.order(ndim))
+
+    def __repr__(p):
+        return f"<permuter: {p._order}>"
+
 
 
 class Shape:
@@ -405,26 +479,92 @@ class Shape:
     """
 
     def __init__(s, *lens):
-        lens = _maybe_unpack(lens)
+        """
+        Creates a shape with the given axis lengths.
+        """
+        if len(lens) == 1 and isinstance(lens[0], Shape):
+            lens = lens[0]._lens
+        else:
+            lens = _maybe_unpack_ints(lens)
+            for l in lens:
+                if not isinstance(l, int):
+                    raise TypeError("dimension lengths must be ints, got "
+                            f"{_objtname(l)}")
+            if any(l < 0 for l in lens):
+                raise ValueError(f"dimension lengths cannot be negative, got: "
+                        f"{lens}")
+            # Collapse empty.
+            if _math.prod(lens) == 0:
+                lens = (0, )
+            # Trim any trailing 1s (note this collapses single to ()).
+            while lens and lens[-1] == 1:
+                lens = lens[:-1]
+        s._lens = lens
+    @_instconst
+    def tonumpy(s):
+        """
+        Equivalent numpy shape tuple.
+        """
+        # empty canonical shape is (0, )
+        if s.isempty:
+            return (0, )
+        npshape = Permuter.tonumpy(s.ndim)(s)
+        # otherwise pad to at-least 2 dimensions.
+        return tuple(npshape[i] for i in range(max(2, s.ndim)))
+    @classmethod
+    def fromnumpy(cls, npshape):
+        """
+        Equivalent shape to a numpy shape tuple.
+        """
+        if not isinstance(npshape, tuple):
+            raise TypeError("expected tuple for 'npshape', got "
+                    f"{_objtname(npshape)}")
+        if len(npshape) == 0:
+            raise ValueError("cannot have empty numpy shape")
+        for l in npshape:
+            if not isinstance(l, int):
+                raise TypeError("numpy shape elements must be ints, got "
+                        f"{_objtname(l)}")
+        if any(l < 0 for l in npshape):
+            raise ValueError(f"numpy shape elements cannot be negative, got: "
+                    f"{npshape}")
+        if npshape == (0, ):
+            return Shape.empty
+        if len(npshape) == 1:
+            npshape += (1, ) # colvec.
+        shape = Permuter.fromnumpy(len(npshape))(npshape)
+        return Shape(shape)
+
+    @classmethod
+    def sqrshape(cls, *lens):
+        """
+        Returns a shape of the given lengths. If only one length is given,
+        returns a square shape of that side-length.
+        """
+        lens = _maybe_unpack_ints(lens)
         for l in lens:
             if not isinstance(l, int):
                 raise TypeError("dimension lengths must be ints, got "
                         f"{_objtname(l)}")
         if any(l < 0 for l in lens):
-            raise ValueError(f"dimension lengths cannot be negative, got {lens}")
-        # Trim any trailing 1s (note this collapses single to ()).
-        while lens and lens[-1] == 1:
-            lens = lens[:-1]
-        # Collapse empty.
-        if _math.prod(lens) == 0:
-            lens = (0, )
-        s._lens = lens
+            raise ValueError(f"dimension lengths cannot be negative, got: "
+                    f"{lens}")
+        if len(lens) == 1:
+            lens *= 2
+        return cls(lens)
+
 
     @_classconst
     def empty(cls):
+        """
+        0x0 shape.
+        """
         return cls(0)
     @_classconst
     def single(cls):
+        """
+        1x1 shape.
+        """
         return cls()
 
     @_instconst
@@ -438,13 +578,13 @@ class Shape:
         """
         Number of dimensions. Note empty has "-1 dimensions" and single has 0.
         """
-        return -1 if not s else len(s)
+        return -1 if s.isempty else len(s._lens)
     @_instconst
     def lastaxis(s):
         """
-        Index of the last axis with non-1 length.
+        Index of the last axis with non-1 length. Returns 0 for empty and single.
         """
-        return max(0, len(s) - 1)
+        return max(0, len(s._lens) - 1)
 
     @_instconst
     def isempty(s):
@@ -484,18 +624,16 @@ class Shape:
         return s.ndim <= 2 and s[0] == s[1]
 
     def __iter__(s):
-        if not s:
-            raise ValueError("cannot iterate axes of empty")
-        return s._lens.__iter__()
+        raise TypeError("cannot iterate shape (for the (likely) intended "
+                "behaviour use 's[axis] for axis in range(s.ndim)')")
 
     def __len__(s):
-        if not s:
-            raise ValueError("cannot get length of empty")
-        return s._lens.__len__()
+        raise TypeError("all shapes are implicitly infinite (for the number of "
+                "dimensions use 's.ndim')")
 
     def __getitem__(s, axis):
         """
-        Returns the length along the given axis.
+        Returns the length of the given axis.
         """
         # Oob dimensions are implicitly 1 (unless empty, in which case 0).
         if not isinstance(axis, int):
@@ -506,9 +644,28 @@ class Shape:
             return 1 if s.size else 0
         return s._lens.__getitem__(axis)
 
+    def insert(s, axis, shape):
+        """
+        Inserts the given 'shape' at position 'axis', shifting the previous axis
+        lengths up.
+        """
+        if not isinstance(axis, int):
+            raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
+        if axis < 0:
+            raise ValueError(f"axis cannot be negative, got: {axis}")
+        if not isinstance(shape, Shape):
+            raise TypeError(f"expected a Shape shape, got {_objtname(shape)}")
+        if shape.isempty:
+            raise TypeError("cannot insert empty shape")
+        if s.isempty:
+            return s
+        newshape = list(s._lens) + [1] * (axis - len(s._lens))
+        newshape[axis:axis] = shape._lens
+        return Shape(newshape)
+
     def withaxis(s, axis, length):
         """
-        New shape with the given length along 'axis'.
+        Replaces the length of 'axis' with the given 'length'.
         """
         if not isinstance(axis, int):
             raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
@@ -520,43 +677,11 @@ class Shape:
         newshape[axis] = length
         return Shape(newshape)
 
-    def insertaxis(s, axis, length):
-        """
-        New shape with the given length inserted at 'axis'.
-        """
-        if not isinstance(axis, int):
-            raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
-        if axis < 0:
-            raise ValueError(f"axis cannot be negative, got: {axis}")
-        if s.isempty:
-            return s
-        newshape = list(s._lens) + [1] * (axis - len(s._lens))
-        newshape.insert(axis, length)
-        return Shape(newshape)
-
-    def insert(s, axis, shape):
-        """
-        New shape with the given shape inserted at 'axis'.
-        """
-        if not isinstance(axis, int):
-            raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
-        if axis < 0:
-            raise ValueError(f"axis cannot be negative, got: {axis}")
-        if not isinstance(shape, Shape):
-            raise TypeError(f"expected a Shape shape, got {_objtname(shape)}")
-        if shape.isempty:
-            raise TypeError("expected a non-empty shape to insert")
-        if s.isempty:
-            return s
-        newshape = list(s._lens) + [1] * (axis - len(s._lens))
-        newshape[axis:axis] = shape._lens
-        return Shape(newshape)
-
     def dropaxis(s, axis):
         """
-        New shape with the given axis removed, however this axis must not affect
-        the memory layout of the cells - it must be 1 for non-empty shapes and 0
-        for empty shapes.
+        Removes the given axis, shifting the later axes down. Note this axis must
+        already have length 1 or 0 (aka it must not have contributed to the
+        size).
         """
         if not isinstance(axis, int):
             raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
@@ -569,12 +694,22 @@ class Shape:
                     f"has length {s[axis]}")
         return Shape(l for i, l in enumerate(s._lens) if i != axis)
 
-
-    def __bool__(s):
-        """
-        Alias for 'not s.isempty'.
-        """
-        return not s.isempty
+    def check_broadcastable(s, o):
+        if not isinstance(o, Shape):
+            raise TypeError(f"expected a shape, got {_objtname(o)}")
+        if s.isempty and o.isempty:
+            return
+        if s.isempty:
+            raise ValueError("cannot broadcast from empty")
+        if o.isempty:
+            raise ValueError("cannot broadcast to empty")
+        for axis in range(max(o.ndim, s.ndim)):
+            if s[axis] == 1:
+                continue
+            if s[axis] != o[axis]:
+                raise ValueError(f"cannot broadcast axis {axis} with length "
+                        f"{s[axis]} to {o[axis]}, when attempting to broadcast "
+                        f"{s} to {o}")
 
     def __eq__(s, o):
         """
@@ -591,84 +726,9 @@ class Shape:
 
     def __repr__(s):
         # Pad to at-least 2d.
-        if s.ndim < 2:
-            shape = (s[0], s[1])
-        else:
-            shape = s
+        shape = (s[0], s[1]) if s.ndim < 2 else s._lens
         return "x".join(map(str, shape))
 
-    def stride(s, axis):
-        """
-        Returns the element-offset between consequentive elements along the given
-        axis, when stored in canon flattened format.
-        """
-        if s.isempty:
-            raise ValueError("cannot find stride of empty")
-        if not isinstance(axis, int):
-            raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
-        if axis < 0:
-            raise ValueError(f"axis cannot be negative, got {axis}")
-        axis = min(axis, s.ndim)
-        return _math.prod(s._lens[:axis])
-
-
-    @property
-    def indices(s):
-        """
-        Iterable of all indices for this shape. An index is a tuple of per-axis
-        offsets.
-        """
-        if s.isempty:
-            raise ValueError("cannot iterate empty")
-        slices = [range(l) for l in s]
-        revidxs = _itertools.product(*reversed(slices))
-        return (tuple(reversed(revidx)) for revidx in revidxs)
-
-    @property
-    def offsets(s):
-        """
-        Iterable of all offsets for this shape. An offset is an integer which
-        indexes a canon flattened array of this shape.
-        """
-        if s.isempty:
-            raise ValueError("cannot iterate empty")
-        return range(s.size)
-
-
-    def index(s, offset):
-        """
-        Index for the given offset.
-        """
-        if s.isempty:
-            raise ValueError("cannot index empty")
-        if not isinstance(offset, int):
-            raise TypeError(f"expected an integer offset, got "
-                    f"{_objtname(offset)}")
-        if offset < 0:
-            raise ValueError(f"offset cannot be negative, got {offset}")
-        if offset >= s.size:
-            raise IndexError(f"offset {offset} out of bounds for size "
-                    f"{s.size}")
-        return tuple(offset % s.stride(ii) for ii in range(s.ndim))
-
-    def offset(s, *ijk):
-        """
-        Offset for the given index.
-        """
-        if s.isempty:
-            raise ValueError("cannot index empty")
-        ijk = _maybe_unpack(ijk)
-        for ii, i in enumerate(ijk):
-            if not isinstance(i, int):
-                raise TypeError(f"expected an integer index, got {_objtname(i)} "
-                        f"at index {ii}")
-        oldijk = ijk
-        ijk = [i + (i < 0) * s[ii] for ii, i in enumerate(ijk)]
-        for ii, i in enumerate(ijk):
-            if i not in range(s[ii]):
-                raise IndexError(f"index {oldijk[ii]} out of bounds for axis "
-                        f"{ii} with length {s[ii]}")
-        return sum(i * s.stride(ii) for ii, i in enumerate(ijk))
 
 
 
@@ -678,7 +738,7 @@ class NO_SEED:
 NO_SEED = NO_SEED() # :(
 
 
-# Matrices.
+# Matrix.
 @_templated(decorators=_immutable)
 def Matrix(field, shape):
     """
@@ -689,114 +749,212 @@ def Matrix(field, shape):
         raise TypeError(f"expected a type for field, got {_objtname(field)}")
     if issubclass(field, Matrix):
         raise TypeError("mate a matrix of matrices? calm down")
-
-    # Special field types:
-    # - bool (able to be used for indexing and overrides the dflt behaviour of
-    #       __bool__)
-    # - string (for all matrix repr)
-    # - float/complex (numpy internals for speed) (also expose .isnan and .isinf)
-
-    # Wrap non-field classes.
-    if not issubclass(field, Field):
-        return Matrix[GenericField[field], shape]
-    # Wrap non-Shape shapes.
     if not isinstance(shape, Shape):
-        return Matrix[field, Shape(shape)]
+        raise TypeError(f"expected a shape for shape, got {_objtname(shape)}")
+
+    # Note we don't enforce `field` to actually be a Field (i.e. inherit from
+    # Field). Without inheriting from Field, we don't recognise many operations,
+    # and primarily only allow iteration/access (which may still be desirable).
+    # Note the methods will are given defaults even over non-fields:
+    # - dtype: object
+    # - consts: empty dict
+    # - hashed: forwards to `hash`
+    # - rep: forwards to `repr`
 
     @classmethod
-    def _need(cls, method, extra=""):
-        if extra:
-            extra = f" ({extra})"
-        if not hasattr(cls.field, method):
-            thing = {
-                "from_bool": "cannot cast from bool",
-                "from_int": "cannot cast from int",
-                "from_float": "cannot cast from float",
-                "from_complex": "cannot cast from complex",
-                "from_str": "cannot cast from string",
+    def _doesnthave(cls, thing):
+        isfor = {
+            "fromobj": "cannot be cast from",
 
-                "to_int": "cannot cast to int",
-                "to_float": "cannot cast to float",
-                "to_complex": "cannot cast to complex",
+            "to_int": "cannot be cast to int",
+            "to_float": "cannot be cast to float",
+            "to_complex": "cannot be cast to complex",
 
-                "zero": "no additive identity (zero)",
-                "one": "no multiplicative identity (one)",
+            "0": "has no additive identity (zero)",
+            "1": "has no multiplicative identity (one)",
+            "i": "has no imaginary unit (i)",
+            "e": "cannot represent euler's number (e)",
+            "pi": "cannot represent pi",
 
-                "consts": "no constants",
+            "add": "cannot do addition",
+            "sub": "cannot do subtraction",
 
-                "add": "cannot do addition",
-                "sub": "cannot do subtraction",
-                "absolute": "cannot do absolution",
+            "abs": "cannot do absolution",
+            "real": "cannot do complex take-real",
+            "imag": "cannot do complex take-imaginary",
 
-                "mul": "cannot do multiplication",
-                "div": "cannot do division",
+            "mul": "cannot do multiplication",
+            "div": "cannot do division",
 
-                "power": "cannot do powers",
-                "root": "cannot do roots",
-                "log": "cannot do natural lograithm",
+            "power": "cannot do powers",
+            "root": "cannot do roots",
+            "log": "cannot do natural lograithm",
 
-                "sin": "cannot do sin",
-                "cos": "cannot do cos",
-                "tan": "cannot do tan",
-                "asin": "cannot do asin",
-                "acos": "cannot do acos",
-                "atan": "cannot do atan",
+            "sin": "cannot do sin",
+            "cos": "cannot do cos",
+            "tan": "cannot do tan",
+            "asin": "cannot do asin",
+            "acos": "cannot do acos",
+            "atan": "cannot do atan",
 
-                "diff": "cannot do derivatives",
-                "intt": "cannot do integration",
-                "def_intt": "cannot do (definite) integration",
+            "diff": "cannot do derivatives",
+            "intt": "cannot do integration",
+            "def_intt": "cannot do (definite) integration",
 
-                "conj": "cannot do complex conjugation",
+            "issame": "cannot check if identical",
 
-                "issame": "cannot check if identical",
-                "eq": "cannot do equality",
-                "lt": "cannot do ordering",
+            "eq": "cannot do equality",
+            "neq": "cannot do inequality",
+            "lt": "cannot do less-than",
+            "le": "cannot do less-than-or-equal-to",
 
-                "hashed": "cannot hash",
+            "hashed": "cannot hash",
 
-                "rep": "cannot stringify",
-            }
-            msg = f"{thing[method]} over field {_tname(cls.field)}{extra}"
-            raise NotImplementedError(msg)
-
+            "rep": "cannot stringify",
+        }
+        if issubclass(cls.field, Field):
+            tname = f"field {_tname(cls.field)}"
+        else:
+            tname = f"non-field class {_tname(cls.field)}"
+        raise NotImplementedError(f"{isfor[thing]} over {tname}")
     @classmethod
-    def _f(cls, method):
+    def _need(cls, method):
+        if issubclass(cls.field, Field):
+            has = hasattr(cls.field, method)
+        else:
+            # We provide a non-field impl of rep.
+            has = (method in {"hashed", "rep"})
+        # consts and dtype are always implicit if not supplied.
+        if method in {"dtype", "consts"}:
+            has = True
+        if not has:
+            cls._doesnthave(method)
+    @classmethod
+    def _f(cls, method): # Retrives "method" from the field.
         cls._need(method)
-        return getattr(cls.field, method)
+        # some things are always defautled even tho field should impl them.
+        dflts = {
+            "dtype": (lambda: _bg.np.dtype(object)),
+            "consts": (lambda: dict()),
+        }
+        if issubclass(cls.field, Field):
+            if method in dflts:
+                return getattr(cls.field, method, dflts[method])
+            return getattr(cls.field, method)
+        else:
+            if method in dflts:
+                return dflts[method]
+            if method == "hashed":
+                return lambda a: hash(a)
+            if method == "rep":
+                return lambda a, short: repr(a)
+            assert False
 
 
-    def __init__(s, cells, _checkme=True):
-        # living on the edge.
-        if not _checkme:
-            if not isinstance(cells, tuple):
-                raise TypeError("sod off mate enable the checks")
-            s._cells = cells
-            return
 
-        # `cells` is a flattened iterable of each cell, progressing through the
-        # matrix in the order of shape (so col-major for 2d).
-        if not _iterable(cells):
-            raise TypeError(f"cells must be iterable, got {_objtname(cells)}")
-
-        # Often when a function returns from a new field, its not appropriately
-        # wrapped, but we only make this exemption for non-field types.
-        if issubclass(s.field, GenericField):
-            cells = list(cells)
-            for i in range(len(cells)):
-                if isinstance(cells[i], s.field.T):
-                    cells[i] = s.field(cells[i])
-
-        cells = tuple(cells)
-        for i, cell in enumerate(cells):
-            if not isinstance(cell, s.field):
-                raise TypeError(f"expected cells of type {_tname(s.field)}, got "
-                        f"{_objtname(cell)} (occured at index {i}, had value: "
-                        f"{repr(cell)})")
-        if len(cells) != shape.size:
-            raise TypeError(f"expected {shape.size} cells to matched flattened "
-                    f"size of {shape}, got {len(cells)}")
-
+    def __init__(s, cells=None):
+        # All cells are stored in a numpy array of the shape `s.shape.tonumpy`,
+        # with dtype `s._dtype`.
+        if not isinstance(cells, _bg.np.ndarray):
+            raise TypeError(f"expected numpy array, got {_objtname(cells)}")
+        npshape = s.shape.tonumpy
+        if cells.shape != npshape:
+            raise ValueError(f"expected {npshape} shape, got {cells.shape}")
+        dtype = s._f("dtype")()
+        if cells.dtype is not dtype:
+            raise ValueError(f"expected {dtype} dtype, got {cells.dtype}")
+        # Make it read-only.
+        cells.flags["WRITEABLE"] = False
         s._cells = cells
+
+
+    @classmethod
+    def cast(cls, *xs, broadcast=True):
+        """
+        Attempts to cast each object to a matrix over 'field', all with the same
+        size. Note that the shape of this class is ignored. If 'broadcast' is
+        false, shapes will be left unchanged.
+        """
+        xs = _maybe_unpack_mats(xs)
+        if not xs:
+            return ()
+
+        # Cast to the correct field.
+        xs = tuple(x if isinstance(x, Matrix) else single(x) for x in xs)
+        xs = tuple(x.tofield(cls.field) for x in xs)
+
+        # If no broadcasting, don't do broadcasting, so the final result won't be
+        # broadcast. Also if only one nothing to broadcast against.
+        if not broadcast or len(xs) == 1:
+            return xs
+
+        # Handle empties.
+        if all(x.isempty for x in xs):
+            return xs
+        if any(x.isempty for x in xs):
+            raise TypeError("cannot operate with a mix of empty and non-empty "
+                    "matrices")
+
+        # Broadcast all to the same (largest) shape.
+        ndim = max(x.ndim for x in xs)
+        newshape = Shape(max(x.shape[axis] for x in xs) for axis in range(ndim))
+        return tuple(x.broadcast(newshape) for x in xs)
+
+
+    @_classconst
+    def _zero(cls):
+        try:
+            return cls._f("consts")()["__0__"]
+        except Exception:
+            cls._doesnthave("0")
+    @_classconst
+    def _one(cls):
+        try:
+            return cls._f("consts")()["__1__"]
+        except Exception:
+            cls._doesnthave("1")
+    @_classconst
+    def _two(cls):
+        try:
+            return cls._f("fromobj")(2)
+        except Exception:
+            raise NotImplementedError("cannot represent 2") from e
+    @_classconst
+    def _three(cls):
+        try:
+            return cls._f("fromobj")(3)
+        except Exception:
+            raise NotImplementedError("cannot represent 3") from e
+    @_classconst
+    def _ten(cls):
+        try:
+            return cls._f("fromobj")(10)
+        except Exception:
+            raise NotImplementedError("cannot represent 10") from e
+    @_classconst
+    def _180(cls):
+        try:
+            return cls._f("fromobj")(180)
+        except Exception:
+            raise NotImplementedError("cannot represent 180") from e
+    @_classconst
+    def _e(cls):
+        try:
+            return cls._f("consts")()["__e__"]
+        except Exception:
+            cls._doesnthave("e")
+    @_classconst
+    def _pi(cls):
+        try:
+            return cls._f("consts")()["__pi__"]
+        except Exception:
+            cls._doesnthave("pi")
+    @_classconst
+    def _i(cls):
+        try:
+            return cls._f("fromobj")(1j)
+        except Exception as e:
+            cls._doesnthave("i")
 
 
     @_classconst
@@ -807,24 +965,40 @@ def Matrix(field, shape):
         if not cls.issquare:
             raise TypeError("only square matricies have an identity matrix, got "
                     f"{cls.shape}")
-        cells = [cls._f("zero")] * cls.shape.size if cls.shape else ()
-        n = cls.shape[0]
-        for i in range(n):
-            cells[i*n + i] = cls._f("one")
+        if cls.isempty:
+            return cls([])
+        if cls.issingle:
+            return cls.one
+        zero = cls._zero
+        one = cls._one
+        npshape = cls.shape.tonumpy
+        dtype = cls._f("dtype")()
+        cells = _bg.np.full(npshape, zero, dtype=dtype)
+        _bg.np.fill_diagonal(cells, one)
         return cls(cells)
     @_classconst
     def zeros(cls):
         """
         Zero-filled matrix.
         """
-        cells = (cls._f("zero"), ) * cls.shape.size if cls.shape else ()
+        if cls.isempty:
+            return cls([])
+        zero = cls._zero
+        npshape = cls.shape.tonumpy
+        dtype = cls._f("dtype")()
+        cells = _bg.np.full(npshape, zero, dtype=dtype)
         return cls(cells)
     @_classconst
     def ones(cls):
         """
         One-filled matrix.
         """
-        cells = (cls._f("one"), ) * cls.shape.size if cls.shape else ()
+        if cls.isempty:
+            return cls([])
+        one = cls._one
+        npshape = cls.shape.tonumpy
+        dtype = cls._f("dtype")()
+        cells = _bg.np.full(npshape, one, dtype=dtype)
         return cls(cells)
 
     @_classconst
@@ -832,46 +1006,31 @@ def Matrix(field, shape):
         """
         Single zero.
         """
-        return single(cls._f("zero"), field=cls.field)
+        return single(cls._zero, field=cls.field)
     @_classconst
     def one(cls):
         """
         Single one.
         """
-        return single(cls._f("one"), field=cls.field)
+        return single(cls._one, field=cls.field)
     @_classconst
     def e(cls):
         """
         Single euler's number (2.71828...).
         """
-        if "e" in cls.field.consts:
-            e = cls.field.consts["e"]
-        else:
-            cls._need("from_float", "to represent e")
-            e = cls._f("from_float")(_math.e)
-        return single(e, field=cls.field)
+        return single(cls._e, field=cls.field)
     @_classconst
     def pi(cls):
         """
         Single pi (3.14159...).
         """
-        if "pi" in cls.field.consts:
-            pi = cls.field.consts["pi"]
-        else:
-            cls._need("from_float", "to represent pi")
-            pi = cls._f("from_float")(_math.pi)
-        return single(pi, field=cls.field)
+        return single(cls._pi, field=cls.field)
     @_classconst
     def i(cls):
         """
         Single imaginary unit.
         """
-        if "i" in cls.field.consts:
-            i = cls.field.consts["i"]
-        else:
-            cls._need("from_complex", "to represent i")
-            i = cls._f("from_complex")(1j)
-        return single(i, field=cls.field)
+        return single(cls._i, field=cls.field)
 
     @_classconst
     def size(cls):
@@ -888,7 +1047,7 @@ def Matrix(field, shape):
     @_classconst
     def lastaxis(cls):
         """
-        Index of the last axis with non-1 length.
+        Index of the last axis with non-1 length. Returns 0 for empty and single.
         """
         return cls.shape.lastaxis
 
@@ -930,97 +1089,152 @@ def Matrix(field, shape):
         return cls.shape.issquare
 
 
-    @classmethod
-    def cast(cls, *xs, broadcast=True):
+    def numpyarr(s, dtype=None):
         """
-        Attempts to cast each object to a matrix over 'field', all with the same
-        size. Note that the shape of this class is ignored. If 'broadcast' is
-        false, shapes will be left unchanged.
+        Read-only numpy nd-array of the matrix, of the given 'dtype' and of the
+        shape 'm.shape.tonumpy'. If 'dtype' is none, uses the natural dtype of
+        the field (typically 'object' unless the field is numeric, note in
+        particular that integers are still 'object' to ensure python's unbounded
+        integers are used).
+        WARNING: numpy uses different shape logic to matrices, so the returned
+                 array is always at-least 2D (unless empty). To get a vector
+                 (provided 'm' is a vector), use 'm.numpyvec(dtype)'.
         """
-        xs = _maybe_unpack(xs)
-        if not xs:
-            return ()
-
-        def conv(x):
-            if isinstance(x, Matrix):
-                if cls.field != x.field:
-                    raise TypeError("cannot cast matrices to different fields, "
-                            f"got {_tname(cls.field)} and {_tname(x.field)}")
-                return x
-            convs = {bool: "from_bool", int: "from_int", float: "from_float",
-                    complex: "from_complex", str: "from_str"}
-            cell = None
-            if isinstance(x, cls.field):
-                cell = x
-            elif issubclass(cls.field, GenericField):
-                # the things i do for GenericField...
-                if isinstance(x, cls.field.T):
-                    cell = cls.field(x)
-            elif type(x) in convs.keys():
-                cell = cls._f(convs[type(x)])(x)
-            if cell is None:
-                raise TypeError(f"{_objtname(x)} cannot be cast to "
-                        f"{_tname(cls.field)}")
-            return single(cell, field=cls.field)
-        xs = [conv(x) for x in xs]
-
-        # Handle empties.
-        if all(x.isempty for x in xs):
-            return xs
-
-        # If no broadcasting, don't do broadcasting, so the final result won't be
-        # broadcasted.
-        if not broadcast:
-            return xs
-
-        if any(x.isempty for x in xs):
-            raise TypeError("cannot operate with a mix of empty and non-empty "
-                    "matrices")
-
-        ndim = max(x.ndim for x in xs)
-        shape = Shape(max(x.shape[i] for x in xs) for i in range(ndim))
-        def broadcast(x):
-            xshape = tuple(x.shape) + (1, ) * (ndim - len(x.shape))
-            if not all(a == b or a == 1 for a, b in zip(xshape, shape)):
-                raise TypeError(f"cannot broadcast {x.shape} to {shape}")
-            return x.rep(y // x for x, y in zip(xshape, shape))
-        xs = [broadcast(x) for x in xs]
-        return xs
+        if dtype is None:
+            return s._cells
+        # TODO:
+        raise TypeError("haven don it yet")
+    def numpyvec(s, dtype=None):
+        """
+        Read-only numpy 1d-array of the vector, of the given 'dtype'. If 'dtype'
+        is none, uses the natural dtype of the field (typically 'object' unless
+        the field is numeric, note in particular that integers are still 'object'
+        to ensure python's unbounded integers are used).
+        """
+        if not s.isvec:
+            raise TypeError("expected vector to convert to numpy vector, got "
+                    f"{s.shape}")
+        if dtype is None:
+            return s._cells.reshape(-1)
+        # TODO:
+        raise TypeError("haven don it yet")
 
 
-    class _At:
-        def __init__(s, matrix):
-            s._mat = matrix
-        def __getitem__(s, ijk):
-            s = s._mat
-            if not isinstance(ijk, tuple):
-                ijk = (ijk, )
-            if not ijk:
-                return empty(s.field)
-            if s.isempty:
-                raise ValueError("cannot index empty")
-            def process(i, ii):
-                if isinstance(i, slice):
-                    return list(range(*i.indices(s.shape[ii])))
-                if _iterable(i):
-                    return list(i)
-                if isinstance(i, int):
-                    return [i]
-                raise TypeError("expected an integer or slice access, got "
-                        f"{_objtname(i)} for axis {ii}")
-            ijk += (slice(None), ) * (s.ndim - len(ijk))
-            slices = [process(i, ii) for ii, i in enumerate(ijk)]
-            for axis, idxs in enumerate(slices):
-                for ii, i in enumerate(idxs):
-                    idxs[ii] += s.shape[axis] * (i < 0)
-                    if idxs[ii] not in range(s.shape[axis]):
-                        raise IndexError(f"index {i} out of bounds for axis "
-                                f"{axis} with length {s.shape[axis]}")
-            slices = slices[:s.ndim]
-            revidxs = _itertools.product(*reversed(slices))
-            cells = tuple(s._at(*reversed(revidx)) for revidx in revidxs)
-            newshape = Shape(map(len, slices))
-            return Matrix[s.field, newshape](cells, _checkme=False)
+    def tofield(s, newfield):
+        """
+        Casts all cells to the given field.
+        """
+        if not isinstance(newfield, type):
+            raise TypeError("expected a type for 'newfield', got "
+                    f"{_objtname(newfield)}")
+        if newfield is s.field:
+            return s
+        if s.isempty:
+            return empty(newfield)
+        Mat = Matrix[newfield, s.shape]
+        dtype = Mat._f("dtype")()
+        fromobj = Mat._f("fromobj")
+        fromobj = _bg.np.vectorize(fromobj, otypes=[dtype])
+        # cells = fromobj(s._cells).astype(dtype, casting="no", copy=True)
+        return Mat(fromobj(s._cells))
+
+
+    def reshape(s, *newshape):
+        """
+        Views the ravelled cells under the given 'shape'. The size of the new
+        shape must be equal to the size of the current shape (aka cannot change
+        the number of elements). Note this is distinct to 'permute', which
+        changes axis ordering and therefore alters the ravelled cells.
+        """
+        newshape = Shape(*newshape)
+        if newshape.size != s.shape.size:
+            raise ValueError("cannot change size (no. elements) when reshaping, "
+                    f"expected {s.shape.size} size, got {newshape.size}")
+        # Reshape the correctly (matrix-memory-layout) ravelled cells.
+        cells = s.ravel._cells
+        cells = cells.reshape(newshape.tonumpy)
+        return Matrix[s.field, newshape](cells)
+
+    @_instconst
+    def ravel(s):
+        """
+        Vector of cells in natural iteration order (sequential axes, which is
+        row-major), aka the flattened cells.
+        """
+        # See the rant earlier in this file about numpy interoperation, short
+        # answer is the backing array memory layout isnt what we expect so we got
+        # work to do.
+        if s.ndim < 2:
+            # If vector, it doesn't matter.
+            cells = s._cells.reshape(-1)
+        elif s.ndim == 2:
+            # If 2d, can use f-style ordering to get our memory layout.
+            cells = s._cells.ravel(order="F")
+        else:
+            # For higher dimensions, easiest way to get the memory layout we
+            # expect is to do 2d matrix transpose then read off c-style. bob the
+            # builder type shi.
+            npaxes = tuple(range(len(s._cells.ndim) - 2)) + (-1, -2)
+            cells = s._cells.transpose(npaxes).ravel(order="C")
+        return Matrix.fromnumpy(s.field, cells)
+
+    def broadcast(s, *newshape):
+        """
+        Broadcasts the matrix to a new shape. Broadcasting allows axes which
+        previously had a length of 1 to be "broadcast" to the (larger) requested
+        length by repeating along that axis. Note that for all axes in the new
+        shape, it must satisfy:
+            if current_length == 0: # (only occurs on empties)
+                assert new_length == 0
+            elif current_length == 1:
+                assert new_length > 0
+            else:
+                assert new_length == current_length
+        """
+        newshape = Shape(*newshape)
+        s.shape.check_broadcastable(newshape)
+        cells = _bg.np.broadcast_to(s._cells, newshape.tonumpy)
+        return Matrix[s.field, newshape](cells)
+
+    def dropaxis(s, axis):
+        """
+        Removes the given axis from the shape, shifting the later axes down. Note
+        this axis must already have length 1 or 0 (aka it must not have
+        contributed to the size, and so dropping it does not remove any cells).
+        """
+        return s.reshape(s.shape.dropaxis(axis))
+
+    def permute(s, *neworder):
+        """
+        Permutes the axes into the given order (like a transpose).
+        """
+        permuter = Permuter(*neworder)
+        # Empty and single are invariant under permutation.
+        if s.isempty or s.issingle:
+            return s
+        newshape = permuter(s.shape)
+        # Vector handled separately cause its easy (no data reordering).
+        if s.isvec:
+            cells = s._cells.reshape(newshape.tonumpy)
+        else:
+            cells = s._cells
+            # Gotta make the missus happy. Numpy will never implicitly add
+            # dimensions, to lets do that first.
+            ndim = max(newshape.ndim, s.ndim)
+            npshape = (1, ) * (newshape.ndim - s.ndim) + s.shape.tonumpy
+            cells = cells.reshape(npshape)
+            # Now gotta make the permutation tuple in the correct format.
+            tonp = Permuter.tonumpy(ndim)
+            fromnp = Permuter.fromnumpy(ndim)
+            nppermuter = tonp(permuter(fromnp))
+            nporder = nppermuter.order(ndim)
+            cells = cells.transpose(nporder)
+            # yay. also check it remains consistent (might have superfluous axes
+            # or something)
+            cells = cells.reshape(newshape.tonumpy)
+        return Matrix[s.field, newshape](cells)
+
+
     @_instconst
     def at(s):
         """
@@ -1028,19 +1242,16 @@ def Matrix(field, shape):
         modes of access: indexing and masking.
         - Indexing
             Performed when sets of integers are given for each axis, the set
-            product of which will be compiled into the returned matrix. The order
-            of axis access is the same as shape, and is implicitly infinite with
-            appended ':'s.
+            product of which will be used as indices to form the returned matrix.
+            The order of axis access is the same as shape, and is implicitly
+            infinite with appended ':'s.
             m.at[0, 1] # row 0, column 1, of every 2d matrix.
-            m.at[i, j, k] == m.at[i, j, k, :, :, :, ...]
+            m.at[i, j, k] == m.at[i, j, k, :, :, :, :]
             GETTING:
                 Each axis may be a bare integer, a slice, or a sequence of
                 integers. All indices must be in bounds for their axis (except
-                slices), and repetition of indices within an axis is allowed.
+                slices), and repetition of indices within an axis is not allowed.
             SETTING:
-                Each axis may be a bare integer, a slice, or a sequence of
-                integers. All indices must be in bounds for their axis (except
-                slices), but repetition of indices within an axis is not allowed.
                 The rhs matrix must be shape-compatible with the accessed shape.
                 If the rhs matrix is empty, this is equivalent to ignoring all
                 given indices (note this also requires the missing indices to
@@ -1054,35 +1265,15 @@ def Matrix(field, shape):
                 Mask must be a shape-compatible boolean matrix. Returns the
                 vector of entries corresponding to mask trues.
             SETTING:
-                Mask must be a shape-compatible boolean matrix. The rhs matrix
-                must be a vector of the same length as the masked access. All
-                entries in the accessed matrix which correspond to true in the
-                mask will be replaced by the corresponding element from the rhs.
-                If the rhs matrix is empty, this is equivalent to a reshaped
-                access of the inverted mask (note this also requires the inverted
-                mask to produce a hyperrectangular shape (aka a valid matrix
-                shape)).
+                The rhs matrix must be a vector of the same length as the masked
+                access. All entries in the accessed matrix which correspond to
+                true in the mask will be replaced by the corresponding element
+                from the rhs. If the rhs matrix is empty, this is equivalent to
+                a reshaped access of the inverted mask (note this also requires
+                the inverted mask to produce a hyperrectangular shape (aka a
+                valid matrix shape)).
         """
-        return _At(s)
-
-    def _at(s, *ijk):
-        return s._cells[s.shape.offset(ijk)]
-
-
-    def dropaxis(s, axis):
-        """
-        Removes the given axis, however this axis must already have length 1 for
-        non-empty matrices.
-        """
-        return Matrix[s.field, s.shape.dropaxis(axis)](s._cells, _checkme=False)
-
-
-    @_instconst
-    def ravel(s):
-        """
-        Vector of cells in natural iteration order (sequential axes).
-        """
-        return Matrix[s.field, (s.shape.size, )](s._cells, _checkme=False)
+        return _MatrixAt(s)
 
 
     def along(s, axis):
@@ -1098,70 +1289,35 @@ def Matrix(field, shape):
             return ()
         if axis >= s.ndim:
             return (s, )
-        def idx(j):
+        def idx(i):
             idx = [slice(None)] * s.ndim
-            idx[axis] = j
-            return tuple(idx)
-        return tuple(s.at[idx(j)] for j in range(s.shape[axis]))
-
-
-    def permute(s, *order):
-        """
-        Permutes the axes into the given order (like a transpose).
-        """
-        for axis in order:
-            if not isinstance(axis, int):
-                raise TypeError(f"expected integer axis, got {_objtname(axis)}")
-        if any(axis < 0 for axis in order):
-            raise ValueError(f"cannot have negative axes, got: {order}")
-        if len(set(order)) != len(order):
-            raise ValueError(f"cannot duplicate axes, got: {order}")
-        if max(order) != len(order) - 1:
-            raise ValueError(f"missing axis for swap, axis {max(order)} is "
-                    "dangling")
-        # Empty and single are invariant under permutation.
-        if s.isempty or s.issingle:
-            return s
-        order += tuple(range(s.ndim))[len(order):]
-        while len(order) > s.ndim and order[-1] == len(order) - 1:
-            order = order[:-1]
-        newshape = Shape(s.shape[axis] for axis in order)
-        if s.isvec:
-            # Vector has only one memory format.
-            cells = s._cells
-        else:
-            idxs = newshape.indices
-            invorder = [0] * len(order)
-            for ii, i in enumerate(order):
-                invorder[i] = ii
-            remap = lambda ri: [ri[invorder[axis]] for axis in range(s.ndim)]
-            cells = tuple(s._at(*remap(idx)) for idx in idxs)
-        return Matrix[s.field, newshape](cells, _checkme=False)
+            idx[axis] = slice(i, i + 1)
+            idx = tuple(idx)
+            return Permuter.tonumpy(s.ndim)(idx)
+        return tuple(s.at[idx(i)] for i in range(s.shape[axis]))
 
 
     def rep(s, *counts):
         """
-        Repeats this matrix the given number of times along each dimension.
+        Repeats this matrix 'counts[axis]' times for each axis.
         """
-        counts = _maybe_unpack(counts)
+        counts = _maybe_unpack_ints(counts)
         for count in counts:
             if not isinstance(count, int):
                 raise TypeError("expected an integer count, got "
                         f"{_objtname(count)}")
         if any(count < 0 for count in counts):
             raise ValueError(f"cannot have negative counts, got: {counts}")
-        mul = counts + (1, ) * (s.ndim - len(counts))
-        shp = tuple(s.shape) + (1, ) * (len(counts) - s.ndim)
-        newshape = Shape(a * b for a, b in zip(shp, mul))
-        if newshape.size == 0:
-            return Matrix[s.field, (0, )](())
-        if newshape.size == 1:
-            return s
-        cells = [0] * newshape.size
-        for new in newshape.indices:
-            old = tuple(a % b for a, b in zip(new, shp))
-            cells[newshape.offset(new)] = s._cells[s.shape.offset(old)]
-        return Matrix[s.field, newshape](tuple(cells), _checkme=False)
+        # Use shape as helper.
+        counts = Shape(counts)
+        if counts.isempty:
+            return empty(s.field)
+        # Reorder counts to the numpy ordering.
+        ndim = max(s.ndim, counts.ndim)
+        npcounts = Permuter.tonumpy(ndim)(counts)
+        npcounts = tuple(npcounts[axis] for axis in range(ndim))
+        cells = _bg.np.tile(s._cells, npcounts)
+        return Matrix.fromnumpy(s.field, cells)
 
     def rep_along(s, axis, count):
         """
@@ -1171,6 +1327,10 @@ def Matrix(field, shape):
             raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
         if axis < 0:
             raise ValueError(f"axis cannot be negative, got: {axis}")
+        if not isinstance(count, int):
+            raise TypeError(f"expected an integer count, got {_objtname(count)}")
+        if count < 0:
+            raise TypeError(f"count cannot be negative, got: {count}")
         return s.rep((1, )*axis + (count, ))
 
 
@@ -1181,85 +1341,37 @@ def Matrix(field, shape):
         if not s.isvec:
             raise TypeError(f"only vectors have bare iteration, got {s.shape} "
                     "(use .along or .ravel for matrix iterate)")
-        return (single(x, field=s.field) for x in s._cells)
+        return (single(x, field=s.field) for x in s._cells.ravel())
 
     def __getitem__(s, i):
         """
-        Vector-only cell access.
+        Vector-only cell access, supporting slices.
         """
         if not s.isvec:
             raise TypeError(f"only vectors have bare getitem, got {s.shape} "
                     "(use .at for matrix cell access)")
         if isinstance(i, int):
-            i += s.size * (i < 0)
-            if i not in range(s.size):
+            if i < -s.size or i >= s.size:
                 raise IndexError(f"index {i} out of bounds for size {s.size}")
-        elif isinstance(i, slice):
-            # all slices are valid indexers.
-            pass
-        else:
+            if i < 0:
+                i += s.size
+            i = slice(i, i + 1)
+        if not isinstance(i, slice):
             raise TypeError("expected integer or slice to index vector, got "
                     f"{_objtname(i)}")
-        xs = s._cells.__getitem__(i)
-        if not isinstance(xs, tuple):
-            xs = (xs, )
-        if not xs:
-            return empty(s.field)
-        if s.issingle:
-            newshape = Shape(len(xs))
-        else:
-            newshape = s.shape.withaxis(s.lastaxis, len(xs))
-        return Matrix[s.field, newshape](xs, _checkme=False)
+        newshape = s.shape.withaxis(s.lastaxis, len(cells))
+        cells = s._cells.ravel().__getitem__(i)
+        cells = cells.reshape(newshape.tonumpy)
+        return Matrix[s.field, newshape](cells)
 
     def __len__(s):
         """
-        Vector-only cell count.
+        Vector-only cell count, alias for 's.size'.
         """
         if not s.isvec:
             raise TypeError(f"only vectors have bare length, got {s.shape} (use "
                     ".size for matrix cell count)")
-        return len(s._cells)
-
-    def tolist(s, rtype):
-        """
-        Vector-only convert to list of 'rtype', where 'rtype' is either 'int',
-        'float', or 'complex'.
-        """
-        if not s.isvec:
-            raise TypeError(f"only vectors can convert to list, got {s.shape} "
-                    "(maybe try .ravel.tolist to get a 1d list of matrix cells)")
-        if not isinstance(rtype, type):
-            raise ValueError("expected type for 'rtype', got "
-                    f"{_objtname(rtype)}")
-        if issubclass(rtype, int):
-            func = s._f("to_int")
-        elif issubclass(rtype, float):
-            func = s._f("to_float")
-        elif issubclass(rtype, complex):
-            func = s._f("to_complex")
-        else:
-            raise ValueError("expected one of int, float, or complex for "
-                    f"'rtype', got {_tname(rtype)}")
-        return list(func(x) for x in s._cells)
-
-    @property
-    def tolist_i(s):
-        """
-        Alias for 'm.tolist(rtype=int).
-        """
-        return s.tolist(rtype=int)
-    @property
-    def tolist_f(s):
-        """
-        Alias for 'm.tolist(rtype=float).
-        """
-        return s.tolist(rtype=float)
-    @property
-    def tolist_c(s):
-        """
-        Alias for 'm.tolist(rtype=complex).
-        """
-        return s.tolist(rtype=complex)
+        return s.size
 
 
     @_instconst
@@ -1270,7 +1382,7 @@ def Matrix(field, shape):
         if s.ndim > 2:
             raise TypeError(f"only 2D matrices can use .cols, got {s.shape} "
                     "(use .along for other matrices)")
-        return s.along(0)
+        return s.along(1)
     @_instconst
     def rows(s):
         """
@@ -1279,7 +1391,7 @@ def Matrix(field, shape):
         if s.ndim > 2:
             raise TypeError(f"only 2D matrices can use .rows, got {s.shape} "
                     "(use .along for other matrices)")
-        return s.along(1)
+        return s.along(0)
     @_instconst
     def colmajor(s):
         """
@@ -1288,7 +1400,8 @@ def Matrix(field, shape):
         if s.ndim > 2:
             raise TypeError(f"only 2D matrices can use .colmajor, got {s.shape} "
                     "(use .ravel (maybe with .permute) for other matrices)")
-        return s.ravel
+        # Can speed up ravelling in 2D by using numpy's two orderings.
+        return Matrix.fromnumpy(s.field, s._cells.ravel(order="F"))
     @_instconst
     def rowmajor(s):
         """
@@ -1297,7 +1410,7 @@ def Matrix(field, shape):
         if s.ndim > 2:
             raise TypeError(f"only 2D matrices can use .rowmajor, got {s.shape} "
                     "(use .ravel (maybe with .permute) for other matrices)")
-        return s.T.ravel
+        return Matrix.fromnumpy(s.field, s._cells.ravel(order="C"))
 
 
     @_instconst
@@ -1316,6 +1429,8 @@ def Matrix(field, shape):
             raise TypeError(f"cannot invert a non-square matrix, got {s.shape}")
         if s.det == s.zero:
             raise ValueError("cannot invert a non-invertible matrix, got det=0")
+        if s.isempty:
+            return s
         aug = hstack(s, s.eye)
         aug = aug.rref
         return aug.at[:, s.shape[0]:]
@@ -1327,8 +1442,9 @@ def Matrix(field, shape):
         """
         if s.ndim > 2:
             raise TypeError(f"only 2D matrices have a diagonal, got {s.shape}")
-        cells = (s._at(i, i) for i in range(min(s.shape)))
-        return Matrix[s.field, (min(s.shape), )](cells)
+        if s.isempty or s.issingle:
+            return s
+        return Matrix.fromnumpy(s.field, s._cells.diagonal())
 
 
     @_instconst
@@ -1351,7 +1467,22 @@ def Matrix(field, shape):
     @_instconst
     def isuppertri(s):
         """
-        Is upper-triangular matrix? (square, and below diagonal is zero)
+        Is upper-triangular matrix? (square, and below main diagonal is zero)
+        """
+        if s.ndim > 2:
+            raise TypeError(f"only 2D matrices can be triangular, got {s.shape}")
+        if not s.issquare:
+            return False
+        for i in range(s.shape[0]):
+            for j in range(i + 1, s.shape[1]):
+                if s.at[i, j] != s.zero:
+                    return False
+        return True
+
+    @_instconst
+    def islowertri(s):
+        """
+        Is lower-triangular matrix? (square, and above main diagonal is zero)
         """
         if s.ndim > 2:
             raise TypeError(f"only 2D matrices can be triangular, got {s.shape}")
@@ -1364,15 +1495,6 @@ def Matrix(field, shape):
         return True
 
     @_instconst
-    def islowertri(s):
-        """
-        Is lower-triangular matrix? (square, and above diagonal is zero)
-        """
-        if s.ndim > 2:
-            raise TypeError(f"only 2D matrices can be triangular, got {s.shape}")
-        return s.T.isuppertri
-
-    @_instconst
     def isorthogonal(s):
         """
         Is orthogonal matrix? (transpose == inverse)
@@ -1383,12 +1505,14 @@ def Matrix(field, shape):
             return False
         if s.det == s.zero:
             return False
+        # TODO: make all
         return bool(s.T == s.inv)
 
     @_instconst
     def issymmetric(s):
         """
-        Is symmetric matrix? (square, and below diagonal = above diagonal)
+        Is symmetric matrix? (square, and below main diagonal = above main
+        diagonal)
         """
         if s.ndim > 2:
             raise TypeError(f"only 2D matrices can be symmetric, got {s.shape}")
@@ -1402,110 +1526,158 @@ def Matrix(field, shape):
 
 
     @classmethod
-    def _apply(cls, func, *xs, rtype=None, over_field=True):
-        # `over_field` is for a non-matrix returning func which operates directly
-        # on the field elements, not on them wrapped in a single matrix.
+    def _apply(cls, func, rfield, *xs, user=False):
+        # Expects func to be a nullary which returns the actual function which
+        # operates on field elements and returns rfield elements. if `user`,
+        # expects a return of `field, numpy array`.
 
-        # Cast me.
+        # Check me.
         if not xs:
-            return empty(cls.field if rtype is None else rtype)
+            if rfield is None:
+                rfield = cls.field
+            return empty(rfield)
+        # Cast me.
         xs = cls.cast(*xs)
-
-        # Wrap me.
-        def f(y):
-            nonlocal rtype
-            ret = func(*y)
-            if rtype is None:
-                rtype = type(ret)
-                if issubclass(rtype, Matrix):
-                    if over_field:
-                        raise TypeError("'func' cannot return a matrix")
-                    if rtype.isempty:
-                        raise TypeError("'func' cannot return an empty matrix")
-            elif not isinstance(ret, rtype):
-                raise TypeError(f"expected {_tname(rtype)} typed return from "
-                        f"'func' for consistency, got {_objtname(ret)})")
-            return ret
-
-        # Do me.
-        elts = zip(*(x._cells for x in xs))
-        rshape = xs[0].shape
-        if over_field:
-            # Eval the points now to find rtype and chuck it in a matrix.
-            cells = tuple(f(y) for y in elts)
+        # Shape me.
+        xshape = xs[0].shape
+        # Empty me (dujj).
+        if xshape.isempty:
+            if rfield is None:
+                rfield = cls.field
+            return tuple(empty(rfield) for _ in xs)
+        # Expose me (dujj).
+        xs = [x._cells for x in xs]
+        # Unwrap me (dujj).
+        func = func()
+        # Flatten me.
+        xs = [x.reshape(-1) for x in xs]
+        # Newshape me.
+        newshape = xshape
+        # First me.
+        if user:
+            ret_field, first = func(*(x[0] for x in xs))
+            if rfield is None:
+                rfield = ret_field
+            if ret_field != rfield:
+                raise TypeError("inconsistent return field, expected "
+                        f"{rfield}, got {ret_field}")
+            rshape = Shape.fromnumpy(first.shape)
+            if rshape.isempty:
+                raise TypeError("cannot return empty from applied function")
+            newshape = newshape.insert(newshape.ndim, rshape)
         else:
-            # Otherwise, need to handle the possibility of a matrix return. If a
-            # matrix is returned, they must all be the same shape and they are
-            # appended onto new axes.
-            wrapme = lambda y: (single(z, field=cls.field) for z in y)
-            cells = tuple(f(wrapme(y)) for y in elts)
-            if issubclass(rtype, Matrix):
-                # To maintain correct memory ordering we cant just concat the
-                # cells, we gotta grab the first from each, then the second, etc.
-                cells = tuple(mat._cells[off]
-                        for off in rtype.shape.offsets
-                        for mat in cells)
-                rshape = rshape.insert(rtype.ndim, rtype.shape)
-                rtype = rtype.field
-
-        if rtype is None:
-            rtype = cls.field
-        return Matrix[rtype, rshape](cells)
+            first = func(*(x[0] for x in xs))
+            if rfield is None:
+                rfield = type(first)
+        # Npshape me.
+        npshape = (xshape.size, )
+        if user:
+            npshape += rshape.tonumpy
+        # Dtype me.
+        dtype = Matrix[rfield, Shape.empty]._f("dtype")()
+        # Preallocate me.
+        cells = _bg.np.empty(npshape, dtype)
+        # Do me (dujj).
+        cells[0] = first
+        for i in range(1, npshape[0]):
+            if not user:
+                ret = func(*(x[i] for x in xs))
+            else:
+                ret_field, ret = func(*(x[i] for x in xs))
+                assert isinstance(ret, _bg.np.ndarray)
+                if ret_field != rfield:
+                    raise TypeError("inconsistent return field, expected "
+                            f"{rfield}, got {ret_field}")
+                if ret.dtype != dtype:
+                    raise TypeError("inconsistent return dtype, expected "
+                            f"{dtype}, got {ret.dtype}")
+                if ret.shape != rshape.tonumpy:
+                    raise TypeError("inconsistent return shape, expected "
+                            f"{rshape}, got {Shape.fromnumpy(ret.shape)}")
+            cells[i] = ret
+        # Dropaxes me.
+        cells = cells.reshape(newshape.tonumpy)
+        return Matrix[rfield, newshape](cells)
 
     @classmethod
-    def applyto(cls, func, *xs, rtype=None):
+    def applyto(cls, func, *xs, rfield=None):
         """
         Constructs a matrix from the results of 'func(a, b, ...)' for all zipped
-        elements in '*xs'. If 'rtype' is non-none, hints/enforces the return type
-        from 'func'. If 'func' returns a non-single matrix, the shape of the
-        return will have these elements appended into new axes.
+        elements in '*xs'. If 'func' returns a non-single matrix, the shape of
+        the return will have these elements appended into new axes. 'rfield' can
+        be used to dictate the field of the return, otherwise it will be
+        inferred.
         """
         if not callable(func):
             raise TypeError(f"expected callable 'func', got {_objtname(func)}")
-        if rtype is not None and isinstance(rtype, type):
-            raise TypeError("expected none or type for 'rtype', got "
-                    f"{_objtname(rtype)}")
-        return cls._apply(func, *xs, rtype=rtype, over_field=False)
+        if rfield is not None and not isinstance(rfield, type):
+            raise TypeError("expected type for 'rfield', got "
+                    f"{_objtname(rfield)}")
+        def wrapped(*ys):
+            # Wrap in singles.
+            ys = [single(y, field=cls.field) for y in ys]
+            ret = func(*ys)
+            # Validate me (dujj).
+            if not isinstance(ret, Matrix):
+                ret = single(ret)
+            # Unpack to field and cells.
+            return ret.field, ret._cells
+        return cls._apply(lambda: wrapped, rfield=rfield, *xs, user=True)
 
-    def apply(s, func, *os, rtype=None):
+    def apply(s, func, *os, rfield=None):
         """
-        Alias for 'M.applyto(func, s, *os, rtype=rtype)'.
+        Alias for 'M.applyto(func, s, *os, rfield=rfield)'.
         """
-        return type(s).applyto(func, s, *os, rtype=rtype)
+        return s.applyto(func, s, *os, rfield=rfield)
 
 
-    def _fold(s, func, seed=NO_SEED, axis=None, right=False, over_field=True):
-        # `over_field` is for a field returning func which operates directly
-        # on the field elements, not on them wrapped in a single matrix.
+    def _fold(s, func, axis=None, seed=NO_SEED, right=False):
+        # Expects func to be a nullary which returns the actual function which
+        # operates on field elements and returns field elements. If `axis` is
+        # none, seed must be a field element, otherwise it must be a
+        # broadcastable perpendicular matrix. func always operates on and returns
+        # field elements.
+
+        if not s.isempty:
+            func = func()
+        # otherwise shouldnt be called.
 
         if right:
-            def f(a, b):
-                return func(b, a)
+            f = lambda a, b: func(b, a)
             order = reversed
         else:
             f = func
             order = lambda x: x
 
-        if s.isempty and seed is NO_SEED:
-            raise TypeError("must specify 'seed' when folding over empty")
-
         if axis is None:
-            rawcells = order(s._cells)
-            cells = rawcells if over_field else map(single, rawcells)
-            for x in cells:
+            # Iterate through the flat cells.
+            flat = s._cells.reshape(-1)
+            for x in order(flat):
                 if seed is NO_SEED:
                     seed = x
                     continue
                 seed = f(seed, x)
-            return single(seed) if over_field else seed
+            return single(seed, field=s.field)
+
+        perpshape = s.shape.withaxis(axis, 1)
+        if seed is not NO_SEED:
+            try:
+                seed = seed.broadcast(perpshape)
+            except ValueError as e:
+                raise ValueError("cannot broadcast seed for folding along axis "
+                        f"{axis}") from e
+        # Iterate along axis.
         for x in order(s.along(axis)):
             if seed is NO_SEED:
                 seed = x
                 continue
-            seed = x._apply(f, seed, x, over_field=over_field)
+            seed = x._apply(lambda: f, s.field, seed, x)
+        if seed is NO_SEED:
+            assert s.isempty
+            return empty(s.field)
         return seed
 
-    def fold(s, func, seed=NO_SEED, axis=None, right=False):
+    def fold(s, func, axis=None, seed=NO_SEED, right=False):
         """
         Constructs a matrix from the results of sequentially evaluating 'func'
         with the running value and the next value. Looks like:
@@ -1517,7 +1689,8 @@ def Matrix(field, shape):
         the function, and it may be a matrix of the correct perpendicular size to
         seed a fold along an axis with different values for each run. If 'axis'
         is none, this folding is performed along the ravelled array, otherwise it
-        is performed along that axis in parallel.
+        is performed along that axis in parallel. If 'm' is empty, returns 'seed'
+        (which must be specified).
         """
         if not callable(func):
             raise TypeError(f"expected callable 'func', got {_objtname(func)}")
@@ -1527,7 +1700,24 @@ def Matrix(field, shape):
                         f"{_objtname(axis)}")
             if axis < 0:
                 raise ValueError(f"axis cannot be negative, got {axis}")
-        return s._fold(func, seed=seed, axis=axis, right=right, over_field=False)
+        if seed is not NO_SEED:
+            seed, = s.cast(seed, broadcast=False)
+            if axis is None:
+                if not seed.issingle:
+                    raise TypeError("expected a single for 'seed' when folding "
+                            f"over all elements, got {seed.shape}")
+                seed = seed.obj
+        def wrapped(a, b):
+            a = single(a, field=s.field)
+            b = single(b, field=s.field)
+            c = func(a, b)
+            if not isinstance(c, Matrix):
+                c = single(c, field=s.field)
+            if not c.issingle:
+                raise TypeError("expected folding function to return a "
+                        f"single, got {c.shape}")
+            return c.obj
+        return s._fold(lambda: wrapped, axis=axis, seed=seed, right=right)
 
 
     def __pos__(s):
@@ -1539,125 +1729,200 @@ def Matrix(field, shape):
         """
         Element-wise negation.
         """
-        f = lambda x: s._f("sub")(s._f("zero"), x)
-        return s._apply(f, s)
+        if s.isempty:
+            return s
+        sub = s._f("sub")
+        zero = s._zero
+        neg = lambda x: sub(zero, x)
+        return s._apply(lambda: neg, s.field, s)
     def __abs__(s):
         """
         Element-wise absolution.
         """
-        return s._apply(s._f("absolute"), s)
+        return s._apply(lambda: s._f("abs"), s.field, s)
+
+    @_instconst
+    def abs(s):
+        """
+        Alias for 'abs(s)'.
+        """
+        return s.__abs__()
+    @_instconst
+    def conj(s):
+        """
+        Element-wise complex conjugate.
+        """
+        if s.isempty:
+            return s
+        return s.real - s.i * s.imag
+    @_instconst
+    def real(s):
+        """
+        Element-wise take-real.
+        """
+        return s._apply(lambda: s._f("real"), s.field, s)
+    @_instconst
+    def imag(s):
+        """
+        Element-wise take-imaginary.
+        """
+        return s._apply(lambda: s._f("imag"), s.field, s)
+
+    @_instconst
+    def sign(s):
+        """
+        Element-wise (-1, 0, or 1) corresponding to (<0, =0, or >0).
+        """
+        if not s.issingle:
+            raise NotImplementedError("lemme whip up specialised bool first")
+        neg = bool(s <= 0)
+        pos = bool(s >= 0)
+        if neg + pos == 0:
+            raise ValueError(f"could not determine sign of: {s}")
+        return pos - neg # one of -1, 0, or 1.
 
     def __add__(s, o):
         """
         Element-wise addition.
         """
-        return s._apply(s._f("add"), s, o)
+        return s._apply(lambda: s._f("add"), s.field, s, o)
     def __radd__(s, o):
-        return s._apply(lambda a, b: s._f("add")(b, a), s, o)
+        s, o = s.cast(s, o)
+        return o.__add__(s)
     def __sub__(s, o):
         """
         Element-wise subtraction.
         """
-        return s._apply(s._f("sub"), s, o)
+        return s._apply(lambda: s._f("sub"), s.field, s, o)
     def __rsub__(s, o):
-        return s._apply(lambda a, b: s._f("sub")(b, a), s, o)
+        s, o = s.cast(s, o)
+        return o.__sub__(s)
     def __mul__(s, o):
         """
         Element-wise multiplication (use '@' for matrix multiplication).
         """
-        return s._apply(s._f("mul"), s, o)
+        return s._apply(lambda: s._f("mul"), s.field, s, o)
     def __rmul__(s, o):
-        return s._apply(lambda a, b: s._f("mul")(b, a), s, o)
+        s, o = s.cast(s, o)
+        return o.__mul__(s)
     def __truediv__(s, o):
         """
         Element-wise division.
         """
-        return s._apply(s._f("div"), s, o)
+        return s._apply(lambda: s._f("div"), s.field, s, o)
     def __rtruediv__(s, o):
-        return s._apply(lambda a, b: s._f("div")(b, a), s, o)
+        s, o = s.cast(s, o)
+        return o.__truediv__(s)
     def __pow__(s, o):
         """
         Element-wise power.
         """
-        return s._apply(s._f("power"), s, o)
+        return s._apply(lambda: s._f("power"), s.field, s, o)
     def __rpow__(s, o):
-        return s._apply(lambda a, b: s._f("power")(b, a), s, o)
+        s, o = s.cast(s, o)
+        return o.__pow__(s)
 
     @_instconst
     def sqrt(s):
         """
         Element-wise square root.
         """
-        s._need("from_int", "to represent 2")
-        two = s._f("from_int")(2)
-        return s._apply(lambda x: s._f("root")(x, two), s)
+        if s.isempty:
+            return s
+        root = s._f("root")
+        base = s._two
+        rootbase = lambda x: root(x, base)
+        return s._apply(lambda: rootbase, s.field, s)
     @_instconst
     def cbrt(s):
         """
         Element-wise cube root.
         """
-        s._need("from_int", "to represent 3")
-        three = s._f("from_int")(3)
-        return s._apply(lambda x: s._f("root")(x, three), s)
+        if s.isempty:
+            return s
+        root = s._f("root")
+        base = s._three
+        rootbase = lambda x: root(x, base)
+        return s._apply(lambda: rootbase, s.field, s)
 
     def root(s, n):
         """
         Element-wise nth root.
         """
-        return s._apply(s._f("root"), s, n)
+        return s._apply(lambda: s._f("root"), s.field, s, n)
 
     @_instconst
     def exp(s):
         """
         Element-wise natural exponential.
         """
-        base = s.e._cells[0]
-        return s._apply(lambda x: s._f("power")(base, x), s)
+        if s.isempty:
+            return s
+        power = s._f("power")
+        base = s._e
+        powbase = lambda x: power(base, x)
+        return s._apply(lambda: powbase, s.field, s)
     @_instconst
     def exp2(s):
         """
         Element-wise base-2 exponential.
         """
-        s._need("from_int", "to represent 2")
-        base = s._f("from_int")(2)
-        return s._apply(lambda x: s._f("power")(base, x), s)
+        if s.isempty:
+            return s
+        power = s._f("power")
+        base = s._two
+        powbase = lambda x: power(base, x)
+        return s._apply(lambda: powbase, s.field, s)
     @_instconst
     def exp10(s):
         """
         Element-wise base-10 exponential.
         """
-        s._need("from_int", "to represent 10")
-        base = s._f("from_int")(10)
-        return s._apply(lambda x: s._f("power")(base, x), s)
+        if s.isempty:
+            return s
+        power = s._f("power")
+        base = s._ten
+        powbase = lambda x: power(base, x)
+        return s._apply(lambda: powbase, s.field, s)
 
     @_instconst
     def ln(s):
         """
         Element-wise natural logarithm.
         """
-        base = s.e._cells[0]
-        return s._apply(lambda x: s._f("log")(base, x), s)
+        if s.isempty:
+            return s
+        log = s._f("log")
+        base = s._e
+        logbase = lambda x: log(base, x)
+        return s._apply(lambda: logbase, s.field, s)
     @_instconst
     def log2(s):
         """
         Element-wise base-2 logarithm.
         """
-        s._need("from_int", "to represent 2")
-        base = s._f("from_int")(2)
-        return s._apply(lambda x: s._f("log")(base, x), s)
+        if s.isempty:
+            return s
+        log = s._f("log")
+        base = s._two
+        logbase = lambda x: log(base, x)
+        return s._apply(lambda: logbase, s.field, s)
     @_instconst
     def log10(s):
         """
         Element-wise base-10 logarithm.
         """
-        s._need("from_int", "to represent 10")
-        base = s._f("from_int")(10)
-        return s._apply(lambda x: s._f("log")(base, x), s)
+        if s.isempty:
+            return s
+        log = s._f("log")
+        base = s._ten
+        logbase = lambda x: log(base, x)
+        return s._apply(lambda: logbase, s.field, s)
     def log(s, base):
         """
         Element-wise base-specified logarithm.
         """
-        return s._apply(lambda a, b: s._f("log")(b, a), s, base)
+        return s._apply(lambda: s._f("log"), s.field, base, s)
 
 
     @_instconst
@@ -1665,181 +1930,127 @@ def Matrix(field, shape):
         """
         Element-wise trigonometric sine.
         """
-        return s._apply(s._f("sin"), s)
+        return s._apply(lambda: s._f("sin"), s.field, s)
     @_instconst
     def cos(s):
         """
         Element-wise trigonometric cosine.
         """
-        return s._apply(s._f("cos"), s)
+        return s._apply(lambda: s._f("cos"), s.field, s)
     @_instconst
     def tan(s):
         """
         Element-wise trigonometric tangent.
         """
-        return s._apply(s._f("tan"), s)
+        return s._apply(lambda: s._f("tan"), s.field, s)
 
     @_instconst
     def asin(s):
         """
         Element-wise trigonometric inverse-sine.
         """
-        return s._apply(s._f("asin"), s)
+        return s._apply(lambda: s._f("asin"), s.field, s)
     @_instconst
     def acos(s):
         """
         Element-wise trigonometric inverse-cosine.
         """
-        return s._apply(s._f("acos"), s)
+        return s._apply(lambda: s._f("acos"), s.field, s)
     @_instconst
     def atan(s):
         """
         Element-wise trigonometric inverse-tangent.
         """
-        return s._apply(s._f("atan"), s)
+        return s._apply(lambda: s._f("atan"), s.field, s)
 
     @_instconst
     def torad(s):
         """
-        Converts degrees to radians, alias for 'm * (180/pi)'.
+        Converts degrees to radians, alias for 'm / (180/pi)'.
         """
+        if s.isempty:
+            return s
+        pi = s._pi
+        one80 = s._180
+        div = s._f("div")
         # maybe preverse largest subproducts.
-        return s / (180 / s.pi)
+        one80_pi = div(one80, pi)
+        conv = lambda x: div(x, one80_pi)
+        return s._apply(lambda: conv, s.field, s)
     @_instconst
     def todeg(s):
         """
-        Converts radians to degrees, alias for 'm * (pi/180)'.
+        Converts radians to degrees, alias for 'm * (180/pi)'.
         """
-        return s * (180 / s.pi)
+        if s.isempty:
+            return s
+        pi = s._pi
+        one80 = s._180
+        mul = s._f("mul")
+        div = s._f("div")
+        # maybe preverse largest subproducts.
+        one80_pi = div(one80, pi)
+        conv = lambda x: mul(x, one80_pi)
+        return s._apply(lambda: conv, s.field, s)
 
     @_instconst
     def sind(s):
         """
         Element-wise trigonometric sine, with input in degrees.
         """
-        return s._apply(s._f("sin"), s.torad)
+        return s.torad.sin
     @_instconst
     def cosd(s):
         """
         Element-wise trigonometric cosine, with input in degrees.
         """
-        return s._apply(s._f("cos"), s.torad)
+        return s.torad.cos
     @_instconst
     def tand(s):
         """
         Element-wise trigonometric tangent, with input in degrees.
         """
-        return s._apply(s._f("tan"), s.torad)
+        return s.torad.tan
 
     @_instconst
     def asind(s):
         """
         Element-wise trigonometric inverse-sine, with output in degrees.
         """
-        return s._apply(s._f("asin"), s).todeg
+        return s.asin.todeg
     @_instconst
     def acosd(s):
         """
         Element-wise trigonometric inverse-cosine, with output in degrees.
         """
-        return s._apply(s._f("acos"), s).todeg
+        return s.acos.todeg
     @_instconst
     def atand(s):
         """
         Element-wise trigonometric inverse-tangent, with output in degrees.
         """
-        return s._apply(s._f("atan"), s).todeg
+        return s.atan.todeg
 
 
     def diff(s, x):
         """
         Element-wise derivative with respect to 'x'.
         """
-        s, x = cls.cast(s, x)
-        return s._apply(s._f("diff"), s, x)
+        return s._apply(lambda: s._f("diff"), s.field, s, x)
 
     def intt(s, x, *bounds):
         """
         Element-wise integral with respect to 'x'. If bounds are provided,
         evaluates the definite integral.
         """
-        bounds = _maybe_unpack(bounds)
+        bounds = _maybe_unpack(bounds) # unpack mats also.
         if not bounds:
-            s, x = cls.cast(s, x)
-            return s._apply(s._f("intt"), s, x)
+            return s._apply(lambda: s._f("intt"), s.field, s, x)
         if len(bounds) != 2:
-            raise TypeError(f"must specify 0 or 2 bounds, got {len(bounds)}")
+            raise TypeError(f"must specify 0 or 2 bounds, got: {bounds}")
         lo, hi = bounds
-        s, x, lo, hi = cls.cast(s, x, lo, hi)
-        return s._apply(s._f("def_intt"), x, lo, hi)
+        return s._apply(lambda: s._f("def_intt"), s.field, s, x, lo, hi)
 
-
-    @_instconst
-    def conj(s):
-        """
-        Element-wise complex conjugate.
-        """
-        return s._apply(s._f("conj"), s)
-    @_instconst
-    def real(s):
-        """
-        Element-wise take-real.
-        """
-        if s.isempty: # avoid divving by non-empty.
-            return s
-        return (s + s.conj) / 2
-    @_instconst
-    def imag(s):
-        """
-        Element-wise take-imaginary.
-        """
-        if s.isempty:
-            return s
-        return (s - s.conj) / (2 * s.i)
-
-    @_instconst
-    def abs(s):
-        """
-        Element-wise absolution.
-        """
-        return s._apply(s._f("absolute"), s)
-    @_instconst
-    def sign(s):
-        """
-        Evaluates to the integer -1, 0, or 1 corresponding to <0, =0, and >0.
-        Throws if unable to categorise.
-        """
-        if not s.issingle:
-            raise NotImplementedError("lemme whip up specialised bool first")
-        neg = bool(s <= 0)
-        pos = bool(s >= 0)
-        if neg + pos == 0:
-            raise ValueError("could not determine sign")
-        return pos - neg # one of -1, 0, or 1.
-
-
-    def __eq__(s, o):
-        """
-        Element-wise equality (cast return to bool to determine if all pairs are
-        equal).
-        """
-        return s._apply(s._f("eq"), s, o)
-    def __ne__(s, o):
-        return s._apply(lambda a, b: not s._f("eq")(a, b), s, o)
-    def __lt__(s, o):
-        """
-        Element-wise ordering (cast return to bool to determine if all pairs are
-        ordered).
-        """
-        return s._apply(s._f("lt"), s, o)
-    def __le__(s, o):
-        f = lambda a, b: s._f("eq")(a, b) or s._f("lt")(a, b)
-        return s._apply(f, s, o)
-    def __gt__(s, o):
-        return s._apply(lambda a, b: s._f("lt")(b, a), s, o)
-    def __ge__(s, o):
-        f = lambda a, b: s._f("eq")(a, b) or s._f("lt")(b, a)
-        return s._apply(f, s, o)
 
     def issame(s, o):
         """
@@ -1847,7 +2058,26 @@ def Matrix(field, shape):
         checks for equivalent values, and may be different than identical
         values).
         """
-        return s._apply(s._f("issame"), s, o)
+        return s._apply(lambda: s._f("issame"), bool, s, o)
+
+    def __eq__(s, o):
+        """
+        Element-wise equal-to.
+        """
+        return s._apply(lambda: s._f("eq"), bool, s, o)
+    def __ne__(s, o):
+        return s._apply(lambda: s._f("neq"), bool, s, o)
+    def __lt__(s, o):
+        """
+        Element-wise less-than.
+        """
+        return s._apply(lambda: s._f("lt"), bool, s, o)
+    def __le__(s, o):
+        return s._apply(lambda: s._f("le"), bool, s, o)
+    def __gt__(s, o):
+        return s._apply(lambda: s._f("lt"), bool, o, s)
+    def __ge__(s, o):
+        return s._apply(lambda: s._f("le"), bool, o, s)
 
 
     @_instconst
@@ -1866,33 +2096,59 @@ def Matrix(field, shape):
         if s.issingle:
             return s # det(x) = x.
 
-        zero = s._f("zero")
         mul = s._f("mul")
         add = s._f("add")
         sub = s._f("sub")
 
+        # hardcode 2x2.
+        if s.shape[0] == 2:
+            a, b, c, d = cells.reshape(-1)
+            return sub(mul(a, d), mul(b, c))
+
         def submatrix(cells, size, row):
-            return [cells[i + j*size]
-                    for j in range(1, size)
-                    for i in range(size)
-                    if i != row]
+            return cells[_bg.np.arange(size) != row, 1:]
 
         def determinant(cells, size):
-            if size == 2:
-                a, c, b, d = cells
-                return sub(mul(a, d), mul(b, c))
-            det = zero
+            # base case 3x3.
+            if size == 3:
+                a, b, c, d, e, f, g, h, i = cells.reshape(-1)
+
+                ei = mul(e, i)
+                fh = mul(f, h)
+                di = mul(d, i)
+                fg = mul(f, g)
+                dh = mul(d, h)
+                eg = mul(e, g)
+                a_ei_fh = mul(a, sub(ei, fh))
+                b_di_fg = mul(b, sub(di, fg))
+                c_dh_eg = mul(c, sub(dh, eg))
+                return add(sub(a_ei_fh, b_di_fg), c_dh_eg)
+                # got an alt not a shift
+                aei = mul(mul(a, e), i)
+                bfg = mul(mul(b, f), g)
+                cdh = mul(mul(c, d), h)
+                ceg = mul(mul(c, e), g)
+                bdi = mul(mul(b, d), i)
+                afh = mul(mul(a, f), h)
+                fst = add(add(aei, bfg), cdh)
+                snd = add(add(ceg, bdi), afh)
+                return sub(fst, snd)
+
             for row in range(size):
                 subcells = submatrix(cells, size, row)
                 subsize = size - 1
                 subdet = determinant(subcells, subsize)
-                if row & 1:
-                    det = sub(det, mul(cells[row], subdet))
+                subdet = mul(subdet, cells[row, 0])
+                if row == 0:
+                    det = subdet
                 else:
-                    det = add(det, mul(cells[row], subdet))
+                    if row & 1:
+                        det = sub(det, subdet)
+                    else:
+                        det = add(det, subdet)
             return det
 
-        return single(determinant(s._cells, s.shape[0]), field=s.field)
+        return single(determinant(cells, s.shape[0]), field=s.field)
 
     @_instconst
     def trace(s):
@@ -1914,89 +2170,77 @@ def Matrix(field, shape):
             raise TypeError(f"only vectors have a magnitude, got {s.shape}")
         return (s & s).sqrt
 
-    def __and__(s, o):
+    def dot(s, o):
         """
         Vector dot product.
         """
-        o, = s.cast(o)
+        s, o = s.cast(s, o, broadcast=False)
         if not s.isvec or not o.isvec:
             raise TypeError(f"only vectors have a dot product, got {s.shape} "
                     f"and {o.shape}")
         if s.size != o.size:
             raise TypeError("only equal-length vectors have a dot product, "
                     f"got {s.shape} and {o.shape}")
-        dot = s._f("zero")
-        if not s.shape:
-            return single(dot, field=s.field)
-        mul = s._f("mul")
-        add = s._f("add")
-        for a, b in zip(s._cells, o._cells):
-            dot = add(dot, mul(a, b))
-        return single(dot, field=s.field)
-    def __rand__(s, o):
-        o, = s.cast(o)
-        return o.__and__(s)
+        # Reshape to common vector (defaulting to column).
+        newshape = s.shape if (s.shape == o.shape) else Shape(s.size)
+        s = s.reshape(newshape)
+        o = o.reshape(newshape)
+        # Elementwise product then sum.
+        return (s * o).summ
 
-    def __or__(s, o):
+    def cross(s, o):
         """
         3-element vector cross product.
         """
-        o, = s.cast(o)
+        s, o = s.cast(s, o, broadcast=False)
         if not s.isvec or not o.isvec:
             raise TypeError(f"only vectors have a cross product, got {s.shape} "
                     f"and {o.shape}")
         if s.size != 3 or o.size != 3:
             raise TypeError("only 3-element vectors have a cross product, got "
                     f"{s.shape} and {o.shape}")
-        ax, ay, az = s._cells
-        bx, by, bz = o._cells
+        # Use crossproduct formula.
+        ax, ay, az = s._cells.reshape(-1)
+        bx, by, bz = o._cells.reshape(-1)
         mul = s._f("mul")
         sub = s._f("sub")
-        cells = (
-            sub(mul(ay, bz), mul(az, by)),
-            sub(mul(az, bx), mul(ax, bz)),
-            sub(mul(ax, by), mul(ay, bx)),
-        )
+        cells = _bg.np.array([
+                sub(mul(ay, bz), mul(az, by)),
+                sub(mul(az, bx), mul(ax, bz)),
+                sub(mul(ax, by), mul(ay, bx)),
+            ], dtype=s._f("dtype")())
         # If both vectors are the same shape, keep it. Otherwise use colvec.
-        if s.shape == o.shape:
-            newshape = s.shape
-        else:
-            newshape = (3, )
+        newshape = s.shape if (s.shape == o.shape) else Shape(3)
+        cells = cells.reshape(newshape.tonumpy)
         return Matrix[s.field, newshape](cells)
-    def __ror__(s, o):
-        o, = s.cast(o)
-        return o.__or__(s)
 
     def __matmul__(s, o):
         """
         Matrix multiplication.
         """
+        s, o = s.cast(s, o, broadcast=False)
         if s.ndim > 2 or o.ndim > 2:
             raise TypeError(f"only 2D matrices have matrix multiplication, got "
                     f"{s.shape} and {o.shape}")
-        o, = s.cast(o)
         if s.shape[1] != o.shape[0]:
             raise TypeError("need equal inner dimension lengths for matrix "
                     f"multiplication, got {s.shape} @ {o.shape}")
         newshape = Shape(s.shape[0], o.shape[1])
-        if not newshape:
+        if newshape.isempty:
             return empty(s.field)
         mul = s._f("mul")
         add = s._f("add")
-        cells = [s._f("zero")] * newshape.size
+        cells = s.zeros._cells.copy()
         # blazingly fast new matrix multiplication algorithm scientists are
         # dubbing the "naive method" (i think it means really smart).
         for i in range(s.shape[0]):
             for j in range(o.shape[1]):
-                r_off = newshape.offset(i, j)
                 for k in range(s.shape[1]):
-                    s_off = s.shape.offset(i, k)
-                    o_off = o.shape.offset(k, j)
-                    prod = mul(s._cells[s_off], o._cells[o_off])
-                    cells[r_off] = add(cells[r_off], prod)
+                    prod = mul(s._cells[i, k], o._cells[k, j])
+                    cells[i, j] = add(cells[i, j], prod)
         return Matrix[s.field, newshape](cells)
     def __rmatmul__(s, o):
-        o, = s.cast(o)
+        s, o = s.cast(s, o, broadcast=False)
         return o.__matmul__(s)
 
     def __xor__(s, exp):
@@ -2036,32 +2280,37 @@ def Matrix(field, shape):
         if s.ndim > 2:
             raise TypeError(f"only 2D matrices can be rrefed, got {s.shape}")
 
-        eqz = lambda x: s._f("eq")(x, s._f("zero"))
-        eqo = lambda x: s._f("eq")(x, s._f("one"))
-        add = lambda a, b: s._f("add")(a, b)
-        mul = lambda a, b: s._f("mul")(a, b)
-        neg = lambda x: s._f("sub")(s._f("zero"), x)
-        rec = lambda x: s._f("div")(s._f("one"), x)
+        if s.isempty:
+            return s
 
-        cells = list(s._cells)
+        zero = s._zero
+        one = s._one
+        add = s._f("add")
+        sub = s._f("sub")
+        mul = s._f("mul")
+        div = s._f("div")
+        eq = s._f("eq")
+        neq = s._f("neq")
+        eqz = lambda x: eq(zero, x)
+        eqo = lambda x: eq(one, x)
+        neqz = lambda x: neq(zero, x)
+        neqo = lambda x: neq(one, x)
+        neg = lambda a: sub(zero, a)
+        rec = lambda a: div(one, a)
+
+        cells = s._cells.copy()
         rows, cols = s.shape[0], s.shape[1]
 
-        def row_swap(row1, row2):
-            for j in range(cols):
-                k1 = row1 + j * rows
-                k2 = row2 + j * rows
-                cells[k1], cells[k2] = cells[k2], cells[k1]
+        def row_swap(i1, i2):
+            cells[i1, :], cells[i2, :] = cells[i2, :], cells[i1, :]
 
-        def row_mul(row, by):
+        def row_mul(i, by):
             for j in range(cols):
-                idx = row + j * rows
-                cells[idx] = mul(by, cells[idx])
+                cells[i, j] = mul(cells[i, j], by)
 
-        def row_add(src, dst, by):
-            for i in range(cols):
-                src_k = src + i * rows
-                dst_k = dst + i * rows
-                cells[dst_k] = add(cells[dst_k], mul(by, cells[src_k]))
+        def row_add(dst, src, by):
+            for j in range(cols):
+                cells[dst, j] = add(cells[dst, j], mul(cells[src, j], by))
 
         lead = 0
         for r in range(rows):
@@ -2069,7 +2318,7 @@ def Matrix(field, shape):
                 break
 
             i = r
-            while eqz(cells[i + lead * rows]):
+            while eqz(cells[i, lead]):
                 i += 1
                 if i == rows:
                     i = r
@@ -2080,29 +2329,38 @@ def Matrix(field, shape):
                 break
             row_swap(i, r)
 
-            idx = r + lead * rows
-            pivot_value = cells[idx]
-            if not eqz(pivot_value):
+            pivot_value = cells[r, lead]
+            if neqz(pivot_value):
                 row_mul(r, rec(pivot_value))
             # Check its 1.
-            pivot_value = cells[idx]
-            if not eqo(pivot_value):
+            pivot_value = cells[r, lead]
+            if neqo(pivot_value):
                 raise ValueError(f"couldn't make cell =1, cell is: "
                         f"{repr(pivot_value)}")
 
             for i in range(rows):
-                if i != r:
-                    idx = i + lead * rows
-                    row_lead_value = cells[idx]
-                    if not eqz(row_lead_value):
-                        row_add(r, i, neg(row_lead_value))
-                    # Check its 0.
-                    row_lead_value = cells[idx]
-                    if not eqz(row_lead_value):
-                        raise ValueError("couldn't make cell =0, cell is: "
-                                f"{repr(row_lead_value)}")
+                if i == r:
+                    continue
+                row_lead_value = cells[i, lead]
+                if neqz(row_lead_value):
+                    row_add(i, r, neg(row_lead_value))
+                # Check its 0.
+                row_lead_value = cells[i, lead]
+                if neqz(row_lead_value):
+                    raise ValueError("couldn't make cell =0, cell is: "
+                            f"{repr(row_lead_value)}")
 
             lead += 1
+
+        # Cheeky collapse to exactly zero or one, to remove imprecision.
+        @_bg.np.vectorize(otypes=[s._f("dtype")()])
+        def collapse(x):
+            if eqz(x):
+                return zero
+            if eqo(x):
+                return one
+            return x
+        cells = collapse(cells)
 
         return Matrix[s.field, s.shape](cells)
 
@@ -2111,10 +2369,16 @@ def Matrix(field, shape):
         """
         Tuple of RREF pivot column indices.
         """
-        rref = s.rref
-        return tuple(i for i, c in enumerate(rref.cols)
-                if 1 == sum(not s._f("eq")(x, s._f("zero")) for x in c)
-                and 1 == sum(not s._f("eq")(x, s._f("one")) for x in c))
+        if s.isempty:
+            return ()
+        sys = s.rref
+        zero = s._zero
+        one = s._one
+        eq = s._f("eq")
+        neq = s._f("neq")
+        return tuple(i for i, c in enumerate(sys.cols)
+                     if 1 == sum(neq(zero, x) for x in c)
+                     and 1 == sum(eq(one, x) for x in c))
 
     @_instconst
     def nonpivots(s):
@@ -2136,9 +2400,13 @@ def Matrix(field, shape):
         """
         Tuple of basis vectors for row space.
         """
+        if s.isempty:
+            return ()
         sys = s.rref
+        zero = s._zero
+        neq = s._f("neq")
         nonzeros = (i for i, r in enumerate(sys.rows)
-                    if any(s._f("eq")(x, s._f("zero")) for x in r))
+                    if any(neq(zero, x) for x in r))
         return tuple(sys.rows[i].T for i in nonzeros)
 
     @_instconst
@@ -2147,20 +2415,28 @@ def Matrix(field, shape):
         Tuple of basis vectors for null space.
         """
         sys = s.rref # implied zero-vec augment.
+        zero = s._zero
+        one = s._one
+        eq = s._f("eq")
+        sub = s._f("sub")
+        neg = lambda a: sub(zero, a)
         def find_first_one(xs):
             for i, x in enumerate(xs):
-                if s._f("eq")(x, s._f("one")):
+                if eq(one, x):
                     return i
             return None
-        pivotat = tuple(find_first_one(sys.rows[i]) for i in range(s.shape[0]))
-        basis = [[s._f("zero")]*s.shape[1] for _ in sys.nonpivots]
-        for n, j in enumerate(sys.nonpivots):
+        pivotat = tuple(find_first_one(row) for row in sys.rows)
+        nonpivots = sys.nonpivots
+        Col = Matrix[s.field, Shape(s.shape[1])]
+        zeros = Col.zeros._cells
+        basis = [zeros.copy() for _ in nonpivots]
+        for n, j in enumerate(nonpivots):
             for i in range(s.shape[0]):
                 if pivotat[i] is None or pivotat[i] > j:
-                    basis[n][j] = 1
+                    basis[n][j] = one
                     break
-                basis[n][pivotat[i]] = -sys.at[i, j]
-        return tuple(Matrix[s.field, (s.shape[1], )](x) for x in basis)
+                basis[n][pivotat[i]] = neg(sys._cells[i, j])
+        return tuple(Col(x) for x in basis)
 
 
 
@@ -2175,7 +2451,9 @@ def Matrix(field, shape):
         Additive sum of the values along the given axis. If 'axis' is none,
         returns the sum over all elements.
         """
-        return s._fold(s._f("add"), s._f("zero"), axis=axis)
+        if s.isempty:
+            return s.zero if axis is None else s
+        return s._fold(lambda: s._f("add"), axis)
 
     @_instconst
     def prod(s):
@@ -2188,7 +2466,9 @@ def Matrix(field, shape):
         Multiplicative product of the values along the given axis. If 'axis' is
         none, returns the product over all elements.
         """
-        return s._fold(s._f("mul"), s._f("one"), axis=axis)
+        if s.isempty:
+            return s.one if axis is None else s
+        return s._fold(lambda: s._f("mul"), axis)
 
     @_instconst
     def minn(s):
@@ -2205,7 +2485,8 @@ def Matrix(field, shape):
         if s.isempty:
             raise TypeError("cannot find minimum of empty")
         lt = s._f("lt")
-        return s._fold(lambda a, b: b if lt(b, a) else a, axis=axis)
+        take = lambda a, b: b if lt(b, a) else a
+        return s._fold(lambda: take, axis)
 
     @_instconst
     def maxx(s):
@@ -2222,7 +2503,8 @@ def Matrix(field, shape):
         if s.isempty:
             raise TypeError("cannot find maximum of empty")
         lt = s._f("lt")
-        return s._fold(lambda a, b: b if lt(a, b) else a, axis=axis)
+        take = lambda a, b: b if lt(a, b) else a
+        return s._fold(lambda: take, axis)
 
     @_instconst
     def mean(s):
@@ -2309,13 +2591,16 @@ def Matrix(field, shape):
         if not s.issingle:
             raise TypeError("expected single for scalar cast to object, got "
                     f"{s.shape}")
-        return s._cells[0]
+        return s._cells[0, 0]
 
     def __bool__(s):
         """
-        Cast to bool, returning true iff all elements are non-zero.
+        Cast a single to bool, returning true iff the element is non-zero.
         """
-        return not any(s._f("eq")(x, s._f("zero")) for x in s._cells)
+        if not s.issingle:
+            raise TypeError("expected single for scalar cast to bool, got "
+                    f"{s.shape}")
+        return s._f("neq")(s._zero, s.obj)
     def __int__(s):
         """
         Cast a single to int.
@@ -2323,11 +2608,7 @@ def Matrix(field, shape):
         if not s.issingle:
             raise TypeError("expected single for scalar cast to int, got "
                     f"{s.shape}")
-        x = s._f("to_int")(s._cells[0])
-        if not isinstance(x, int):
-            raise TypeError("expected 'to_int' to return an int, got "
-                    f"{_objtname(x)}")
-        return x
+        return s._f("to_int")(s.obj)
     def __float__(s):
         """
         Cast a single to float.
@@ -2335,11 +2616,7 @@ def Matrix(field, shape):
         if not s.issingle:
             raise TypeError("expected single for scalar cast to float, got "
                     f"{s.shape}")
-        x = s._f("to_float")(s._cells[0])
-        if not isinstance(x, float):
-            raise TypeError("expected 'to_float' to return a float, got "
-                    f"{_objtname(x)}")
-        return x
+        return s._f("to_float")(s.obj)
     def __complex__(s):
         """
         Cast a single to complex.
@@ -2347,16 +2624,12 @@ def Matrix(field, shape):
         if not s.issingle:
             raise TypeError("expected single for scalar cast to complex, got "
                     f"{s.shape}")
-        x = s._f("to_complex")(s._cells[0])
-        if not isinstance(x, complex):
-            raise TypeError("expected 'to_complex' to return a complex, got "
-                    f"{_objtname(x)}")
-        return x
+        return s._f("to_complex")(s.obj)
 
     def __hash__(s):
         return hash((s.shape, ) + tuple(s._f("hashed")(x) for x in s._cells))
 
-    def __repr__(s, short=None):
+    def __repr__(s, short=None, multiline=True):
         if short is None:
             short = doesdflt2short()
         short = not not short
@@ -2368,7 +2641,7 @@ def Matrix(field, shape):
         rep = lambda x: rep_(x, short)
 
         if s.issingle:
-            return rep(s._cells[0])
+            return rep(s.obj)
 
         if short and not s.isvec:
             # Shorten elements of zero to a single dot.
@@ -2379,74 +2652,576 @@ def Matrix(field, shape):
             repme.can_dot = False
             try:
                 repme.issame = s._f("issame")
-                repme.zero = s._f("zero")
+                repme.zero = s._zero
                 repme.can_dot = True
-            except NotImplementedError:
+            except Exception:
                 pass
         else:
             repme = rep
 
         # cheeky matrix of the reps to make access easy.
-        reps = Matrix[GenericField[str], s.shape](repme(x) for x in s._cells)
-        width = max(len(_nonctrl(r.obj)) for r in reps._cells)
-        return reps._repr_str(short, width, s.lastaxis, allow_flat=True)
+        reps = s._apply(lambda: repme, str, s)
+        lens = reps._apply(lambda: len, int, reps)
+        width = int(lens.maxx)
+        return reps._repr_str(short, width, s.lastaxis, allow_flat=True,
+                multiline=multiline)
 
-    def _repr_str(s, short, width, axis, allow_flat=False):
-        # this method is a helper, and is only defined for matrices over the
-        # GenericField[str].
-
+    def _repr_str(s, short, width, axis, multiline, allow_flat=False):
+        # this method is a helper, and is only defined for matrices over str.
+        newline = "\n" if multiline else ""
         if axis > 1:
-            along = s.along(axis)
-            layers = [x._repr_str(short, width, axis - 1) for x in along]
-            def encapsulate(r):
-                r = r.split("\n")
-                s = r[0] + "".join(f"\n  {line}" for line in r[1:])
+            def tostr(x):
+                x = x._repr_str(short, width, axis - 1, multiline)
+                x = x.split("\n")
+                s = x[0] + "".join(f"\n  {line}" for line in x[1:])
                 return "[ " + s + " ]"
-            layers = (encapsulate(r) for r in layers)
-            return "\n".join(layers)
-
+            return newline.join(tostr(x) for x in s.along(axis))
         # 2d print.
-
         # Print col vecs as rows with marked transpose, if allowed.
         suffix = ""
-        height = s.shape[0]
+        cells = s._cells
         if allow_flat and s.iscol:
             suffix = _coloured(40, "ᵀ")
-            height = s.shape[1]
-        cols = []
-        for i, r in enumerate(s._cells):
-            if not i % height:
-                cols.append([])
-            cell = " " * (width - len(_nonctrl(r.obj))) + r.obj
-            cols[-1].append(cell)
-        rows = list(zip(*cols))
+            cells = cells.T
+        def rowstr(row):
+            return [" " * (width - len(_nonctrl(r))) + r for r in row]
+        rows = [rowstr(row) for row in cells]
         padded = (not short) or (width > 3)
         join = lambda x: "  ".join(x) if padded else " ".join(x)
         wrap = lambda x: f"[ {x} ]" if padded else f"[{x}]"
         str_rows = (wrap(join(row)) for row in rows)
-        return "\n".join(str_rows) + suffix
-    if field is not GenericField[str]:
+        return newline.join(str_rows) + suffix
+    if field is not str:
         del _repr_str
 
 
     # not an actual class, gotta fulfill the templated promises.
-    ret = locals()
-
-    # Add the methods which expose the attributes the field says to.
-    for attr, rtype in field.exposes.items():
-        def getter(s, attr=attr, rtype=rtype): # capture current attr and rtype.
-            cells = (getattr(x, attr) for x in s._cells)
-            return Matrix[rtype, s.shape](cells)
-        getter = _instconst(getter)
-        getter.__name__ = attr
-        getter.__doc__ = getattr(field, attr).__doc__
-        ret[attr] = getter
-
-    # Done.
-    return ret
+    return locals()
 
 
-Matrix.namer = lambda F, s: f"{s} Matrix[{_tname(F, quoted=False)}]"
+class _MatrixAt:
+    def __init__(self, matrix):
+        self._matrix = matrix
+    def _indexfor(self, axis, i):
+        length = self._matrix.shape[axis]
+        if isinstance(i, slice):
+            return i
+        if isinstance(i, int):
+            if i < -length or i >= length:
+                raise IndexError(f"index {i} out of bounds for axis {axis} with "
+                        f"length {length}")
+            if i < 0:
+                i += length
+            return slice(i, i + 1)
+        if isinstance(i, Matrix):
+            i = i.numpyvec(int)
+        elif _iterable(i):
+            i = list(i)
+        if isinstance(i, list):
+            i = _bg.np.array(i, dtype=object)
+            if i.shape != (len(i), ):
+                raise TypeError(f"expected a 1d sequence to index axis {axis}, "
+                        f"got shape: {i.shape}")
+            for j in i:
+                if not isinstance(j, int):
+                    raise TypeError("expected a sequence of integers to index "
+                            f"axis {axis}, got {_objtname(j)}")
+        if not isinstance(i, _bg.np.ndarray):
+            raise TypeError("expected a bare integer, slice, mask, or a "
+                    f"sequence of integers to index, got {_objtname(i)} for "
+                    f"axis {axis}")
+        if (i < -length).any() or (i >= length).any():
+            oob = (i < -length) | (i >= length)
+            raise IndexError(f"axis {axis} with length {length} recieved out of "
+                    f"bounds indices: {list(i[oob])}")
+        i[i < 0] += length
+        return i
+    def _indices(self, ijk):
+        s = self._matrix
+        if s.isempty:
+            raise TypeError("cannot index empty matrix")
+        if not isinstance(ijk, tuple):
+            ijk = (ijk, )
+        if not ijk:
+            raise TypeError("must specify indices")
+        return tuple(self._indexfor(axis, i) for axis, i in enumerate(ijk))
+
+    def __getitem__(self, ijk):
+        # TODO:
+        # raise NotImplementedError("haven don eit")
+        ijk = self._indices(ijk)
+        m = self._matrix
+        return Matrix.fromnumpy(m.field, m._cells[ijk])
+    def __setitem__(self, ijk, rhs):
+        # TODO:
+        raise NotImplementedError("haven don eit")
+
+
+@Matrix.screener
+def _matrix_screen(params):
+    if len(params) == 0:
+        raise TypeError("missing 1st argument 'field'")
+    if len(params) == 1:
+        raise TypeError("missing 2nd argument 'shape'")
+    if len(params) > 2:
+        raise TypeError("got extra arguments, only accepts 'field' and 'shape'")
+    return params
+@Matrix.screener
+def _matrix_screen_shape(params):
+    field, shape = params
+    if not isinstance(shape, Shape):
+        return field, Shape(*shape)
+    return params
+
+# Make a creator from a numpy array.
+@_add_to(Matrix, name="fromnumpy")
+def _matrix_fromnumpy(field, arr):
+    """
+    Creates a matrix over the given field from the given numpy array.
+    """
+    shape = Shape.fromnumpy(arr.shape)
+    arr = arr.reshape(shape.tonumpy)
+    return Matrix[field, shape](arr)
+
+
+
+
+class Integer(Field):
+    @classmethod
+    def fromobj(cls, x):
+        if isinstance(x, int):
+            return x.__int__()
+        if isinstance(x, float):
+            if not x.is_integer():
+                raise ValueError(f"cannot cast non-integer to int, got: {x}")
+            return x.__int__()
+        if isinstance(x, complex):
+            if not (x.imag == 0.0):
+                raise TypeError(f"cannot cast complex to int, got: {x}")
+            if not x.real.is_integer():
+                raise ValueError(f"cannot cast non-integer to int, got: {x}")
+            return x.real.__int__()
+
+        if hasattr(x, "__int__"):
+            return x.__int__()
+        return super().fromobj(x)
+
+    @classmethod
+    def to_int(cls, a):
+        return a.__int__()
+    @classmethod
+    def to_float(cls, a):
+        return a.__float__()
+    @classmethod
+    def to_complex(cls, a):
+        return complex(a.__float__())
+
+    @classmethod
+    def consts(cls):
+        return super().consts() | {
+            "__0__": 0,
+            "__1__": 1,
+        }
+
+    @classmethod
+    def add(cls, a, b):
+        return a + b
+    @classmethod
+    def sub(cls, a, b):
+        return a - b
+
+    @classmethod
+    def abs(cls, a):
+        return abs(a)
+
+    @classmethod
+    def mul(cls, a, b):
+        return a * b
+    @classmethod
+    def div(cls, a, b):
+        rem = (a % b)
+        if rem:
+            raise TypeError(f"expected integer division result over Integer, "
+                    f"this ain't: ({a}) / ({b})")
+        return a // b
+
+    @classmethod
+    def power(cls, a, b):
+        return a ** b
+    @classmethod
+    def root(cls, a, b):
+        raise NotImplementedError("iroot")
+    @classmethod
+    def log(cls, a, b):
+        raise NotImplementedError("ilog")
+
+    @classmethod
+    def issame(cls, a, b):
+        return a == b
+    @classmethod
+    def eq(cls, a, b):
+        return a == b
+    @classmethod
+    def neq(cls, a, b):
+        return a != b
+    @classmethod
+    def lt(cls, a, b):
+        return a < b
+    @classmethod
+    def le(cls, a, b):
+        return a <= b
+
+    @classmethod
+    def hashed(cls, a):
+        return hash(a)
+
+    @classmethod
+    def rep(cls, a, short):
+        return repr(a)
+        # TODO:
+        # ill impl later (with prog)
+
+
+# Specialise matrices over ints to supply a field.
+@Matrix.screener
+def _matrix_screen_int(params):
+    field, shape = params
+    if issubclass(field, int) and not issubclass(field, Field):
+        return Integer, shape
+    return params
+
+
+
+class Float(Field):
+    # @classmethod
+    # def dtype(cls):
+    #     return float
+
+    @classmethod
+    def fromobj(cls, x):
+        if isinstance(x, int):
+            return x.__float__()
+        if isinstance(x, float):
+            return x.__float__()
+        if isinstance(x, complex):
+            if not (x.imag == 0.0):
+                raise TypeError(f"cannot cast complex to float, got: {x}")
+            return x.real.__float__()
+
+        if hasattr(x, "__float__"):
+            return x.__float__()
+        return super().fromobj(x)
+
+    @classmethod
+    def to_int(cls, a):
+        if not a.is_integer():
+            raise ValueError(f"cannot cast non-integer to int, got: {a}")
+        return a.__int__()
+    @classmethod
+    def to_float(cls, a):
+        return a.__float__()
+    @classmethod
+    def to_complex(cls, a):
+        return complex(a.__float__())
+
+    @classmethod
+    def consts(cls):
+        return super().consts() | {
+            "__0__": 0.0,
+            "__1__": 1.0,
+            "__e__": _math.e,
+            "__pi__": _math.pi,
+        }
+
+    # @classmethod
+    # def exposes(cls):
+    #     return {"isnan": bool, "isinf": bool, "isfinite": bool, "signbit": bool}
+    # @classmethod
+    # def expose(cls, a, name):
+    #     if name == "signbit":
+    #         return math.copysign(1.0, a) < 0.0
+    #     return getattr(math, name)(a)
+
+
+    @classmethod
+    def add(cls, a, b):
+        return a + b
+    @classmethod
+    def sub(cls, a, b):
+        return a - b
+
+    @classmethod
+    def abs(cls, a):
+        return abs(a)
+
+    @classmethod
+    def mul(cls, a, b):
+        return a * b
+    @classmethod
+    def div(cls, a, b):
+        return a / b
+
+    @classmethod
+    def power(cls, a, b):
+        return a ** b
+    @classmethod
+    def root(cls, a, b):
+        return a ** (1.0 / b)
+    @classmethod
+    def log(cls, a, b):
+        return _math.log(b) / _math.log(a)
+
+    @classmethod
+    def sin(cls, a):
+        return _math.sin(a)
+    @classmethod
+    def cos(cls, a):
+        return _math.cos(a)
+    @classmethod
+    def tan(cls, a):
+        return _math.tan(a)
+
+    @classmethod
+    def asin(cls, a):
+        return _math.asin(a)
+    @classmethod
+    def acos(cls, a):
+        return _math.acos(a)
+    @classmethod
+    def atan(cls, a):
+        return _math.atan(a)
+    @classmethod
+    def atan2(cls, y, x):
+        return _math.atan2(y, x)
+
+    @classmethod
+    def issame(cls, a, b):
+        # nan is the same as nan.
+        if _math.isnan(a) or _math.isnan(b):
+            return _math.isnan(a) and _math.isnan(b)
+        # zero is not the same as negative zero.
+        if a == 0.0 and b == 0.0:
+            return _math.copysign(1.0, a) == _math.copysign(1.0, b)
+        return a == b
+
+    @classmethod
+    def eq(cls, a, b, ulps=15):
+        # Equality automatically allows for a few ulps of imprecision, except in
+        # some cases like:
+        # - nan is never equal to anything.
+        # - inf (and negative inf) only equals exactly inf (or negative inf).
+        # - zero only equals exactly zero (negative and positive zero are eq).
+        # - one (and negative one) only equals exactly one (or negative one).
+        if _math.isnan(a) or _math.isnan(b):
+            return False
+        if (_math.isinf(a) or _math.isinf(b)
+                or a == 0.0 or b == 0.0
+                or abs(a) == 1.0 or abs(b) == 1.0):
+            return a == b
+        # we do tricks around here (c my beloved).
+        toint = lambda z: struct.unpack("=q", struct.pack("=d", z))[0]
+        ux = toint(abs(a))
+        uy = toint(abs(b))
+        if (a < 0.0) != (b < 0.0):
+            return ux + uy <= ulps
+        return abs(ux - uy) <= ulps
+    @classmethod
+    def lt(cls, a, b):
+        if _math.isnan(a) or _math.isnan(b):
+            return False
+        return a < b
+
+    @classmethod
+    def neq(cls, a, b):
+        if _math.isnan(a) or _math.isnan(b):
+            return False
+        return not cls.eq(a, b)
+    @classmethod
+    def le(cls, a, b):
+        if _math.isnan(a) or _math.isnan(b):
+            return False
+        return cls.eq(a, b) or cls.lt(a, b)
+
+    @classmethod
+    def hashed(cls, a):
+        return hash(a)
+
+    @classmethod
+    def rep(cls, a, short):
+        return repr(a)
+        # TODO:
+        # ill impl later (with prog)
+
+
+# Specialise matrices over floats to use numpy internals for huge speed ups.
+@Matrix.screener
+def _matrix_screen_float(params):
+    field, shape = params
+    if issubclass(field, float) and not issubclass(field, Field):
+        return Float, shape
+    return params
+@Matrix.specialiser(lambda field, shape: field is Float)
+def _FloatMatrix(Mat):
+    # TODO:
+    # fast numpy impl.
+    return Mat
+
+
+
+class Complex(Field):
+    # @classmethod
+    # def dtype(cls):
+    #     return float
+
+    @classmethod
+    def fromobj(cls, x):
+        if isinstance(x, int):
+            return complex(x.__float__())
+        if isinstance(x, float):
+            return complex(x.__float__())
+        if isinstance(x, complex):
+            return x.__complex__()
+
+        if hasattr(x, "__complex__"):
+            return x.__complex__()
+        if hasattr(x, "__float__"):
+            return complex(x.__float__())
+        return super().fromobj(x)
+
+    @classmethod
+    def to_int(cls, a):
+        if not a.is_integer():
+            raise ValueError(f"cannot cast non-integer to int, got: {a}")
+        return a.__int__()
+    @classmethod
+    def to_float(cls, a):
+        return a.__float__()
+    @classmethod
+    def to_complex(cls, a):
+        return complex(a.__float__())
+
+    @classmethod
+    def consts(cls):
+        return super().consts() | {
+            "__0__": complex(0.0),
+            "__1__": complex(1.0),
+            "__i__": 1j,
+            "__e__": complex(_math.e),
+            "__pi__": complex(_math.pi),
+        }
+
+    @classmethod
+    def add(cls, a, b):
+        return a + b
+    @classmethod
+    def sub(cls, a, b):
+        return a - b
+
+    @classmethod
+    def abs(cls, a):
+        return complex(abs(a))
+    @classmethod
+    def real(cls, a):
+        return complex(a.real)
+    @classmethod
+    def imag(cls, a):
+        return complex(a.imag)
+
+    @classmethod
+    def mul(cls, a, b):
+        return a * b
+    @classmethod
+    def div(cls, a, b):
+        return a / b
+
+    @classmethod
+    def power(cls, a, b):
+        return a ** b
+    @classmethod
+    def root(cls, a, b):
+        return a ** (1.0 / b)
+    @classmethod
+    def log(cls, a, b):
+        return _cmath.log(b) / _cmath.log(a)
+
+    @classmethod
+    def sin(cls, a):
+        return _cmath.sin(a)
+    @classmethod
+    def cos(cls, a):
+        return _cmath.cos(a)
+    @classmethod
+    def tan(cls, a):
+        return _cmath.tan(a)
+
+    @classmethod
+    def asin(cls, a):
+        return _cmath.asin(a)
+    @classmethod
+    def acos(cls, a):
+        return _cmath.acos(a)
+    @classmethod
+    def atan(cls, a):
+        return _cmath.atan(a)
+    @classmethod
+    def atan2(cls, y, x):
+        if a.imag == 0.0 and b.imag == 0.0:
+            return complex(_math.atan2(y.real, x.real))
+        raise TypeError("cannot perform quadrant-aware atan on complex, got: "
+                f"{a}, and {b}")
+
+    @classmethod
+    def issame(cls, a, b):
+        return Float.issame(a.real, b.real) and Float.issame(a.imag, b.imag)
+
+    @classmethod
+    def eq(cls, a, b, ulps=15):
+        if _cmath.isnan(a) or _cmath.isnan(b):
+            return False
+        return Float.eq(a.real, b.real) and Float.eq(a.imag, b.imag)
+    @classmethod
+    def neq(cls, a, b):
+        if _cmath.isnan(a) or _cmath.isnan(b):
+            return False
+        return not cls.eq(a, b)
+    @classmethod
+    def lt(cls, a, b):
+        if _cmath.isnan(a) or _cmath.isnan(b):
+            return False
+        if a.imag == 0.0 and b.imag == 0.0:
+            return a.real < b.real
+        raise TypeError(f"cannot order complex, got: {a}, and {b}")
+    @classmethod
+    def le(cls, a, b):
+        if _cmath.isnan(a) or _cmath.isnan(b):
+            return False
+        if a.imag == 0.0 and b.imag == 0.0:
+            return Float.eq(a.real, b.real) or a.real < b.real
+        raise TypeError(f"cannot order complex, got: {a}, and {b}")
+
+    @classmethod
+    def hashed(cls, a):
+        return hash(a)
+
+    @classmethod
+    def rep(cls, a, short):
+        return repr(a)
+        # TODO:
+        # ill impl later (with prog)
+
+# Specialise matrices over floats to use numpy internals for huge speed ups.
+@Matrix.screener
+def _matrix_screen_complex(params):
+    field, shape = params
+    if issubclass(field, complex) and not issubclass(field, Field):
+        return Complex, shape
+    return params
+@Matrix.specialiser(lambda field, shape: field is Complex)
+def _ComplexMatrix(Mat):
+    # TODO:
+    # fast numpy impl.
+    return Mat
+
 
 
 
@@ -2463,9 +3238,12 @@ def single(x, *, field=None):
     """
     Single (1x1) matrix of the given object.
     """
-    if field is None:
-        field = type(x)
-    return Single[field]((x, ))
+    Mat = Single[type(x)]
+    cells = _bg.np.array([[x]], dtype=Mat._f("dtype")())
+    mat = Mat(cells)
+    if field is not None:
+        mat = mat.tofield(field)
+    return mat
 
 def issingle(x):
     """
@@ -2487,7 +3265,9 @@ def empty(field):
     """
     Empty (0x0) matrix over the given field.
     """
-    return Empty[field](())
+    Mat = Empty[field]
+    cells = _bg.np.array([], dtype=Mat._f("dtype")())
+    return Mat(cells)
 
 def isempty(x):
     """
@@ -2499,8 +3279,8 @@ def isempty(x):
 
 def castall(xs, broadcast=True, *, field=None):
     """
-    When given an sequence of matrices, returns them cast to the same field and
-    (optionally) broadcast to the same shape.
+    When given an sequence of values/matrices, returns them as matrices cast to
+    the same field and (optionally) broadcast to the same shape.
     """
     if not _iterable(xs):
         raise TypeError(f"expected an iterable for xs, got {_objtname(xs)}")
@@ -2537,16 +3317,16 @@ def mag(x, *, field=None):
     return x.mag
 def dot(x, y, *, field=None):
     """
-    Alias for 'x & y'.
+    Alias for 'x.dot(y)'.
     """
     x, y = castall([x, y], field=field, broadcast=False)
-    return x & y
+    return x.dot(y)
 def cross(x, y, *, field=None):
     """
-    Alias for 'x | y'.
+    Alias for 'x.cross(y)'.
     """
     x, y = castall([x, y], field=field, broadcast=False)
-    return x | y
+    return x.cross(y)
 def sqrt(x, *, field=None):
     """
     Alias for 'x.sqrt'.
@@ -2648,13 +3428,12 @@ def atan2(y, x, *, field=None):
     Quadrant-aware 'atan(y / x)'.
     """
     y, x = castall([y, x], field=field)
-    return y._apply(y._f("atan2"), y, x)
+    return y._apply(lambda: y._f("atan2"), y, x)
 def torad(degrees, *, field=None):
     """
     Alias for 'degrees.torad'.
     """
     x, = castall([degrees], field=field)
-    # maybe preverse largest subproducts.
     return x.torad
 def todeg(radians, *, field=None):
     """
@@ -2703,7 +3482,7 @@ def atand2(y, x, *, field=None):
     Quadrant-aware 'atand(y / x)'.
     """
     y, x = castall([y, x], field=field)
-    return y._apply(y._f("atan2"), y, x).todeg
+    return y._apply(lambda: y._f("atan2"), y, x).todeg
 def diff(y, x, *, field=None):
     """
     Alias for 'y.diff(x)'.
@@ -2714,21 +3493,8 @@ def intt(y, x, *bounds, field=None):
     """
     Alias for 'y.intt(x, *bounds)'.
     """
-    bounds = _maybe_unpack(bounds)
-    if not bounds:
-        y, x = castall([y, x], field=field)
-        return y.intt(x)
-    if len(bounds) != 2:
-        raise TypeError(f"must specify 0 or 2 bounds, got {len(bounds)}")
-    lo, hi = bounds
-    y, x, lo, hi = castall([y, x, lo, hi], field=field)
-    return y.intt(x, (lo, hi))
-def conj(x, *, field=None):
-    """
-    Alias for 'x.conj'.
-    """
-    x, = castall([x], field=field)
-    return x.conj
+    y, x = castall([y, x], field=field)
+    return y.intt(x, *bounds)
 def real(x, *, field=None):
     """
     Alias for 'x.real'.
@@ -2741,6 +3507,12 @@ def imag(x, *, field=None):
     """
     x, = castall([x], field=field)
     return x.imag
+def conj(x, *, field=None):
+    """
+    Alias for 'x.conj'.
+    """
+    x, = castall([x], field=field)
+    return x.conj
 def sign(x, *, field=None):
     """
     Alias for 'x.sign'.
@@ -2900,14 +3672,13 @@ def stack(axis, *xs, field=None):
     """
     Stacks the given matrices along the given axis.
     """
-    xs = _maybe_unpack(xs)
+    xs = _maybe_unpack_mats(xs)
     xs = castall(xs, field=field, broadcast=False)
     field = _get_field(field, xs)
     if not isinstance(axis, int):
         raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
     if axis < 0:
-        raise ValueError(f"axis cannot be negative, got {axis}")
-
+        raise ValueError(f"axis cannot be negative, got: {axis}")
 
     # Stacking empty do NOTHIGN and stacking nothign do EMPTY.
     if not xs:
@@ -2921,30 +3692,17 @@ def stack(axis, *xs, field=None):
 
     # Check perpendicular sizes.
     perpshape = xs[0].shape.withaxis(axis, 1)
-    newshape = perpshape.withaxis(axis, sum(x.shape[axis] for x in xs))
     for x in xs:
         if x.shape.withaxis(axis, 1) != perpshape:
             raise TypeError(f"expected a perpendicular shape of {perpshape} for "
                     f"stacking, got {x.shape}")
-    # Get lookups.
-    offset = [0] * len(xs)
-    for i, x in enumerate(xs[:-1]):
-        offset[i + 1] = offset[i] + x.shape[axis]
-    offset.append(newshape[axis] + 1) # unreachable offset.
-    lookup = [0] * newshape[axis]
-    for i in range(1, newshape[axis]):
-        lookup[i] = lookup[i - 1] + (i >= offset[lookup[i - 1] + 1])
-    # Get the cells.
-    cells = [0] * newshape.size
-    for new in newshape.indices:
-        i = 0 if axis >= len(new) else new[axis]
-        j = lookup[i]
-        k = i - offset[j]
-        subcells = xs[j]._cells
-        subshape = xs[j].shape
-        subidx = tuple(k if ii == axis else i for ii, i in enumerate(new))
-        cells[newshape.offset(new)] = subcells[subshape.offset(subidx)]
-    return Matrix[field, newshape](cells)
+    # Get all cells with the right number of dimensions.
+    ndim = max(xs[0].ndim, axis + 1)
+    ys = [x._cells for x in xs]
+    ys = [y[(None,) * (ndim - y.ndim)] for y in ys]
+    npaxis = Permuter.fromnumpy(ndim).order(ndim)[axis]
+    cells = _bg.np.concatenate(ys, axis=npaxis)
+    return Matrix.fromnumpy(field, cells)
 
 def vstack(*xs, field=None):
     """
@@ -2962,16 +3720,11 @@ def ravel(*xs, field=None):
     """
     Concatenated vector of the raveled cells of all given matrices.
     """
-    xs = _maybe_unpack(xs)
+    xs = _maybe_unpack_mats(xs)
     xs = castall(xs, field=field, broadcast=False)
     field = _get_field(field, xs)
-    size = sum(x.size for x in xs)
-    cells = [None] * size
-    off = 0
-    for x in xs:
-        cells[off:off + x.size] = x._cells
-        off += x.size
-    return Matrix[field, (size, )](cells)
+    cells = _bg.np.concatenate([x.ravel.numpyvec() for x in xs])
+    return Matrix.fromnumpy(field, cells)
 
 def rep(x, *counts, field=None):
     """
@@ -2992,7 +3745,7 @@ def tovec(*xs, field=None):
     Concatenated column vector of the given values and iterables.
     """
     # dont maybe unpack xs lmao.
-    cells = []
+    concat = []
     for x in xs:
         if not _iterable(x):
             x, = castall([x], field=field)
@@ -3000,21 +3753,22 @@ def tovec(*xs, field=None):
             if not x.isvec:
                 raise TypeError("expected vectors to concatenate into column, "
                         f"got {x.shape}")
-            cells.extend(x._cells)
+            concat.append(x.numpyvec())
             if field is None:
                 field = x.field
             continue
         for y in x:
             if not isinstance(y, Matrix):
                 y, = castall([y], field=field)
-            if not y.issingle:
-                raise TypeError("expected iterable to contain singles to "
+            if not y.isvec:
+                raise TypeError("expected iterable to contain vectors to "
                         f"concatenate into column, got {y.shape}")
             if field is None:
                 field = y.field
-            cells.append(y._cells[0])
+            concat.append(y.numpyvec())
     field = _get_field(field)
-    return Matrix[field, (len(cells), )](cells)
+    cells = _bg.np.concatenate(concat)
+    return Matrix.fromnumpy(field, cells)
 
 
 def eye(n, *, field=None):
@@ -3028,51 +3782,38 @@ def eye(n, *, field=None):
         raise ValueError(f"cannot have negative size, got: {n}")
     return Matrix[field, (n, n)].eye
 
-def zeros(*counts, field=None):
+def zeros(*lens, field=None):
     """
     Zero-filled matrix of the given size, defaulting to square if only one axis
     length is given.
     """
     field = _get_field(field)
-    counts = _maybe_unpack(counts)
-    for count in counts:
-        if not isinstance(count, int):
-            raise TypeError(f"expected an integer count, got {_objtname(count)}")
-    if any(count < 0 for count in counts):
-        raise ValueError(f"cannot have negative counts, got: {counts}")
-    if len(counts) == 1:
-        counts *= 2
-    return Matrix[field, counts].zeros
+    shape = Shape.sqrshape(*lens)
+    return Matrix[field, shape].zeros
 
-def ones(*counts, field=None):
+def ones(*lens, field=None):
     """
     One-filled matrix of the given size, defaulting to square if only one axis
     length is given.
     """
     field = _get_field(field)
-    counts = _maybe_unpack(counts)
-    for count in counts:
-        if not isinstance(count, int):
-            raise TypeError(f"expected an integer count, got {_objtname(count)}")
-    if any(count < 0 for count in counts):
-        raise ValueError(f"cannot have negative counts, got: {counts}")
-    if len(counts) == 1:
-        counts *= 2
-    return Matrix[field, counts].ones
+    shape = Shape.sqrshape(*lens)
+    return Matrix[field, shape].ones
 
-def diag(*xs, field=None):
+def diag(x, *, field=None):
     """
-    Matrix with a diagonal of the given elements and zeros elsewhere.
+    If given a vector, returns a diagonal matrix with that diagonal. If given a
+    matrix, returns the diagonal of that matrix.
     """
-    diagvec = tovec(*xs, field=field)
-    n = diagvec.size
-    Mat = Matrix[diagvec.field, (n, n)]
-    if n == 1:
-        cells = diagvec._cells
-    else:
-        cells = [Mat._f("zero")] * (n*n) if n else []
-        for i in range(n):
-            cells[i*n + i] = diagvec._cells[i]
+    x, = castall([x], field=field)
+    field = _get_field(field, [x])
+    if x.isempty or x.issingle:
+        return x
+    if not x.isvec:
+        return x.diag
+    Mat = Matrix[field, Shape(x.size, x.size)]
+    cells = Mat.zeros._cells.copy()
+    _bg.np.fill_diagonal(cells, x.numpyvec())
     return Mat(cells)
 
 def linspace(x0, x1, n, *, field=None):
@@ -3250,13 +3991,6 @@ def rootbi(f, a, b, tol=1e-8, max_iters=120):
         return a
     if abs(fb) < tol:
         return b
-    def sign(x, fx):
-        neg = bool(fx <= 0)
-        pos = bool(fx >= 0)
-        if neg + pos == 0:
-            raise ValueError("could not determine sign of f(x), got: "
-                    f"f({repr(x)}) = {repr(fx)}")
-        return pos - neg
     if sign(a, fa) == sign(b, fb):
         raise ValueError("f(x) must have opposite signs at a and b, got: "
                 f"f({repr(a)}) = {repr(fa)}, and: f({repr(b)}) = {repr(fb)}")
@@ -3439,17 +4173,20 @@ def mhelp(*, field=None):
         "__mul__": "*",
         "__truediv__": "/",
         "__floordiv__": "//",
-        "__mod__": "%",
         "__pow__": "**",
+        "__matmul__": "@",
+        "__mod__": "%",
         "__and__": "&",
         "__or__": "|",
+        "__xor__": "^",
+        "__lshift__": ">>",
+        "__rshift__": "<<",
         "__eq__": "==",
         "__neq__": "!=",
         "__lt__": "<",
         "__le__": "<=",
         "__gt__": ">",
         "__ge__": ">=",
-        "__matmul__": "@",
     }
     for name, attr in attrs.items():
         m = "m"

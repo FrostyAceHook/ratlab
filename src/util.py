@@ -12,7 +12,7 @@ def incremental(func):
     """
     Allows the function to have its arguments specified incrementally. The
     function will be invoked as soon as it can be (i.e. after all mandatory
-    arguments are specified).
+    arguments are specified). Oh this is called currying.
     - function decorator.
     """
     sig = _inspect.signature(func)
@@ -27,6 +27,52 @@ def incremental(func):
             return wrapper_next
         return func(*args, **kwargs)
     return wrapper
+
+
+
+def maybe_pack(x, aslist=False):
+    """
+    When a function takes an argument which is a tuple/list of items, it's
+    helpful to also support being given a single item which then gets packed into
+    a 1-length tuple/list, which this facilitates. Always returns a tuple (or
+    a list if 'aslist', copying if already a list).
+    """
+    if isinstance(x, (tuple, list)):
+        x = [tuple, list][not not aslist](x)
+    else:
+        x = [tuple, list][not not aslist]([x])
+    return x
+
+def maybe_unpack(xs, dont_unpack=(), also_dont_unpack=(str, bytes, dict)):
+    """
+    When a function takes vargs, it's helpful to also support being given a
+    single iterable, which this facilitates. Always returns a tuple. Note that
+    not all iterables should be unpacked, so `dont_unpack` facilitates not
+    unpacking some types.
+        def func(*args):
+            args = maybe_unpack(args)
+            return args
+        assert func(1, 2, 3) == func([1, 2, 3])
+    WARNING: care must be taken when forwarding to a function which also uses
+             `maybe_unpack` (to ensure args aren't double-unpacked). In general,
+             follow one of these two strategies:
+        def forwards(*args):
+            # don't call `maybe_unpack`.
+            return func(*args) # unpack.
+        def also_forwards(*args):
+            args = maybe_unpack(args) # call `maybe_unpack`.
+            return func(args) # dont unpack.
+    """
+    if len(xs) != 1:
+        return xs
+    x = xs[0]
+    # dont unpack all iterables.
+    dont = maybe_pack(dont_unpack) + maybe_pack(also_dont_unpack)
+    if isinstance(x, dont):
+        return xs # dont.
+    if not iterable(x):
+        return xs
+    return tuple(x)
 
 
 
@@ -47,10 +93,39 @@ class _Cached:
         bound_args = self.sig.bind(*args, **kwargs)
         bound_args.apply_defaults()
         return tuple(bound_args.arguments.items())
+    def _fromkey(self, key):
+        POSITIONAL_ONLY = _inspect.Parameter.POSITIONAL_ONLY
+        POSITIONAL_OR_KEYWORD = _inspect.Parameter.POSITIONAL_OR_KEYWORD
+        VAR_POSITIONAL = _inspect.Parameter.VAR_POSITIONAL
+        KEYWORD_ONLY = _inspect.Parameter.KEYWORD_ONLY
+        VAR_KEYWORD = _inspect.Parameter.VAR_KEYWORD
+        args = []
+        kwargs = {}
+        items = dict(key)
+        for name, param in self.sig.parameters.items():
+            if param.kind in {POSITIONAL_ONLY, POSITIONAL_OR_KEYWORD}:
+                if name in items:
+                    args.append(items[name])
+            elif param.kind == KEYWORD_ONLY:
+                if name in items:
+                    kwargs[name] = items[name]
+            elif param.kind == VAR_POSITIONAL:
+                if name in items:
+                    args.extend(items[name])
+            elif param.kind == VAR_KEYWORD:
+                if name in items:
+                    kwargs.update(items[name])
+            else:
+                assert False
+        return tuple(args), kwargs
 
     def iscached(self, *args, **kwargs):
         key = self._keyof(*args, **kwargs)
         return key in self._cache
+
+    @property
+    def allcached(self):
+        return [self._fromkey(key) for key in self._cache.keys()]
 
     def __call__(self, *args, **kwargs):
         key = self._keyof(*args, **kwargs)
@@ -199,7 +274,7 @@ def tname(t, namespaced=False, quoted=True):
     be constructed from (optionally) the module and `__name__`.
     """
     if not isinstance(t, type):
-        raise TypeError(f"expected type, got {tname(type(t))}")
+        raise TypeError(f"expected type, got {objtname(t)}")
     finish = lambda s: f"'{s}'" if quoted else s
     if hasattr(t, "_tname"):
         return finish(t._tname)
@@ -228,24 +303,17 @@ def coloured(cols, txts):
     left as that colour. Colour codes can be found at:
     https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
     """
-    if isinstance(cols, int):
-        cols = (cols, )
-    else:
-        cols = list(cols)
-    if isinstance(txts, str):
-        txts = (txts, )
-    else:
-        txts = list(txts)
+    cols = maybe_pack(cols, aslist=True)
+    txts = maybe_pack(txts, aslist=True)
     if len(cols) != len(txts):
         raise TypeError("must give one colour for each piece of text, got "
                 f"{len(cols)} colours and {len(txts)} texts")
     for col in cols:
         if not isinstance(col, int):
-            raise TypeError("expected integer colour code, got "
-                    f"{_tname(type(col))}")
+            raise TypeError(f"expected integer colour code, got {objtname(col)}")
     for txt in txts:
         if not isinstance(txt, str):
-            raise TypeError(f"expected string text, got {_tname(type(txt))}")
+            raise TypeError(f"expected string text, got {objtname(txt)}")
 
     leading_off_code = _re.compile(r"^\x1B\[0m")
     leading_col_code = _re.compile(r"^\x1B\[38;5;([0-9]+)m")
@@ -310,7 +378,7 @@ def nonctrl(string):
     Returns 'string' with all console control codes removed.
     """
     if not isinstance(string, str):
-        raise TypeError(f"expected a str 'string', got {_tname(type(string))}")
+        raise TypeError(f"expected a str 'string', got {objtname(string)}")
     control_code = _re.compile(r"\x1B\[[0-9;]*[A-Za-z]")
     return control_code.sub("", string)
 
@@ -320,9 +388,9 @@ def idxctrl(string, i):
     'nonctrl(string)[i]'.
     """
     if not isinstance(string, str):
-        raise TypeError(f"expected a str 'string', got {_tname(type(string))}")
+        raise TypeError(f"expected a str 'string', got {objtname(string)}")
     if not isinstance(i, int):
-        raise TypeError(f"expected an integer 'i', got {_tname(type(i))}")
+        raise TypeError(f"expected an integer 'i', got {objtname(i)}")
     if i >= len(string):
         return i
     if i < 0:
@@ -466,7 +534,7 @@ def get_locals(func, *args, **kwargs):
 
 
 class _Templated:
-    def __init__(self, creator, parents, decorators, metaclass):
+    def __init__(self, creator, parents, decorators, metaclass, screeners):
         _functools.update_wrapper(self, creator)
 
         # Create a base class which the others can inherit from. This class will
@@ -476,6 +544,8 @@ class _Templated:
         self.creator = creator
         self.decorators = decorators
         self.metaclass = metaclass
+        self.screeners = screeners
+        self.specialisers = []
 
         # Make the default namer.
         def namer(*param_values):
@@ -485,31 +555,40 @@ class _Templated:
         self._dflt_namer = namer
         self.namer = None # may be set by user.
 
-        # Make the creator.
+        # Make the creator. Not a method bc i dont think cached would work lmao.
         @weakcached(forwards_to=creator)
         def makecls(*param_values):
+            # Screen params.
+            for screener in self.screeners:
+                param_values = screener(param_values)
             # Get all the attributes of the class (which are the local vars that
             # the function defines).
-            ret = self.creator(*param_values)
-            if isinstance(ret, type):
-                if not issubclass(ret, self.Base):
-                    raise ValueError("expected a return of another "
-                            f"instantiation of this template, got {tname(ret)}")
-                return ret
-            if not isinstance(ret, dict):
-                raise TypeError("expected dict or type return from templated "
-                        f"function-class, got {tname(type(ret))}")
+            attributes = self.creator(*param_values)
+            if not isinstance(attributes, dict):
+                raise TypeError("expected a dict return from template, got "
+                        f"{objtname(attributes)}")
             dflt_name = self._dflt_namer(*param_values)
             # Create class using metaclass and inheriting from the base.
-            cls = self.metaclass(dflt_name, (self.Base, ), ret)
-            if self.namer is not None:
-                cls._tname = self.namer(*param_values)
+            cls = self.metaclass(dflt_name, (self.Base, ), attributes)
             # Apply any decorators, bottom-up.
             for dec in self.decorators[::-1]:
                 cls = dec(cls)
             # Cop creators doc.
             if cls.__doc__ is None:
                 cls.__doc__ = self.creator.__doc__
+            # Cop a tname.
+            if self.namer is not None and not hasattr(cls, "_tname"):
+                cls._tname = self.namer(*param_values)
+            # Do any specialisation (note later specialisers take precedence).
+            for spec in self.specialisers:
+                if not spec.predicate(*param_values):
+                    continue
+                new = spec.modifier(cls)
+                if new is not cls:
+                    raise TypeError("expected an in-place modification of the "
+                            "instantiated class from template specialiser "
+                            f"{spec}")
+                cls = new
             return cls
         self._makecls = makecls
 
@@ -527,60 +606,160 @@ class _Templated:
     def __subclasscheck__(self, subclass):
         return issubclass(subclass, self.Base)
 
+    def add_specialiser(self, spec):
+        if not isinstance(spec, _Specialiser):
+            raise TypeError(f"expected specialiser, got {objtname(spec)}")
+        # Might have already been added.
+        if spec in self.specialisers:
+            return
+        # Check that it wouldn't have changed any returns from already created
+        # classes.
+        for args, _ in self._makecls.allcached:
+            try:
+                nocando = spec.predicate(*args)
+            except Exception as e:
+                raise RuntimeError("specialiser added too late, template "
+                        "already instantiated in a case where specialiser "
+                        f"failed for params of: {args}") from e
+            if nocando:
+                raise RuntimeError("specialiser added too late, template "
+                        "already instantiated in a should-have-been-specialised "
+                        f"case for params of: {args}")
+        self.specialisers.append(spec)
+
+    def add_screener(self, screener):
+        if not callable(screener):
+            raise TypeError("expected callable screener, got "
+                    f"{objtname(screener)}")
+        # Might have already been added.
+        if screener in self.screeners:
+            return
+        # Check that it wouldn't have changed any returns from already created
+        # classes.
+        for args, _ in self._makecls.allcached:
+            try:
+                nocando = args is not screener(args)
+            except Exception as e:
+                raise RuntimeError("screener added too late, template already "
+                        "instantiated in a case where screener failed for "
+                        f"params of: {args}") from e
+            if nocando:
+                raise RuntimeError("screener added too late, template already "
+                        "instantiated in a should-have-been-screened case for "
+                        f"params of: {args}")
+        self.screeners.append(screener)
+
+    def specialiser(self, predicate):
+        # Exists to provide nice syntax of `@Template.specialiser`.
+        return specialises(predicate, templates=(self, ))
+    def screener(self, screener):
+        # Exists to homogenise syntax with specialiser.
+        self.add_screener(screener)
+        return screener
+
+class _Specialiser:
+    def __init__(self, predicate, modifier):
+        self.predicate = predicate
+        self.modifier = modifier
+        _functools.update_wrapper(self, modifier)
+
+    def add_to(self, template):
+        template.add_specialiser(self)
+
+    def __repr__(self):
+        return repr(self.__name__)
+
 @incremental
-def templated(creator, parents=(), decorators=(), metaclass=type):
+def templated(creator, parents=(), decorators=(), metaclass=type, screeners=()):
     """
     Used for templated classes. Essentially transforms a function into a class,
     and the fully-defined type can be created via `func[params]`. The whole deal
     is that when this function is invoked, it defines all the normal methods a
     class would have and then returns the `locals()`, which are manhandled into a
     new class with those as attributes. Any dictionary return is accepted for the
-    attr lookups, and also accepted is any other instantiation of this template,
-    which will just return that class.
+    attr lookups. The instantiated classes will have the given 'parents' and have
+    the given 'decorators' applied. 'screeners' should all be functions which
+    take the template parameters and return new template parameters:
+    'screener(params)'; essentially "screening" the parameters to ensure that
+    equivalent parameters do not result in distinct classes.
     WARNING: to use `super()`, you must instead do `super(func[params], self)`,
              with the exact params that this class is using.
+    EXTRA WARNING: be very careful with mutable values anywhere near a template,
+                   generally as much as possible should be immutable. Template
+                   parameters (especially) must be immutable.
     - paramed "function" decorator.
     """
-    if isinstance(parents, list):
-        parents = tuple(parents)
-    if isinstance(decorators, list):
-        decorators = tuple(decorators)
-    if not isinstance(parents, tuple):
-        parents = (parents, )
-    if not isinstance(decorators, tuple):
-        decorators = (decorators, )
+    parents = maybe_pack(parents)
+    decorators = maybe_pack(decorators)
+    screeners = maybe_pack(screeners, aslist=True)
     # i luv validation.
+    if not callable(creator):
+        raise TypeError(f"expected callable 'creator', got {objtname(creator)}")
     for p in parents:
         if not isinstance(p, type):
             raise TypeError("expected a type for each parent, got "
-                    f"{_tname(type(p))}")
+                    f"{objtname(p)}")
     for d in decorators:
         if not callable(d):
             raise TypeError("expected a callable for each decorator, got "
-                    f"{_tname(type(d))}")
+                    f"{objtname(d)}")
     if not isinstance(metaclass, type):
         raise TypeError("expected a type for the metaclass, got "
-                f"{_tname(type(metaclass))}")
+                f"{objtname(metaclass)}")
     if not issubclass(metaclass, type):
         raise TypeError("expected a type that inherits from type for the "
-                f"metaclass, got: {_tname(metaclass)}")
-    return _Templated(creator, parents, decorators, metaclass)
+                f"metaclass, got {tname(metaclass)}")
+    for s in screeners:
+        if not callable(s):
+            raise TypeError("expected a callable for each screener, got "
+                    f"{objtname(s)}")
+    return _Templated(creator, parents, decorators, metaclass, screeners)
+
+@incremental
+def specialises(predicate, modifier, templates=()):
+    """
+    Creates a specialiser modifier which may be added to a template. Templates
+    keep track of a "specialiser stack" which can be used to modify the
+    instantiated class whenever 'predicate(*template_params)' returns true.
+    The specialiser must accept the instantiated class and modify it in-place:
+    'modifier(cls)'. Note that when adding a specialiser to a template, it cannot
+    be added after a class which would have been specialised (but wasn't because
+    the specialiser wasn't added yet) has been instantiated.
+    - paramed function decorator.
+    """
+    templates = maybe_pack(templates)
+    if not callable(modifier):
+        raise TypeError("expected callable 'modifier', got "
+                f"{objtname(modifier)}")
+    if not callable(predicate):
+        raise TypeError("expected callable 'predicate', got "
+                f"{objtname(predicate)}")
+    for t in templates:
+        if not isinstance(t, _Templated):
+            raise TypeError(f"expected a template for each template, got "
+                    f"{objtname(t)}")
+    specialiser = _Specialiser(predicate, modifier)
+    for t in templates:
+        specialiser.add_to(t)
+    return specialiser
 
 
-def take_methods(cls):
+@incremental
+def add_to(obj, func, name=None):
     """
-    Returns a dictionary of the callables from the given class. Typically used to
-    implement a specialised templated class.
+    Sets the attribute 'obj.<name>' to 'func' (where 'name' defaults to
+    'func.__name__'). Typically used when specialising a templated class.
     """
-    attrs = {name: getattr(cls, name) for name in dir(cls)}
-    return {k: v for k, v in attrs.items() if callable(v)}
+    if name is None:
+        name = func.__name__
+    setattr(obj, name, func)
 
 
 
 def simplest_ratio(x):
     """ Returns the simplest ratio `n, d` s.t. `n / d == x`. """
     if not isinstance(x, float):
-        raise TypeError(f"expected float for 'x', got {tname(type(x))}")
+        raise TypeError(f"expected float for 'x', got {objtname(x)}")
     if not _math.isfinite(x):
         raise ValueError(f"expected finite float for 'x', got: {x}")
 

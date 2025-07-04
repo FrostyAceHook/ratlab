@@ -19,9 +19,9 @@ def plot(x, y, label=None, color=None, linestyle=None, linewidth=None,
             markeredgecolor=None, alpha=None):
     plt = _bg.plt
     if isinstance(x, _matrix.Matrix):
-        x = x.tolist_f
+        x = x.numpyvec(float)
     if isinstance(y, _matrix.Matrix):
-        y = y.tolist_f
+        y = y.numpyvec(float)
     plt.plot(x, y, label=label, color=color, linestyle=linestyle,
             linewidth=linewidth, marker=marker, markersize=markersize,
             markerfacecolor=markerfacecolor, markeredgecolor=markeredgecolor,

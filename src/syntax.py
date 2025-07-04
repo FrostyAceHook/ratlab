@@ -126,6 +126,9 @@ class _Transformer(_ast.NodeTransformer):
         _ast.copy_location(dst, src)
         _ast.fix_missing_locations(dst)
         return dst
+    def emptyloc(self, dst):
+        _ast.fix_missing_locations(dst)
+        return dst
     def syntaxerrorme(self, msg, node):
         exc = SyntaxError(msg)
         exc.filename = self.filename
@@ -199,7 +202,7 @@ class _Transformer(_ast.NodeTransformer):
                 prev = _ast.Name(id=KW_PREV, ctx=_ast.Load())
                 print_node = self.ast_call(_EXPOSED_print, prev, *assigns)
                 print_expr = _ast.Expr(print_node)
-                self.copyloc(print_expr, last)
+                self.emptyloc(print_expr)
                 body.append(print_expr)
 
 
@@ -231,7 +234,7 @@ class _Transformer(_ast.NodeTransformer):
             # Otherwise, just set it to None.
             none = _ast.Constant(value=None, ctx=_ast.Load())
             new_node = _ast.Assign(targets=[prev], value=none)
-            self.copyloc(new_node, node)
+            self.emptyloc(new_node)
             body.insert(i + 1, new_node)
             i += 2
             continue
@@ -615,13 +618,19 @@ def new_space():
     # Grab all the default ratlab modules.
     import matrix
     import plot
-    from fields.rational import Rational
-    from fields.complex import Complex
+    # from fields.rational import Rational
+    # from fields.complex import Complex
     # import fields.units as u
 
     import math # just convenient.
 
     space = locals()
+
+    # Setup important parameters.
+    space["__name__"] = "__main__"
+    space["__doc__"] = None
+    space["__package__"] = None
+    space["__builtins__"] = __builtins__
 
     # Import * from matrix and plot.
     for module in [matrix, plot]:
