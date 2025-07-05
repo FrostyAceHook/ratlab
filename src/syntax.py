@@ -258,7 +258,7 @@ class _Transformer(_ast.NodeTransformer):
         propagate_to = (_ast.BoolOp, _ast.NamedExpr, _ast.BinOp, _ast.UnaryOp,
             _ast.Compare, _ast.IfExp, _ast.Constant,
             _ast.Tuple # also requires `pierce_tuple`.
-            # _ast.Attribute, # maybe nice, but probably a little to extreme.
+            # _ast.Attribute, # maybe nice, but probably a little too extreme.
         )
         if not isinstance(node, propagate_to):
             self.wrap_lits = False

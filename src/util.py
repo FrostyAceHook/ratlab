@@ -495,42 +495,19 @@ def immutable(cls):
 
 
 
-def get_locals(func, *args, **kwargs):
+def singleton(cls):
     """
-    Returns `func_ret, func_locals`, where locals is a dict of all the locals
-    variables on return from `func`.
+    Returns a single instantiation of the given class, and prevents further
+    creation of the class.
     """
-    top_frame = None
-    lcls = None
-    prev_trace = _sys.gettrace()
-    def catch_locals(frame, event, arg):
-        nonlocal top_frame, lcls
-        # Remember the top-level frame.
-        if top_frame is None:
-            top_frame = frame
-        # If its the return from the top-level invocation of `func`, catch the
-        # locals.
-        if (event == "return" and frame.f_code == func.__code__
-                              and frame.f_back == top_frame):
-            # idk if this should be a deepcopy, but u run into pickling errors if
-            # u try, and so far (skul lemoji) the shallow copy hasnt had issues.
-            lcls = frame.f_locals.copy()
-            return prev_trace # pop back to old trace.
-        return catch_locals
+    instance = cls()
+    def throw(cls, *args, **kwargs):
+        raise TypeError("cannot create another instance of singleton "
+                f"{tname(cls)}")
+    cls.__new__ = throw
+    return instance
 
-    # wrapper to know this is the top-level return.
-    def call():
-        return func(*args, **kwargs)
 
-    try:
-        _sys.settrace(catch_locals)
-        ret = call()
-    finally:
-        # don leak the trace.
-        if _sys.gettrace() is catch_locals:
-            _sys.settrace(prev_trace)
-
-    return ret, lcls
 
 
 class _Templated:
@@ -545,15 +522,14 @@ class _Templated:
         self.decorators = decorators
         self.metaclass = metaclass
         self.screeners = screeners
-        self.specialisers = []
 
         # Make the default namer.
         def namer(*param_values):
             tostr = lambda x: x.__name__ if isinstance(x, type) else repr(x)
             args = ", ".join(map(tostr, param_values))
             return f"{self.Base.__name__}[{args}]"
-        self._dflt_namer = namer
-        self.namer = None # may be set by user.
+        self.namer = namer
+        self.tnamer = None # may be set by user.
 
         # Make the creator. Not a method bc i dont think cached would work lmao.
         @weakcached(forwards_to=creator)
@@ -561,15 +537,18 @@ class _Templated:
             # Screen params.
             for screener in self.screeners:
                 param_values = screener(param_values)
+            # Check if we've had these params.
+            if makecls.iscached(*param_values):
+                return makecls(*param_values)
             # Get all the attributes of the class (which are the local vars that
             # the function defines).
             attributes = self.creator(*param_values)
             if not isinstance(attributes, dict):
                 raise TypeError("expected a dict return from template, got "
                         f"{objtname(attributes)}")
-            dflt_name = self._dflt_namer(*param_values)
+            name = self.namer(*param_values)
             # Create class using metaclass and inheriting from the base.
-            cls = self.metaclass(dflt_name, (self.Base, ), attributes)
+            cls = self.metaclass(name, (self.Base, ), attributes)
             # Apply any decorators, bottom-up.
             for dec in self.decorators[::-1]:
                 cls = dec(cls)
@@ -577,18 +556,8 @@ class _Templated:
             if cls.__doc__ is None:
                 cls.__doc__ = self.creator.__doc__
             # Cop a tname.
-            if self.namer is not None and not hasattr(cls, "_tname"):
-                cls._tname = self.namer(*param_values)
-            # Do any specialisation (note later specialisers take precedence).
-            for spec in self.specialisers:
-                if not spec.predicate(*param_values):
-                    continue
-                new = spec.modifier(cls)
-                if new is not cls:
-                    raise TypeError("expected an in-place modification of the "
-                            "instantiated class from template specialiser "
-                            f"{spec}")
-                cls = new
+            if self.tnamer is not None and not hasattr(cls, "_tname"):
+                cls._tname = self.tnamer(*param_values)
             return cls
         self._makecls = makecls
 
@@ -606,27 +575,6 @@ class _Templated:
     def __subclasscheck__(self, subclass):
         return issubclass(subclass, self.Base)
 
-    def add_specialiser(self, spec):
-        if not isinstance(spec, _Specialiser):
-            raise TypeError(f"expected specialiser, got {objtname(spec)}")
-        # Might have already been added.
-        if spec in self.specialisers:
-            return
-        # Check that it wouldn't have changed any returns from already created
-        # classes.
-        for args, _ in self._makecls.allcached:
-            try:
-                nocando = spec.predicate(*args)
-            except Exception as e:
-                raise RuntimeError("specialiser added too late, template "
-                        "already instantiated in a case where specialiser "
-                        f"failed for params of: {args}") from e
-            if nocando:
-                raise RuntimeError("specialiser added too late, template "
-                        "already instantiated in a should-have-been-specialised "
-                        f"case for params of: {args}")
-        self.specialisers.append(spec)
-
     def add_screener(self, screener):
         if not callable(screener):
             raise TypeError("expected callable screener, got "
@@ -638,7 +586,7 @@ class _Templated:
         # classes.
         for args, _ in self._makecls.allcached:
             try:
-                nocando = args is not screener(args)
+                nocando = (args != screener(args))
             except Exception as e:
                 raise RuntimeError("screener added too late, template already "
                         "instantiated in a case where screener failed for "
@@ -649,25 +597,10 @@ class _Templated:
                         f"params of: {args}")
         self.screeners.append(screener)
 
-    def specialiser(self, predicate):
-        # Exists to provide nice syntax of `@Template.specialiser`.
-        return specialises(predicate, templates=(self, ))
     def screener(self, screener):
-        # Exists to homogenise syntax with specialiser.
+        # Provide nice syntax of `@Template.screener`.
         self.add_screener(screener)
         return screener
-
-class _Specialiser:
-    def __init__(self, predicate, modifier):
-        self.predicate = predicate
-        self.modifier = modifier
-        _functools.update_wrapper(self, modifier)
-
-    def add_to(self, template):
-        template.add_specialiser(self)
-
-    def __repr__(self):
-        return repr(self.__name__)
 
 @incremental
 def templated(creator, parents=(), decorators=(), metaclass=type, screeners=()):
@@ -714,45 +647,6 @@ def templated(creator, parents=(), decorators=(), metaclass=type, screeners=()):
             raise TypeError("expected a callable for each screener, got "
                     f"{objtname(s)}")
     return _Templated(creator, parents, decorators, metaclass, screeners)
-
-@incremental
-def specialises(predicate, modifier, templates=()):
-    """
-    Creates a specialiser modifier which may be added to a template. Templates
-    keep track of a "specialiser stack" which can be used to modify the
-    instantiated class whenever 'predicate(*template_params)' returns true.
-    The specialiser must accept the instantiated class and modify it in-place:
-    'modifier(cls)'. Note that when adding a specialiser to a template, it cannot
-    be added after a class which would have been specialised (but wasn't because
-    the specialiser wasn't added yet) has been instantiated.
-    - paramed function decorator.
-    """
-    templates = maybe_pack(templates)
-    if not callable(modifier):
-        raise TypeError("expected callable 'modifier', got "
-                f"{objtname(modifier)}")
-    if not callable(predicate):
-        raise TypeError("expected callable 'predicate', got "
-                f"{objtname(predicate)}")
-    for t in templates:
-        if not isinstance(t, _Templated):
-            raise TypeError(f"expected a template for each template, got "
-                    f"{objtname(t)}")
-    specialiser = _Specialiser(predicate, modifier)
-    for t in templates:
-        specialiser.add_to(t)
-    return specialiser
-
-
-@incremental
-def add_to(obj, func, name=None):
-    """
-    Sets the attribute 'obj.<name>' to 'func' (where 'name' defaults to
-    'func.__name__'). Typically used when specialising a templated class.
-    """
-    if name is None:
-        name = func.__name__
-    setattr(obj, name, func)
 
 
 

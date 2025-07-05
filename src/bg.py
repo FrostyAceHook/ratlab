@@ -67,9 +67,10 @@ def _task_matplotlib():
 
 bg = _Tasks({
     "np": _task_import("numpy"),
+    "plt": _task_matplotlib,
     "scipy": _task_import("scipy"),
     "pd": _task_import("pandas"),
-    "plt": _task_matplotlib,
+    "sp": _task_import("sympy"),
 })
 bg.__doc__ = """
 Holds the backgrounds tasks and the objects they return. The object are set as
