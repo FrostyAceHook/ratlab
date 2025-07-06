@@ -1,7 +1,5 @@
 - "remoce two chars from points to user" bro wtf does this MEAN lmao
-- rename 'syntax' to 'engine'
-- move bg into 'engine' and make it an internal thing (everything else just
-    imports, but engine wont import matrix until necessary)
+- rename 'plot' to 'plotting'
 - super specialised comparison-result matrix:
     - new "ComparisonField"
     - doesnt support `__bool__` unless single
@@ -18,6 +16,8 @@
 - `angle` for complex arg.
 - `isinf`/`isnan`/`isfinite`
 - read every numpy function and grab the good ones LMAO
+- fix exception coloured printing when the exception message contains newlines.
+    also like if the error spans lines what happens?
 - colour more prints (generic field, rational, empty list?)
 - implement _MatrixAt
 - linspace/logspace/arange as field mat methods.

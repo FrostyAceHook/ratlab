@@ -5,8 +5,7 @@ import math as _math
 import struct as _struct
 import sys as _sys
 
-from bg import bg as _bg
-from util import (
+from .util import (
     classconst as _classconst,
     coloured as _coloured,
     entry as _entry,
@@ -20,6 +19,8 @@ from util import (
     templated as _templated,
     tname as _tname,
 )
+
+import numpy as _np
 
 
 def _maybe_unpack_mats(xs):
@@ -44,7 +45,7 @@ class Field:
 
     @classmethod
     def dtype(cls): # dtype to use for the backing numpy array.
-        return _bg.np.dtype(object)
+        return _np.dtype(object)
 
     @classmethod
     def fromobj(cls, obj): # create a field element from the given object.
@@ -228,22 +229,22 @@ class Field:
     # @classmethod
     # def _mat_numpyarr_int(cls, m):
     #     # CANNOT call any `field.fromfield(m)` methods
-    #     return _bg.np.empty(shape=m.shape.tonumpy, dtype=np.int64)
+    #     return _np.empty(shape=m.shape.tonumpy, dtype=np.int64)
     # @classmethod
     # def _mat_numpyarr_float(cls, m):
     #     # CANNOT call any `field.fromfield(m)` methods
-    #     return _bg.np.empty(shape=m.shape.tonumpy, dtype=np.float64)
+    #     return _np.empty(shape=m.shape.tonumpy, dtype=np.float64)
     # @classmethod
     # def _mat_numpyarr_complex(cls, m):
     #     # CANNOT call any `field.fromfield(m)` methods
-    #     return _bg.np.empty(shape=m.shape.tonumpy, dtype=np.complex128)
+    #     return _np.empty(shape=m.shape.tonumpy, dtype=np.complex128)
 
     @classmethod
     def _mat_fromfield(cls, m):
         # Note this method is allowed to use `_mat_numpyarr_int/float/complex`,
         # but must check for their existance. It is not allowed to use
         # `_mat_numpyarr_dflt` or `m.fromfield` (obviously lmao).
-        fromobj = _bg.np.vectorize(cls.fromobj, otypes=[cls.dtype()])
+        fromobj = _np.vectorize(cls.fromobj, otypes=[cls.dtype()])
         return Matrix[cls, m.shape](fromobj(m._cells))
 
     @classmethod
@@ -255,8 +256,8 @@ class Field:
         zero = M.field.zero
         one = M.field.one
         npshape = M.shape.tonumpy
-        cells = _bg.np.full(npshape, zero, dtype=cls.dtype())
-        _bg.np.fill_diagonal(cells, one)
+        cells = _np.full(npshape, zero, dtype=cls.dtype())
+        _np.fill_diagonal(cells, one)
         return M(cells)
     @classmethod
     def _mat_zeros(cls, M):
@@ -264,7 +265,7 @@ class Field:
             return empty(M.field)
         zero = M.field.zero
         npshape = M.shape.tonumpy
-        cells = _bg.np.full(npshape, zero, dtype=cls.dtype())
+        cells = _np.full(npshape, zero, dtype=cls.dtype())
         return M(cells)
     @classmethod
     def _mat_ones(cls, M):
@@ -272,7 +273,7 @@ class Field:
             return empty(M.field)
         one = M.field.one
         npshape = M.shape.tonumpy
-        cells = _bg.np.full(npshape, one, dtype=cls.dtype())
+        cells = _np.full(npshape, one, dtype=cls.dtype())
         return M(cells)
 
     @classmethod
@@ -486,7 +487,7 @@ class Field:
             return sub(mul(a, d), mul(b, c))
 
         def submatrix(cells, size, row):
-            return cells[_bg.np.arange(size) != row, 1:]
+            return cells[_np.arange(size) != row, 1:]
 
         def determinant(cells, size):
             # base case 3x3.
@@ -558,7 +559,7 @@ class Field:
         bx, by, bz = o.reshape(o.size)
         mul = cls.mul
         sub = cls.sub
-        cells = _bg.np.array([
+        cells = _np.array([
                 sub(mul(ay, bz), mul(az, by)),
                 sub(mul(az, bx), mul(ax, bz)),
                 sub(mul(ax, by), mul(ay, bx)),
@@ -633,6 +634,7 @@ class Field:
         eq = cls.eq
         ne = cls.ne
         eqz = lambda x: eq(zero, x)
+        eqo = lambda x: eq(one, x)
         nez = lambda x: ne(zero, x)
         neo = lambda x: ne(one, x)
         neg = lambda a: sub(zero, a)
@@ -694,7 +696,7 @@ class Field:
 
         # If imprecise, cheeky collapse to exactly zero or one.
         if imprecise:
-            @_bg.np.vectorize(otypes=[cls.dtype()])
+            @_np.vectorize(otypes=[cls.dtype()])
             def collapse(x):
                 if eqz(x):
                     return zero
@@ -1483,7 +1485,7 @@ def Matrix(field, shape):
         # memory layout consistent, meaning we expect a different ravelled array
         # to what numpy actually uses. Theres a whole rant about this ealier in
         # the file.
-        if not isinstance(cells, _bg.np.ndarray):
+        if not isinstance(cells, _np.ndarray):
             raise TypeError(f"expected numpy array, got {_objtname(cells)}")
         npshape = m.shape.tonumpy
         dtype = m.field.dtype()
@@ -1798,7 +1800,7 @@ def Matrix(field, shape):
         """
         newshape = Shape(*newshape)
         m.shape.check_broadcastable(newshape)
-        cells = _bg.np.broadcast_to(m._cells, newshape.tonumpy)
+        cells = _np.broadcast_to(m._cells, newshape.tonumpy)
         return Matrix[m.field, newshape](cells)
 
     def dropaxis(m, axis):
@@ -1921,7 +1923,7 @@ def Matrix(field, shape):
         ndim = max(m.ndim, counts.ndim)
         npcounts = Permuter.tonumpy(ndim)(counts)
         npcounts = tuple(npcounts[axis] for axis in range(ndim))
-        cells = _bg.np.tile(m._cells, npcounts)
+        cells = _np.tile(m._cells, npcounts)
         return m.fromnumpy(cells)
 
     def rep_along(m, axis, count):
@@ -2182,7 +2184,7 @@ def Matrix(field, shape):
         # Dtype me.
         dtype = rfield.dtype()
         # Preallocate me.
-        cells = _bg.np.empty(npshape, dtype)
+        cells = _np.empty(npshape, dtype)
         # Do me (dujj).
         cells[0] = first
         for i in range(1, npshape[0]):
@@ -2190,7 +2192,7 @@ def Matrix(field, shape):
                 ret = func(*(x[i] for x in xs))
             else:
                 ret_field, ret = func(*(x[i] for x in xs))
-                assert isinstance(ret, _bg.np.ndarray)
+                assert isinstance(ret, _np.ndarray)
                 if ret_field != rfield:
                     raise TypeError("inconsistent return field, expected "
                             f"{rfield}, got {ret_field}")
@@ -3020,7 +3022,7 @@ class _MatrixAt:
         elif _iterable(i):
             i = list(i)
         if isinstance(i, list):
-            i = _bg.np.array(i, dtype=object)
+            i = _np.array(i, dtype=object)
             if i.shape != (len(i), ):
                 raise TypeError(f"expected a 1d sequence to index axis {axis}, "
                         f"got shape: {i.shape}")
@@ -3028,7 +3030,7 @@ class _MatrixAt:
                 if not isinstance(j, int):
                     raise TypeError("expected a sequence of integers to index "
                             f"axis {axis}, got {_objtname(j)}")
-        if not isinstance(i, _bg.np.ndarray):
+        if not isinstance(i, _np.ndarray):
             raise TypeError("expected a bare integer, slice, mask, or a "
                     f"sequence of integers to index, got {_objtname(i)} for "
                     f"axis {axis}")
@@ -3191,7 +3193,7 @@ class Int(RealField):
         if ((cells < lo) | (cells > hi)).any():
             raise ValueError("cannot cast too-large integer to int64, "
                     "overflowed")
-        return cells.astype(_bg.np.int64)
+        return cells.astype(_np.int64)
 
     @classmethod
     def _mat_numpyarr_float(cls, m):
@@ -3203,7 +3205,7 @@ class Int(RealField):
         if ((cells > hi) | (cells < lo)).any():
             raise ValueError("cannot cast too-large integer to float64, "
                     "overflowed")
-        return cells.astype(_bg.np.float64)
+        return cells.astype(_np.float64)
 
     @classmethod
     def _mat_numpyarr_complex(cls, m):
@@ -3215,7 +3217,7 @@ class Int(RealField):
         if ((cells > hi) | (cells < lo)).any():
             raise ValueError("cannot cast too-large integer to complex128, "
                     "overflowed")
-        return cells.astype(_bg.np.complex128)
+        return cells.astype(_np.complex128)
 
 
 
@@ -3239,23 +3241,23 @@ def _float_eq(x, y, ulps=50):
     # False
     # But she'll be so right.
 
-    absx = _bg.np.abs(x)
-    absy = _bg.np.abs(y)
+    absx = _np.abs(x)
+    absy = _np.abs(y)
 
     # Mask places where we can use inexact comparison. use abs a bunch to speed
     # up memory access (maybe idk) since we already need it for =1 check.
-    inexact = (_bg.np.isfinite(absx) & _bg.np.isfinite(absy))
+    inexact = (_np.isfinite(absx) & _np.isfinite(absy))
     inexact &= ((absx != 0.0) & (absy != 0.0))
     inexact &= ((absx != 1.0) & (absy != 1.0))
 
     # Get the bits of each number, using "negative" bits for negative numbers
     # instead of the literal bits of the negative number.
-    ux = absx.view(_bg.np.uint64).copy()
-    uy = absy.view(_bg.np.uint64).copy()
+    ux = absx.view(_np.uint64).copy()
+    uy = absy.view(_np.uint64).copy()
     ux[x < 0.0] = -ux[x < 0.0]
     uy[y < 0.0] = -uy[y < 0.0]
     ux -= uy
-    dif = _bg.np.abs(ux, out=ux)
+    dif = _np.abs(ux, out=ux)
 
     # Make the comparison, adding eqs where they are close enough and exact isn't
     # required.
@@ -3268,7 +3270,7 @@ def _float_eq(x, y, ulps=50):
 class Float(RealField):
     @classmethod
     def dtype(cls):
-        return _bg.np.dtype(float)
+        return _np.dtype(float)
 
     @classmethod
     def fromobj(cls, x):
@@ -3364,8 +3366,8 @@ class Float(RealField):
 
     @classmethod
     def eq(cls, a, b, ulps=15):
-        x = _bg.np.array([a], dtype=float)
-        y = _bg.np.array([b], dtype=float)
+        x = _np.array([a], dtype=float)
+        y = _np.array([b], dtype=float)
         return bool(_float_eq(x, y))
     @classmethod
     def ne(cls, a, b):
@@ -3401,29 +3403,29 @@ class Float(RealField):
     def _mat_numpyarr_int(cls, m):
         cells = m._cells
         # Check finite.
-        if not _bg.np.isfinite(cells).all():
+        if not _np.isfinite(cells).all():
             raise ValueError("cannot cast non-finite values to integer")
         # Check integer.
-        if not (cells == _bg.np.round(cells)).all():
+        if not (cells == _np.round(cells)).all():
             raise ValueError("cannot cast non-integer to integer")
         # Check bounds.
         hi = _math.nextafter(float((1 << 63) - 1), 0.0)
         lo = _math.nextafter(float(-(1 << 63)), 0.0)
         if ((cells < lo) | (cells > hi)).any():
             raise ValueError("overflow when casting to integer")
-        return cells.astype(_bg.np.int64)
+        return cells.astype(_np.int64)
 
     @classmethod
     def _mat_numpyarr_float(cls, m):
         cells = m._cells
         # justin caseme.
-        if cells.dtype != _bg.np.float64:
-            cells = cells.astype(_bg.np.float64)
+        if cells.dtype != _np.float64:
+            cells = cells.astype(_np.float64)
         return cells
 
     @classmethod
     def _mat_numpyarr_complex(cls, m):
-        return m._cells.astype(_bg.np.complex128)
+        return m._cells.astype(_np.complex128)
 
     @classmethod
     def _mat_fromfield(cls, m):
@@ -3436,15 +3438,15 @@ class Float(RealField):
 
     @classmethod
     def _mat_eye(cls, M):
-        cells = _bg.np.eye(M.shape[0], dtype=cls.dtype())
+        cells = _np.eye(M.shape[0], dtype=cls.dtype())
         return M(cells)
     @classmethod
     def _mat_zeros(cls, M):
-        cells = _bg.np.zeros(M.shape.tonumpy, dtype=cls.dtype())
+        cells = _np.zeros(M.shape.tonumpy, dtype=cls.dtype())
         return M(cells)
     @classmethod
     def _mat_ones(cls, M):
-        cells = _bg.np.ones(M.shape.tonumpy, dtype=cls.dtype())
+        cells = _np.ones(M.shape.tonumpy, dtype=cls.dtype())
         return M(cells)
 
     @classmethod
@@ -3486,11 +3488,11 @@ class Float(RealField):
 
     @classmethod
     def _mat_exp(cls, m):
-        cells = _bg.np.exp(m._cells)
+        cells = _np.exp(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_exp2(cls, m):
-        cells = _bg.np.exp2(m._cells)
+        cells = _np.exp2(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_exp10(cls, m):
@@ -3503,28 +3505,28 @@ class Float(RealField):
 
     @classmethod
     def _mat_ln(cls, m):
-        cells = _bg.np.log(m._cells)
+        cells = _np.log(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_log2(cls, m):
-        cells = _bg.np.log2(m._cells)
+        cells = _np.log2(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_log10(cls, m):
-        cells = _bg.np.log10(m._cells)
+        cells = _np.log10(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_log(cls, m, base):
-        cells = _bg.np.log(m) / _bg.np.log(base)
+        cells = _np.log(m) / _np.log(base)
         return type(m)(cells)
 
     @classmethod
     def _mat_sqrt(cls, m):
-        cells = _bg.np.sqrt(m._cells)
+        cells = _np.sqrt(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_cbrt(cls, m):
-        cells = _bg.np.cbrt(m._cells)
+        cells = _np.cbrt(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_root(cls, m, n):
@@ -3533,32 +3535,32 @@ class Float(RealField):
 
     @classmethod
     def _mat_sin(cls, m):
-        cells = _bg.np.sin(m._cells)
+        cells = _np.sin(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_cos(cls, m):
-        cells = _bg.np.cos(m._cells)
+        cells = _np.cos(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_tan(cls, m):
-        cells = _bg.np.tan(m._cells)
+        cells = _np.tan(m._cells)
         return type(m)(cells)
 
     @classmethod
     def _mat_asin(cls, m):
-        cells = _bg.np.asin(m._cells)
+        cells = _np.asin(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_acos(cls, m):
-        cells = _bg.np.acos(m._cells)
+        cells = _np.acos(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_atan(cls, m):
-        cells = _bg.np.atan(m._cells)
+        cells = _np.atan(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_atan2(cls, y, x):
-        cells = _bg.np.atan2(y._cells, x._cells)
+        cells = _np.atan2(y._cells, x._cells)
         return type(y)(cells)
 
     @classmethod
@@ -3573,42 +3575,42 @@ class Float(RealField):
     @classmethod
     def _mat_issame(cls, m, o):
         # byte-wise compare, but maintaining element size.
-        cells = (m._cells.view(_bg.np.void) == o._cells.view(_bg.np.void))
-        return Matrix[bool, m.shape](cells)
+        cells = (m._cells.view(_np.void) == o._cells.view(_np.void))
+        return Matrix[bool, m.shape](cells.astype(object))
     @classmethod
     def _mat_eq(cls, m, o):
         cells = _float_eq(m._cells, o._cells)
-        return Matrix[bool, m.shape](cells)
+        return Matrix[bool, m.shape](cells.astype(object))
     @classmethod
     def _mat_ne(cls, m, o):
         cells = ~_float_eq(m._cells, o._cells)
-        cells &= (~_bg.np.isnan(m._cells) & ~_bg.np.isnan(o._cells))
-        return Matrix[bool, m.shape](cells)
+        cells &= (~_np.isnan(m._cells) & ~_np.isnan(o._cells))
+        return Matrix[bool, m.shape](cells.astype(object))
     @classmethod
     def _mat_lt(cls, m, o):
         cells = (m._cells < o._cells)
-        return Matrix[bool, m.shape](cells)
+        return Matrix[bool, m.shape](cells.astype(object))
     @classmethod
     def _mat_le(cls, m, o):
         cells = (m._cells <= o._cells)
-        return Matrix[bool, m.shape](cells)
+        return Matrix[bool, m.shape](cells.astype(object))
 
     @classmethod
     def _mat_det(cls, m):
         if m.isempty:
             return m.one
-        val = _bg.np.linalg.det(m._cells)
+        val = _np.linalg.det(m._cells)
         return single(val, field=cls)
 
     @classmethod
     def _mat_trace(cls, m):
-        val = _bg.np.trace(m._cells)
+        val = _np.trace(m._cells)
         return single(val, field=cls)
 
     @classmethod
     def _mat_norm(cls, m):
         a = m._cells.reshape(-1)
-        val = _bg.np.linalg.norm(a)
+        val = _np.linalg.norm(a)
         return single(val, field=cls)
 
     @classmethod
@@ -3617,14 +3619,14 @@ class Float(RealField):
             return m.zero
         a = m._cells.reshape(-1)
         b = o._cells.reshape(-1)
-        val = _bg.np.vdot(a, b)
+        val = _np.vdot(a, b)
         return single(val, field=cls)
 
     @classmethod
     def _mat_cross(cls, m, o):
         a = m._cells.reshape(-1)
         b = o._cells.reshape(-1)
-        val = _bg.np.cross(a, b)
+        val = _np.cross(a, b)
         return single(val, field=cls)
 
     @classmethod
@@ -3639,46 +3641,46 @@ class Float(RealField):
             return m.zero if axis is None else m
         # Note we ignore nans, bc who tf wants nans.
         if axis is None:
-            val = _bg.np.nansum(m._cells)
+            val = _np.nansum(m._cells)
             return single(val, field=cls)
         if axis >= m.ndim:
             return m
         # Use numpy-equiv axis and dont wipe that axis once sumed along.
         npaxis = Permuter.tonumpyaxis(m.ndim, axis)
-        cells = _bg.np.nansum(m._cells, axis=npaxis, keepdims=True)
+        cells = _np.nansum(m._cells, axis=npaxis, keepdims=True)
         return m.fromnumpy(cells)
     @classmethod
     def _mat_prod(cls, m, axis):
         if m.isempty:
             return m.one if axis is None else m
         if axis is None:
-            val = _bg.np.nanprod(m._cells)
+            val = _np.nanprod(m._cells)
             return single(val, field=cls)
         if axis >= m.ndim:
             return m
         npaxis = Permuter.tonumpyaxis(m.ndim, axis)
-        cells = _bg.np.nanprod(m._cells, axis=npaxis, keepdims=True)
+        cells = _np.nanprod(m._cells, axis=npaxis, keepdims=True)
         return m.fromnumpy(cells)
     @classmethod
     def _mat_minn(cls, m, axis):
         if axis is None:
-            val = _bg.np.nanmin(m._cells)
+            val = _np.nanmin(m._cells)
             return single(val, field=cls)
         if axis >= m.ndim:
             return m
         npaxis = Permuter.tonumpyaxis(m.ndim, axis)
-        cells = _bg.np.nanmin(m._cells, axis=npaxis, keepdims=True)
+        cells = _np.nanmin(m._cells, axis=npaxis, keepdims=True)
         return m.fromnumpy(cells)
 
     @classmethod
     def _mat_maxx(cls, m, axis):
         if axis is None:
-            val = _bg.np.nanmax(m._cells)
+            val = _np.nanmax(m._cells)
             return single(val, field=cls)
         if axis >= m.ndim:
             return m
         npaxis = Permuter.tonumpyaxis(m.ndim, axis)
-        cells = _bg.np.nanmax(m._cells, axis=npaxis, keepdims=True)
+        cells = _np.nanmax(m._cells, axis=npaxis, keepdims=True)
         return m.fromnumpy(cells)
 
     @classmethod
@@ -3691,7 +3693,7 @@ class Float(RealField):
 class Complex(ComplexField):
     @classmethod
     def dtype(cls):
-        return _bg.np.dtype(complex)
+        return _np.dtype(complex)
 
     @classmethod
     def fromobj(cls, x):
@@ -3858,16 +3860,16 @@ class Complex(ComplexField):
                     "zero imaginary components")
         cells = cells.real
         # justin caseme.
-        if cells.dtype != _bg.np.float64:
-            cells = cells.astype(_bg.np.float64)
+        if cells.dtype != _np.float64:
+            cells = cells.astype(_np.float64)
         return cells
 
     @classmethod
     def _mat_numpyarr_complex(cls, m):
         cells = m._cells
         # justin caseme.
-        if cells.dtype != _bg.np.complex128:
-            cells = cells.astype(_bg.np.complex128)
+        if cells.dtype != _np.complex128:
+            cells = cells.astype(_np.complex128)
         return cells
 
     @classmethod
@@ -3881,15 +3883,15 @@ class Complex(ComplexField):
 
     @classmethod
     def _mat_eye(cls, M):
-        cells = _bg.np.eye(M.shape[0], dtype=cls.dtype())
+        cells = _np.eye(M.shape[0], dtype=cls.dtype())
         return M(cells)
     @classmethod
     def _mat_zeros(cls, M):
-        cells = _bg.np.zeros(M.shape.tonumpy, dtype=cls.dtype())
+        cells = _np.zeros(M.shape.tonumpy, dtype=cls.dtype())
         return M(cells)
     @classmethod
     def _mat_ones(cls, M):
-        cells = _bg.np.ones(M.shape.tonumpy, dtype=cls.dtype())
+        cells = _np.ones(M.shape.tonumpy, dtype=cls.dtype())
         return M(cells)
 
     @classmethod
@@ -3903,7 +3905,7 @@ class Complex(ComplexField):
         return type(m)(cells)
     @classmethod
     def _mat_conj(cls, m):
-        cells = _bg.np.conj(m._cells)
+        cells = _np.conj(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_real(cls, m):
@@ -3945,11 +3947,11 @@ class Complex(ComplexField):
 
     @classmethod
     def _mat_exp(cls, m):
-        cells = _bg.np.exp(m._cells)
+        cells = _np.exp(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_exp2(cls, m):
-        cells = _bg.np.exp2(m._cells)
+        cells = _np.exp2(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_exp10(cls, m):
@@ -3962,28 +3964,28 @@ class Complex(ComplexField):
 
     @classmethod
     def _mat_ln(cls, m):
-        cells = _bg.np.log(m._cells)
+        cells = _np.log(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_log2(cls, m):
-        cells = _bg.np.log2(m._cells)
+        cells = _np.log2(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_log10(cls, m):
-        cells = _bg.np.log10(m._cells)
+        cells = _np.log10(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_log(cls, m, base):
-        cells = _bg.np.log(m) / _bg.np.log(base)
+        cells = _np.log(m) / _np.log(base)
         return type(m)(cells)
 
     @classmethod
     def _mat_sqrt(cls, m):
-        cells = _bg.np.sqrt(m._cells)
+        cells = _np.sqrt(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_cbrt(cls, m):
-        cells = _bg.np.cbrt(m._cells)
+        cells = _np.cbrt(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_root(cls, m, n):
@@ -3992,28 +3994,28 @@ class Complex(ComplexField):
 
     @classmethod
     def _mat_sin(cls, m):
-        cells = _bg.np.sin(m._cells)
+        cells = _np.sin(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_cos(cls, m):
-        cells = _bg.np.cos(m._cells)
+        cells = _np.cos(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_tan(cls, m):
-        cells = _bg.np.tan(m._cells)
+        cells = _np.tan(m._cells)
         return type(m)(cells)
 
     @classmethod
     def _mat_asin(cls, m):
-        cells = _bg.np.asin(m._cells)
+        cells = _np.asin(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_acos(cls, m):
-        cells = _bg.np.acos(m._cells)
+        cells = _np.acos(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_atan(cls, m):
-        cells = _bg.np.atan(m._cells)
+        cells = _np.atan(m._cells)
         return type(m)(cells)
     @classmethod
     def _mat_atan2(cls, y, x):
@@ -4024,7 +4026,7 @@ class Complex(ComplexField):
                     "non-zero imaginary components")
         a = a.real
         b = b.real
-        cells = _bg.np.atan2(a, b)
+        cells = _np.atan2(a, b)
         # complex me.
         cells = cells.astype(complex)
         return type(y)(cells)
@@ -4041,62 +4043,62 @@ class Complex(ComplexField):
     @classmethod
     def _mat_issame(cls, m, o):
         # byte-wise compare, but maintaining element size.
-        cells = (m._cells.view(_bg.np.void) == o._cells.view(_bg.np.void))
-        return Matrix[bool, m.shape](cells)
+        cells = (m._cells.view(_np.void) == o._cells.view(_np.void))
+        return Matrix[bool, m.shape](cells.astype(object))
     @classmethod
     def _mat_eq(cls, m, o):
-        mre = _bg.np.real(m._cells)
-        mim = _bg.np.imag(m._cells)
-        ore = _bg.np.real(o._cells)
-        oim = _bg.np.imag(o._cells)
-        cells = (_float_eq(mre, oro) & _float_eq(mim, oim))
-        return Matrix[bool, m.shape](cells)
+        mre = m._cells.real
+        mim = m._cells.imag
+        ore = o._cells.real
+        oim = o._cells.imag
+        cells = (_float_eq(mre, ore) & _float_eq(mim, oim))
+        return Matrix[bool, m.shape](cells.astype(object))
     @classmethod
     def _mat_ne(cls, m, o):
-        mre = _bg.np.real(m._cells)
-        mim = _bg.np.imag(m._cells)
-        ore = _bg.np.real(o._cells)
-        oim = _bg.np.imag(o._cells)
-        cells = ((~_float_eq(mre, oro)) & (~_float_eq(mim, oim)))
-        cells &= ((~_bg.np.isnan(m)) | (~_bg.np.isnan(o)))
-        return Matrix[bool, m.shape](cells)
+        mre = m._cells.real
+        mim = m._cells.imag
+        ore = o._cells.real
+        oim = o._cells.imag
+        cells = ((~_float_eq(mre, ore)) & (~_float_eq(mim, oim)))
+        cells &= ((~_np.isnan(m)) | (~_np.isnan(o)))
+        return Matrix[bool, m.shape](cells.astype(object))
     @classmethod
     def _mat_lt(cls, m, o):
-        mim = _bg.np.imag(m._cells)
-        oim = _bg.np.imag(o._cells)
+        mim = m._cells.imag
+        oim = o._cells.imag
         if not ((mim == 0.0).all() and (oim == 0.0).all()):
             raise TypeError("cannot order complex (values were not all real)")
-        mre = _bg.np.real(m._cells)
-        ore = _bg.np.real(o._cells)
+        mre = m._cells.real
+        ore = o._cells.real
         cells = (mre < ore)
-        return Matrix[bool, m.shape](cells)
+        return Matrix[bool, m.shape](cells.astype(object))
     @classmethod
     def _mat_le(cls, m, o):
-        mim = _bg.np.imag(m._cells)
-        oim = _bg.np.imag(o._cells)
+        mim = m._cells.imag
+        oim = o._cells.imag
         if not ((mim == 0.0).all() and (oim == 0.0).all()):
             raise TypeError("cannot order complex (values were not all real)")
-        mre = _bg.np.real(m._cells)
-        ore = _bg.np.real(o._cells)
+        mre = m._cells.real
+        ore = o._cells.real
         cells = (mre <= ore)
-        return Matrix[bool, m.shape](cells)
+        return Matrix[bool, m.shape](cells.astype(object))
 
     @classmethod
     def _mat_det(cls, m):
         if m.isempty:
             return m.one
-        val = _bg.np.linalg.det(m._cells)
+        val = _np.linalg.det(m._cells)
         return single(val, field=cls)
 
     @classmethod
     def _mat_trace(cls, m):
-        val = _bg.np.trace(m._cells)
+        val = _np.trace(m._cells)
         return single(val, field=cls)
 
     @classmethod
     def _mat_norm(cls, m):
         a = m._cells.reshape(-1)
-        val = _bg.np.linalg.norm(a)
+        val = _np.linalg.norm(a)
         return single(val, field=cls)
 
     @classmethod
@@ -4105,14 +4107,14 @@ class Complex(ComplexField):
             return m.zero
         a = m._cells.reshape(-1)
         b = o._cells.reshape(-1)
-        val = _bg.np.vdot(a, b)
+        val = _np.vdot(a, b)
         return single(val, field=cls)
 
     @classmethod
     def _mat_cross(cls, m, o):
         a = m._cells.reshape(-1)
         b = o._cells.reshape(-1)
-        val = _bg.np.cross(a, b)
+        val = _np.cross(a, b)
         return single(val, field=cls)
 
     @classmethod
@@ -4127,46 +4129,46 @@ class Complex(ComplexField):
             return m.zero if axis is None else m
         # Note we ignore nans, bc who tf wants nans.
         if axis is None:
-            val = _bg.np.nansum(m._cells)
+            val = _np.nansum(m._cells)
             return single(val, field=cls)
         if axis >= m.ndim:
             return m
         # Use numpy-equiv axis and dont wipe that axis once sumed along.
         npaxis = Permuter.tonumpyaxis(m.ndim, axis)
-        cells = _bg.np.nansum(m._cells, axis=npaxis, keepdims=True)
+        cells = _np.nansum(m._cells, axis=npaxis, keepdims=True)
         return m.fromnumpy(cells)
     @classmethod
     def _mat_prod(cls, m, axis):
         if m.isempty:
             return m.one if axis is None else m
         if axis is None:
-            val = _bg.np.nanprod(m._cells)
+            val = _np.nanprod(m._cells)
             return single(val, field=cls)
         if axis >= m.ndim:
             return m
         npaxis = Permuter.tonumpyaxis(m.ndim, axis)
-        cells = _bg.np.nanprod(m._cells, axis=npaxis, keepdims=True)
+        cells = _np.nanprod(m._cells, axis=npaxis, keepdims=True)
         return m.fromnumpy(cells)
     @classmethod
     def _mat_minn(cls, m, axis):
         if axis is None:
-            val = _bg.np.nanmin(m._cells)
+            val = _np.nanmin(m._cells)
             return single(val, field=cls)
         if axis >= m.ndim:
             return m
         npaxis = Permuter.tonumpyaxis(m.ndim, axis)
-        cells = _bg.np.nanmin(m._cells, axis=npaxis, keepdims=True)
+        cells = _np.nanmin(m._cells, axis=npaxis, keepdims=True)
         return m.fromnumpy(cells)
 
     @classmethod
     def _mat_maxx(cls, m, axis):
         if axis is None:
-            val = _bg.np.nanmax(m._cells)
+            val = _np.nanmax(m._cells)
             return single(val, field=cls)
         if axis >= m.ndim:
             return m
         npaxis = Permuter.tonumpyaxis(m.ndim, axis)
-        cells = _bg.np.nanmax(m._cells, axis=npaxis, keepdims=True)
+        cells = _np.nanmax(m._cells, axis=npaxis, keepdims=True)
         return m.fromnumpy(cells)
 
     @classmethod
@@ -4196,7 +4198,7 @@ def single(x, *, field=None):
     Single (1x1) matrix of the given object.
     """
     xfield = toField(type(x))
-    cells = _bg.np.array([[x]], dtype=xfield.dtype())
+    cells = _np.array([[x]], dtype=xfield.dtype())
     mat = Single[xfield](cells)
     if field is not None:
         mat = mat.tofield(field)
@@ -4223,7 +4225,7 @@ def empty(field):
     Empty (0x0) matrix over the given field.
     """
     field = toField(field)
-    cells = _bg.np.array([], dtype=field.dtype())
+    cells = _np.array([], dtype=field.dtype())
     return Empty[field](cells)
 
 def isempty(x):
@@ -4622,7 +4624,7 @@ def stack(axis, *xs, field=None):
     ys = [x._cells for x in xs]
     ys = [y[(None,) * (ndim - y.ndim)] for y in ys]
     npaxis = Permuter.tonumpyaxis(ndim, axis)
-    cells = _bg.np.concatenate(ys, axis=npaxis)
+    cells = _np.concatenate(ys, axis=npaxis)
     return Matrix.fromnumpy(field, cells)
 
 def vstack(*xs, field=None):
@@ -4644,7 +4646,7 @@ def ravel(*xs, field=None):
     xs = _maybe_unpack_mats(xs)
     xs = castall(xs, field=field, broadcast=False)
     field = _get_field(field, xs)
-    cells = _bg.np.concatenate([x.ravel.numpyvec() for x in xs])
+    cells = _np.concatenate([x.ravel.numpyvec() for x in xs])
     return Matrix.fromnumpy(field, cells)
 
 def rep(x, *counts, field=None):
@@ -4688,7 +4690,7 @@ def tovec(*xs, field=None):
                 field = y.field
             concat.append(y.numpyvec())
     field = _get_field(field)
-    cells = _bg.np.concatenate(concat)
+    cells = _np.concatenate(concat)
     return Matrix.fromnumpy(field, cells)
 
 
@@ -4734,7 +4736,7 @@ def diag(x, *, field=None):
         return x.diag
     Mat = Matrix[field, Shape(x.size, x.size)]
     cells = Mat.zeros._cells.copy()
-    _bg.np.fill_diagonal(cells, x.numpyvec())
+    _np.fill_diagonal(cells, x.numpyvec())
     return Mat(cells)
 
 def linspace(x0, x1, n, *, field=None):

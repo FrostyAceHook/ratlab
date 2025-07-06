@@ -7,17 +7,172 @@ import linecache as _linecache
 import os as _os
 import re as _re
 import sys as _sys
+import threading as _threading
 import traceback as _traceback
 import uuid as _uuid
 import warnings as _warnings
-from importlib import import_module as _importlib_import_module
 from importlib import abc as _importlib_abc
+from importlib import import_module as _importlib_import
 from importlib.util import spec_from_file_location as _importlib_spec
 from pathlib import Path as _Path
 
-import matrix as _matrix
-from bg import bg as _bg
-from util import coloured as _coloured, objtname as _objtname
+from .util import coloured as _coloured, objtname as _objtname
+
+
+
+# Expensive initialisation (mostly importing) is done in the background. The only
+# reason this is done is to provide a faster start-up when using the cli, since
+# it is the only thing that benefits from threading (it calls `input()` which
+# blocks). The background loader also has the role of specifying the initial
+# objects in the space, via injects. No code will be executed until every
+# "required" task is complete, but the other tasks are not waited on.
+
+class _Failed:
+    def __init__(self, msg):
+        self._msg = msg
+        self._name = None
+        self._start_tossing = True
+    def _txt(self):
+        name = ""
+        if self._name is not None:
+            name = f" {repr(self._name)}"
+        return f"never loaded{name}, because: {self._msg}"
+    def _throw(self):
+        raise RuntimeError(self._txt())
+    def __repr__(self):
+        return f"<{self._txt()}>"
+    def __getattr__(self, name):
+        if not isinstance(name, str):
+            raise TypeError(f"expected string, got {_objtname(name)}")
+        toss = object.__getattribute__(self, "_start_tossing")
+        if toss:
+            self._throw()
+        raise AttributeError(f"{repr(type(self).__name__)} object has no "
+                f"attribute {repr(name)}")
+
+class _Task:
+    BACKGROUND = 0
+    REQUIRED = 1
+    INJECTED = 2
+    STAR_INJECTED = 3
+    _LAST = 3
+
+    def __init__(self, name, kind, func):
+        if not isinstance(name, str):
+            raise TypeError(f"expected string for 'name', got {_objtname(name)}")
+        if not isinstance(kind, int):
+            raise TypeError(f"expected integer for 'kind', got "
+                    f"{_objtname(kind)}")
+        if kind < 0 or kind > self._LAST:
+            raise ValueError(f"expected a valid kind for 'kind', got: {kind}")
+        if not callable(func):
+            raise TypeError("expected callable for 'func', got "
+                    f"{_objtname(func)}")
+        self.name = name
+        self.kind = kind
+        self.func = func
+        self.loaded = _threading.Event()
+        self._ret = None
+
+    @property
+    def ret(self):
+        if not self.loaded.is_set():
+            self.loaded.wait()
+        return self._ret
+
+    def load(self):
+        ret = self.func()
+        if isinstance(ret, _Failed):
+            ret._name = self.name
+        self._ret = ret
+        self.loaded.set()
+
+class _Loader:
+    def __init__(self, *tasks):
+        for task in tasks:
+            if not isinstance(task, _Task):
+                raise TypeError("expected Task for each task, got "
+                        f"{_objtname(task)}")
+        if len({task.name for task in tasks}) != len(tasks):
+            raise ValueError("got duplicate task names")
+        self._tasks = {task.name: task for task in tasks}
+        self._started = False
+        self._finished_req = _threading.Event()
+        self._finished = _threading.Event()
+
+    def start(self):
+        if self._started:
+            return
+        self._started = True
+        def target():
+            last_req = -1
+            for i, task in enumerate(self._tasks.values()):
+                if task.kind >= _Task.REQUIRED:
+                    last_req = i
+            if last_req == -1:
+                self._finished_req.set()
+            for i, task in enumerate(self._tasks.values()):
+                task.load()
+                if i == last_req:
+                    self._finished_req.set()
+            self._finished.set()
+        _threading.Thread(target=target, daemon=True).start()
+
+    def finish(self, nonreq=False):
+        # justin caseme.
+        self.start()
+        event = self._finished if nonreq else self._finished_req
+        if not event.is_set():
+            event.wait()
+
+    @property
+    def injects(self):
+        self.finish()
+        things = []
+        for task in self._tasks.values():
+            if task.kind < _Task.INJECTED:
+                continue
+            thing = (task.name, task.kind == _Task.STAR_INJECTED, task.ret)
+            things.append(thing)
+        return things
+
+    def __getitem__(self, name):
+        if not isinstance(name, str):
+            raise TypeError(f"expected string, got {_objtname(name)}")
+        if name not in self._tasks:
+            raise AttributeError(f"name {repr(name)} is not recognised")
+        # If it hasn't been started yet, just start it now instead of throwing
+        # or something.
+        self.start()
+        obj = self._tasks[name].ret
+        if isinstance(obj, _Failed):
+            obj._throw()
+        return obj
+
+
+def _task_import(path):
+    def wrapped():
+        try:
+            return _importlib_import(path, package=__package__)
+        except ImportError as e:
+            e = str(e)
+            if e[:1].isupper():
+                e = e[:1].lower() + e[1:]
+            return _Failed(f"failed to import module {repr(path)} ({e})")
+    return wrapped
+
+_bg = _Loader(
+    _Task("math", _Task.INJECTED, _task_import("math")),
+    _Task("np", _Task.INJECTED, _task_import("numpy")),
+    _Task("plot", _Task.STAR_INJECTED, _task_import(".plot")),
+    _Task("matrix", _Task.STAR_INJECTED, _task_import(".matrix")),
+    _Task("sympy", _Task.BACKGROUND, _task_import("sympy")),
+    _Task("pandas", _Task.BACKGROUND, _task_import("pandas")),
+    _Task("scipy", _Task.BACKGROUND, _task_import("scipy")),
+)
+_bg.__doc__ = """
+Holds the backgrounds tasks and the objects they return.
+"""
 
 
 
@@ -30,24 +185,21 @@ from util import coloured as _coloured, objtname as _objtname
 #       field. note this only propagates via some ops. (looks like
 #       [lit(1), lit(1) * lit(2) * function_call(1)], note the last 1 is not
 #       cast (to get around this, you must wrap it in a matrix literal [1])).
-# - if the entire parse is one expression and is not semi-colon terminated, wrap
-#       it in a print-if-non-none.
-# - override 'lits' to give the current space.
 
 
 # Functions exposed so that the transformed source can call them:
 
 def _EXPOSED_literal(x):
-    field = _matrix._get_field(None)
-    x, = _matrix.castall([x], field=field)
+    field = _bg["matrix"]._get_field(None)
+    x, = _bg["matrix"].castall([x], field=field)
     return x
 
 def _EXPOSED_list(*elements):
-    return _matrix.hstack(*elements)
+    return _bg["matrix"].hstack(*elements)
 
 def _EXPOSED_slice(matrix_literal, *sliced_by):
-    append_me = _matrix.hstack(*sliced_by)
-    return _matrix.vstack(matrix_literal, append_me)
+    append_me = _bg["matrix"].hstack(*sliced_by)
+    return _bg["matrix"].vstack(matrix_literal, append_me)
 
 def _EXPOSED_print(value, *assigns):
     # If no assigns, always print if non-none.
@@ -56,17 +208,13 @@ def _EXPOSED_print(value, *assigns):
             print(repr(value))
         return
     # Otherwise its an assign, and we only print on matrix assign.
-    if not isinstance(value, _matrix.Matrix):
+    if not isinstance(value, _bg["matrix"].Matrix):
         return
     txts = [y for x in assigns for y in [x, " = "]]
     cols = [208, 161] * len(assigns)
     pad = " " * sum(len(x) for x in txts)
     mat = repr(value).replace("\n", "\n" + pad)
     print(_coloured(cols, txts) + mat)
-
-
-# Commands (which are invoked like `cmd()`, but `cmd` also gets transformed to
-# that)
 
 def _EXPOSED_clear():
     """
@@ -81,9 +229,11 @@ class _History:
         self.fnames.append(fname)
     def clear(self):
         self.fnames.clear()
-    def __repr__(self):
+    def __getitem__(self, i):
+        if not isinstance(i, slice):
+            raise TypeError(f"expected slice, got {_objtname(i)}")
         lines = []
-        for fname in self.fnames:
+        for fname in self.fnames[i]:
             lines += _linecache.cache[fname][2]
         return "".join(lines).rstrip()
 HISTORY = _History()
@@ -91,7 +241,7 @@ def _EXPOSED_history():
     """
     print this console's past inputs
     """
-    print(HISTORY)
+    print(HISTORY[:])
 
 class _ExitConsoleException(Exception):
     pass
@@ -107,19 +257,19 @@ KW_PREV = "ans"
 COMMANDS = {"clear": _EXPOSED_clear, "history": _EXPOSED_history,
         "quit": _EXPOSED_quit}
 
-EXPOSED = {k: v for k, v in globals().items() if k.startswith("_EXPOSED")}
-DESOPXE = {v: k for k, v in EXPOSED.items()} # reversed exposed.
+_EXPOSED = {k: v for k, v in globals().items() if k.startswith("_EXPOSED")}
+_DESOPXE = {v: k for k, v in _EXPOSED.items()} # reversed exposed.
 
 KEYWORDS = {KW_LIST, KW_PREV}
 KEYWORDS |= set(COMMANDS.keys())
-KEYWORDS |= set(EXPOSED.keys())
+KEYWORDS |= set(_EXPOSED.keys())
 
 
 class _Transformer(_ast.NodeTransformer):
     def ast_call(self, func, *args):
-        assert func in DESOPXE
+        assert func in _DESOPXE
         return _ast.Call(
-            func=_ast.Name(id=DESOPXE[func], ctx=_ast.Load()),
+            func=_ast.Name(id=_DESOPXE[func], ctx=_ast.Load()),
             args=list(args),
             keywords=[],
         )
@@ -301,7 +451,7 @@ class _Transformer(_ast.NodeTransformer):
                     self.syntaxerrorme("cannot reference Ratlab command "
                             f"{repr(kw)} from outside console", node)
                 # Make it the correct name.
-                node.id = DESOPXE[COMMANDS[kw]]
+                node.id = _DESOPXE[COMMANDS[kw]]
         # Nothing more to visit.
         return node
 
@@ -319,7 +469,7 @@ class _Transformer(_ast.NodeTransformer):
         # Visit first.
         node = self.generic_visit(node)
         # If the entire expr is an uncalled command, make it called.
-        cmds = {DESOPXE[func] for func in COMMANDS.values()}
+        cmds = {_DESOPXE[func] for func in COMMANDS.values()}
         if self.is_named(node.value, cmds):
             new_node = _ast.Call(func=node.value, args=[], keywords=[])
             new_node = _ast.Expr(value=new_node)
@@ -455,7 +605,6 @@ class _PathFinder(_importlib_abc.MetaPathFinder):
 
         return None
 
-
 @_contextlib.contextmanager
 def _use_rat_importer():
     if not _use_rat_importer._count:
@@ -469,7 +618,6 @@ def _use_rat_importer():
             _sys.meta_path.remove(_use_rat_importer._finder)
 _use_rat_importer._count = 0
 _use_rat_importer._finder = _PathFinder()
-
 
 
 def _pretty_print_exception(exc, callout, tb=True):
@@ -575,254 +723,238 @@ def _pretty_print_exception(exc, callout, tb=True):
     print(new)
 
 
-def _execute(source, space, filename=None):
-    # For console if filename is none.
-    console = (filename is None)
-    if console:
-        filename = f"<{_uuid.uuid4()}/console>"
-        # Store source for some nice error printing.
-        lines = [line + "\n" for line in source.splitlines()]
-        _linecache.cache[filename] = (len(source), None, lines, filename)
-
-    try:
-        # Transform and compile.
-        transformer = _Transformer(source, filename, console)
-        parsed = transformer.cook()
-        compiled = compile(parsed, filename=filename, mode="exec")
-    except Exception as e:
-        _pretty_print_exception(e, "TYPO", tb=False)
-        return False
-    try:
-        # Enable the rat module importer.
-        with _use_rat_importer():
-            # Execute, with both locals and globals to simulate module-level
-            # (filescope) code.
-            exec(compiled, space.variables, space.variables)
-    except Exception as e:
-        if isinstance(e, _ExitConsoleException) and console:
-            raise
-        _pretty_print_exception(e, "ERROR", tb=True)
-        return False
-    return True
 
 
-
-class Space:
-    def __init__(self, initial_field=_matrix.Complex):
-        self._variables = None
-        self._initial_field = initial_field
+class Context:
+    def __init__(self):
+        self._space_dict = None
 
     @property
-    def variables(self):
-        if not self.initialised:
+    def _space(self):
+        if not self._initialised:
             raise RuntimeError("space is not initialised")
-        return self._variables
+        return self._space_dict
 
     @property
-    def initialised(self):
-        return self._variables is not None
+    def _initialised(self):
+        return self._space_dict is not None
 
-    def initialise(self):
-        if self.initialised:
+    def _initialise(self):
+        if self._initialised:
             return
 
+        # Wait for background init (but dont wait the non-req tasks).
+        _bg.finish(nonreq=False)
+
         # Make initial space important parameters.
-        variables = {
+        space = {
             "__name__": "__main__",
             # dont set __file__.
             "__doc__": None,
-            "__package__": None,
+            "__package__": __package__,
             "__builtins__": __builtins__,
         }
 
-        # Grab all the default ratlab modules.
-        importme = {
-            "matrix": ("matrix", True),
-            "plot": ("plot", True),
-            "math": ("math", False),
-        }
-        modules = {name: _importlib_import_module(path)
-                   for name, (path, _) in importme.items()}
-        variables |= modules
-        for name, (_, star) in importme.items():
+        # Put all the injects.
+        for name, star, value in _bg.injects:
+            space[name] = value
             if not star:
                 continue
-            for name, value in vars(modules[name]).items():
-                if name.startswith("_"):
+            for subname, subvalue in vars(value).items():
+                if subname.startswith("_"):
                     continue
-                variables[name] = value
+                space[subname] = subvalue
 
         # Set an initial field (modifying the `space` and not our globals).
-        _matrix.lits(self._initial_field, inject=True, space=variables)
+        initial_field = _bg["matrix"].Complex
+        _bg["matrix"].lits(initial_field, inject=True, space=space)
 
         # Splice every "exposed" object into the space.
-        for name, value in EXPOSED.items():
-            if name in variables:
+        for name, value in _EXPOSED.items():
+            if name in space:
                 raise RuntimeError(f"? exposed {repr(name)} already set")
-            variables[name] = value
-
-        # Splice all background objects into the space.
-        for name, value in _bg.injects.items():
-            if name in variables:
-                raise RuntimeError(f"? background {repr(name)} already set")
-            variables[name] = value
+            space[name] = value
 
         # Done.
-        self._variables = variables
+        self._space_dict = space
+
+
+    def _execute(self, source, filename=None):
+        # For console if filename is none.
+        console = (filename is None)
+        if console:
+            filename = f"<{_uuid.uuid4()}/console>"
+            # Store source for some nice error printing.
+            lines = [line + "\n" for line in source.splitlines()]
+            _linecache.cache[filename] = (len(source), None, lines, filename)
+
+        try:
+            # Transform and compile.
+            transformer = _Transformer(source, filename, console)
+            parsed = transformer.cook()
+            compiled = compile(parsed, filename=filename, mode="exec")
+        except Exception as e:
+            _pretty_print_exception(e, "TYPO", tb=False)
+            return False
+        try:
+            # Enable the rat module importer.
+            with _use_rat_importer():
+                # Execute, with both locals and globals to simulate module-level
+                # (filescope) code.
+                exec(compiled, self._space, self._space)
+        except Exception as e:
+            if isinstance(e, _ExitConsoleException) and console:
+                raise
+            _pretty_print_exception(e, "ERROR", tb=True)
+            return False
+        return True
+
+
+    def run_console(self):
+        """
+        Starts a command-line interface which is basically just an embedded
+        python interpreter.
+        """
+        def get_input():
+            source = ""
+            while True:
+                print(_coloured(73, ".. " if source else ">> "), end="")
+
+                # Delay the start of background loading (since its a tad slow to
+                # start up) as late as possible to reduce loading time.
+                _bg.start()
+
+                try:
+                    line = input()
+                except (EOFError, KeyboardInterrupt):
+                    # they ctrl+c-ed my ass.
+                    print()
+                    raise _ExitConsoleException()
+
+                source += "\n"*(not not source) + line
+                if not line:
+                    break
+                try:
+                    # dont let the stupid compile command print to stderr.
+                    with _warnings.catch_warnings():
+                        _warnings.simplefilter("ignore", SyntaxWarning)
+                        with _contextlib.redirect_stderr(_io.StringIO()):
+                            command = _codeop.compile_command(source)
+                except Exception as e:
+                    break
+                if command is not None:
+                    break
+            return source
+
+        first = True
+        try:
+            while True:
+                source = get_input()
+
+                # Delay space init until after first input to reduce loading
+                # times.
+                if first:
+                    self._initialise()
+                    # `last result` always starts with a value of none.
+                    self._space[KW_PREV] = None
+                    # History always starts cleared.
+                    HISTORY.clear()
+
+                    first = False
+
+                self._execute(source)
+
+        except _ExitConsoleException:
+            print(_coloured([73, 80], ["-- ", "okie leaving."]))
 
 
 
-def run_console(space):
-    """
-    Starts a command-line interface which is basically just an embedded python
-    interpreter. `space` should be a globals()-type dictionary of variables to
-    expose (and it will be modified).
-    """
-    if not isinstance(space, Space):
-        raise TypeError(f"expected a Space, got {_objtname(space)}")
+    def run_file(self, path, has_next):
+        """
+        Executes the file at the given path.
+        """
+        path = _Path(path)
 
-    def get_input():
-        source = ""
-        while True:
-            print(_coloured(73, ".. " if source else ">> "), end="")
+        # Start bg loading asap (nothing to wait for, unlike console).
+        _bg.start()
 
-            # Delay the start of background loading (since its a tad slow to
-            # start up) as late as possible to reduce loading time.
-            _bg.start()
+        # Initialise space asap (again, unlike console).
+        self._initialise()
 
-            try:
-                line = input()
-            except (EOFError, KeyboardInterrupt):
-                # they ctrl+c-ed my ass.
-                print()
-                raise _ExitConsoleException()
+        def esc(path):
+            s = str(path)
+            # Always use forward slash separators for paths.
+            if _os.name == "nt":
+                s = s.replace("\\", "/")
+            # Escape any control codes, using repr and trimming its quotes.
+            for i in _itertools.chain(range(0x00, 0x20), range(0x7F, 0xA0)):
+                s = s.replace(chr(i), repr(chr(i))[1:-1])
+            quote = "\"" if ("'" in s) else "'"
+            s = s.replace(quote, "\\" + quote)
+            s = s.replace("\\", "\\\\")
+            return quote + s + quote
 
-            source += "\n"*(not not source) + line
-            if not line:
-                break
-            try:
-                # dont let the stupid compile command print to stderr.
-                with _warnings.catch_warnings():
-                    _warnings.simplefilter("ignore", SyntaxWarning)
-                    with _contextlib.redirect_stderr(_io.StringIO()):
-                        command = _codeop.compile_command(source)
-            except Exception as e:
-                break
-            if command is not None:
-                break
-        return source
+        def coloured_esc(path):
+            cols = [244, 255, 244]
+            string = esc(path)
+            if "/" not in string:
+                txts = [string[0], string[1:-1], string[-1]]
+            else:
+                pre, aft = string.rsplit("/", 1)
+                txts = [pre + "/", aft[:-1], aft[-1]]
+            return cols, txts
 
-    first = True
-    try:
-        while True:
-            source = get_input()
+        def query(before, path, after=""):
+            if before:
+                before = before + " "
+            if after:
+                after = " " + after
+            txts = [before, after, ", ignore?", " (y/n): "]
+            cols = [   203,   203,         203,        210]
+            pcols, ptxts = coloured_esc(path)
+            txts[1:1] = ptxts
+            cols[1:1] = pcols
+            msg = _coloured(cols, txts)
+            while True:
+                response = input(msg).strip().casefold()
+                if not response:
+                    continue
+                if response in "yn":
+                    return response != "n"
 
-            # Delay space init until after first input to reduce loading times.
-            if first:
-                space.initialise()
-                # `last result` always starts with a value of none.
-                space.variables[KW_PREV] = None
-                # History always starts cleared.
-                HISTORY.clear()
+        def error(before, path, after=""):
+            if before:
+                before = before + " "
+            if after:
+                after = " " + after
+            txts = ["ratlab: error: ", before, after]
+            cols = [              124,    203,   203]
+            pcols, ptxts = coloured_esc(path)
+            txts[2:2] = ptxts
+            cols[2:2] = pcols
+            print(_coloured(cols, txts))
+            quit()
 
-                first = False
-
-            _execute(source, space)
-
-    except _ExitConsoleException:
-        print(_coloured([73, 80], ["-- ", "okie leaving."]))
-
-
-
-def run_file(space, path, has_next):
-    """
-    Executes the file at the given path. `space` should be a globals()-type
-    dictionary of variables to expose (and it will be modified).
-    """
-    if not isinstance(space, Space):
-        raise TypeError(f"expected a Space, got {_objtname(space)}")
-    path = _Path(path)
-
-    # Start bg loading asap (nothing to wait for, unlike console).
-    _bg.start()
-
-    # Initialise space asap (again, unlike console).
-    space.initialise()
-
-    def esc(path):
-        s = str(path)
-        # Always use forward slash separators for paths.
-        if _os.name == "nt":
-            s = s.replace("\\", "/")
-        # Escape any control codes, using repr and trimming its quotes.
-        for i in _itertools.chain(range(0x00, 0x20), range(0x7F, 0xA0)):
-            s = s.replace(chr(i), repr(chr(i))[1:-1])
-        quote = "\"" if ("'" in s) else "'"
-        s = s.replace(quote, "\\" + quote)
-        s = s.replace("\\", "\\\\")
-        return quote + s + quote
-
-    def coloured_esc(path):
-        cols = [244, 255, 244]
-        string = esc(path)
-        if "/" not in string:
-            txts = [string[0], string[1:-1], string[-1]]
-        else:
-            pre, aft = string.rsplit("/", 1)
-            txts = [pre + "/", aft[:-1], aft[-1]]
-        return cols, txts
-
-    def query(before, path, after=""):
-        if before:
-            before = before + " "
-        if after:
-            after = " " + after
-        txts = [before, after, ", ignore?", " (y/n): "]
-        cols = [   203,   203,         203,        210]
-        pcols, ptxts = coloured_esc(path)
-        txts[1:1] = ptxts
-        cols[1:1] = pcols
-        msg = _coloured(cols, txts)
-        while True:
-            response = input(msg).strip().casefold()
-            if not response:
-                continue
-            if response in "yn":
-                return response != "n"
-
-    def error(before, path, after=""):
-        if before:
-            before = before + " "
-        if after:
-            after = " " + after
-        txts = ["ratlab: error: ", before, after]
-        cols = [              124,    203,   203]
-        pcols, ptxts = coloured_esc(path)
-        txts[2:2] = ptxts
-        cols[2:2] = pcols
-        print(_coloured(cols, txts))
-        quit()
-
-    # Handle missing/invalid paths.
-    bad = False
-    if not path.exists():
-        bad = True
-        ignore = query("file", path, "doesn't exist")
-    elif not path.is_file():
-        bad = True
-        ignore = query("path", path, "is not a file")
-    if bad:
-        if not ignore:
-            error("missing file", path)
-        return
-
-    # Read and execute the file.
-    with path.open("r", encoding="utf-8") as file:
-        source = file.read()
-    if not _execute(source, space, filename=str(path)):
-        if not has_next:
+        # Handle missing/invalid paths.
+        bad = False
+        if not path.exists():
+            bad = True
+            ignore = query("file", path, "doesn't exist")
+        elif not path.is_file():
+            bad = True
+            ignore = query("path", path, "is not a file")
+        if bad:
+            if not ignore:
+                error("missing file", path)
             return
-        ignore = query("exception in file", path)
-        if not ignore:
-            error("exception in file", path)
-        print(_coloured([73, 80], ["-- ", "okie continuing."]))
+
+        # Read and execute the file.
+        with path.open("r", encoding="utf-8") as file:
+            source = file.read()
+        if not self._execute(source, filename=str(path)):
+            if not has_next:
+                return
+            ignore = query("exception in file", path)
+            if not ignore:
+                error("exception in file", path)
+            print(_coloured([73, 80], ["-- ", "okie continuing."]))

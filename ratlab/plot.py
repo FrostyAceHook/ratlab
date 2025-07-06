@@ -1,6 +1,6 @@
 
-import matrix as _matrix
-from util import singleton as _singleton
+from . import matrix as _matrix
+from .util import singleton as _singleton
 
 @_singleton
 class _plt:
@@ -42,6 +42,6 @@ def plot(x, y, label=None, color=None, linestyle=None, linewidth=None,
             alpha=alpha)
 
     # Enable legend if anything has been labelled.
-    handles, labels = plt.gca().get_legend_handles_labels()
-    if any(lbl for lbl in labels):
+    _, labels = plt.gca().get_legend_handles_labels()
+    if any(labels):
         plt.legend()

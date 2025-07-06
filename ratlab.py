@@ -1,12 +1,7 @@
-
-# Hack src/ into the path so we can import. Note this also allows the user code
-# to import from here.
-import os
 import sys
-sys.path.insert(0, os.path.join(os.path.dirname(__file__), "ratlab"))
 
-import engine
-import util
+import ratlab.engine as engine
+import ratlab.util as util
 
 def main():
     # Print big beautiful logo (the creation of which put Stuart Inc. trillions
@@ -111,12 +106,12 @@ def main():
         args = ["-"]
 
     # Read and execute each input file, treating "-" as a cli.
-    space = engine.Space()
+    ctx = engine.Context()
     for i, path in enumerate(args):
         if path.strip() == "-":
-            engine.run_console(space)
+            ctx.run_console()
         else:
-            engine.run_file(space, path, i < len(args) - 1)
+            ctx.run_file(path, i < len(args) - 1)
 
 if __name__ == "__main__":
     main()
