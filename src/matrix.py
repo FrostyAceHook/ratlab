@@ -4966,7 +4966,7 @@ def mvars(long=None):
     """
     Prints all matrix variables in the current space.
     """
-    from syntax import KW_PREV
+    from engine import KW_PREV
 
     if long is None:
         long = not doesdflt2short()

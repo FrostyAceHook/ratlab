@@ -5,7 +5,7 @@ import os
 import sys
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "src"))
 
-import syntax
+import engine
 import util
 
 def main():
@@ -35,7 +35,7 @@ def main():
         def code_colour(s):
             if "".join(x.strip() for x in s).isdigit():
                 return 135
-            red = (syntax.KEYWORDS | set("+-*/=")) - {syntax.KW_PREV}
+            red = (engine.KEYWORDS | set("+-*/=")) - {engine.KW_PREV}
             if s.strip() in red:
                 return 161
             if s.strip().isalpha():
@@ -62,7 +62,7 @@ def main():
                 "6", "]", " # a 2x3 matrix\n",
             "[", "1 2 3", "]\n",
             "[", "4 5 6", "]\n",
-            ">> ", syntax.KW_LIST, "[", "1", ", ", "2", ", ", "3", "]",
+            ">> ", engine.KW_LIST, "[", "1", ", ", "2", ", ", "3", "]",
                 " # a list\n",
             "[", "1", ", ", "2", ", ", "3", "]\n",
             ">> ", "[ [", "1", "][", "2", "], [", "3", "][", "4", "] ]",
@@ -76,7 +76,7 @@ def main():
         msg += util.coloured(map(code_colour, txts), txts)
 
         txts = []
-        for name, func in syntax.COMMANDS.items():
+        for name, func in engine.COMMANDS.items():
             doc = " ".join(func.__doc__.split())
             txts.append(">> ")
             txts.append(name)
@@ -90,17 +90,17 @@ def main():
         txts = [
             ">> ", "1", " + ", "2\n",
             "3\n",
-            ">> ", syntax.KW_PREV, "\n",
+            ">> ", engine.KW_PREV, "\n",
             "3\n",
             ">> ", "x", " = ", "[", "3", " * ", "4", "]",
                 " # a single (1x1) matrix\n",
             "x", " = ", "12\n",
-            ">> ", syntax.KW_PREV, " + ", "3\n",
+            ">> ", engine.KW_PREV, " + ", "3\n",
             "15\n"
         ]
         msg += "\n"
         msg += wrap_string("Additionally, the most recent result in the console "
-                          f"is stored in the {repr(syntax.KW_PREV)} label.")
+                          f"is stored in the {repr(engine.KW_PREV)} label.")
         msg += util.coloured(map(code_colour, txts), txts)
 
         print(msg, end="")
@@ -111,12 +111,12 @@ def main():
         args = ["-"]
 
     # Read and execute each input file, treating "-" as a cli.
-    space = syntax.Space()
+    space = engine.Space()
     for i, path in enumerate(args):
         if path.strip() == "-":
-            syntax.run_console(space)
+            engine.run_console(space)
         else:
-            syntax.run_file(space, path, i < len(args) - 1)
+            engine.run_file(space, path, i < len(args) - 1)
 
 if __name__ == "__main__":
     main()
