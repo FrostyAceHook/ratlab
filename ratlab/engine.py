@@ -164,7 +164,7 @@ def _task_import(path):
 _bg = _Loader(
     _Task("math", _Task.INJECTED, _task_import("math")),
     _Task("np", _Task.INJECTED, _task_import("numpy")),
-    _Task("plot", _Task.STAR_INJECTED, _task_import(".plot")),
+    _Task("plotting", _Task.STAR_INJECTED, _task_import(".plotting")),
     _Task("matrix", _Task.STAR_INJECTED, _task_import(".matrix")),
     _Task("sympy", _Task.BACKGROUND, _task_import("sympy")),
     _Task("pandas", _Task.BACKGROUND, _task_import("pandas")),
