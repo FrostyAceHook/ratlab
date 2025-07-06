@@ -661,6 +661,12 @@ class Space:
                 raise RuntimeError(f"? exposed {repr(name)} already set")
             variables[name] = value
 
+        # Splice all background objects into the space.
+        for name, value in _bg.injects.items():
+            if name in variables:
+                raise RuntimeError(f"? background {repr(name)} already set")
+            variables[name] = value
+
         # Done.
         self._variables = variables
 

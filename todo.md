@@ -1,4 +1,7 @@
 - "remoce two chars from points to user" bro wtf does this MEAN lmao
+- rename 'syntax' to 'engine'
+- move bg into 'engine' and make it an internal thing (everything else just
+    imports, but engine wont import matrix until necessary)
 - super specialised comparison-result matrix:
     - new "ComparisonField"
     - doesnt support `__bool__` unless single
@@ -9,7 +12,6 @@
 - `rotate` function which does brfilters np shift
 - `max`/`min` do take-min/max when given multiple (stack then max_along type shi)
 - add hyperbolic trig
-- arange for vector range (start stop step)
 - matrix eig
 - `full` function for matrix filled with one value.
 - `offdiag` for off diagonal mat construction
@@ -20,21 +22,15 @@
 - implement _MatrixAt
 - linspace/logspace/arange as field mat methods.
 - make field rep take all objects to string, so it can homogenise the display
+- vectorise .det/trace/friends for ndim>2 to drop first two axes?
 - optimise Field.rep
 - shortened matrix print
 - short and long themselves used with `with` for dflting.
 - make 'prog' file which handles logo, help msg, cmdline args, coloured printing,
     error msgs, whatever
-- add argument to execute without syntax changes (aka just includes the default
-    ratlab imports)
-- rename 'syntax' to 'engine'
-- vectorise .det/trace/friends for ndim>2 to drop first two axes?
 - add `mat` keyword where mat[] makes matrices and alternate execution method
     (-x, --bare-lists, --bare-matrices) to change what bare [] makes.
 - `ans` should be able to access attrs of it but never be set?
-- expose all background objects in the space
-    - nevermind lets just do numpy, since its compulsory
-    - also remove background matplotlib init, its not threadsafe LMAO
 - make a good readme
 - remove the concept of 'lits' and instead make rigorous promotion structure?
 - sympy integration

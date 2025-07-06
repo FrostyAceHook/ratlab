@@ -3,7 +3,6 @@ import inspect as _inspect
 import math as _math
 import os as _os
 import re as _re
-import sys as _sys
 import weakref as _weakref
 
 

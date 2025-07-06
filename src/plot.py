@@ -1,10 +1,24 @@
 
 import matrix as _matrix
-from bg import bg as _bg
+from util import singleton as _singleton
+
+@_singleton
+class _plt:
+    # stupid matplotlib not supporting thread.
+    def __init__(self):
+        self._inited = False
+        self._module = None
+    def __call__(self):
+        if not self._inited:
+            import matplotlib.pyplot as plt
+            plt.ion()
+            self._module = plt
+            self._inited = True
+        return self._module
 
 
 def figure(title=None, xlabel=None, ylabel=None, grid=False, figsize=(8, 5)):
-    plt = _bg.plt
+    plt = _plt()
     plt.figure(figsize=figsize)
     plt.grid(not not grid)
     if xlabel is not None:
@@ -17,7 +31,7 @@ def figure(title=None, xlabel=None, ylabel=None, grid=False, figsize=(8, 5)):
 def plot(x, y, label=None, color=None, linestyle=None, linewidth=None,
             marker=None, markersize=None, markerfacecolor=None,
             markeredgecolor=None, alpha=None):
-    plt = _bg.plt
+    plt = _plt()
     if isinstance(x, _matrix.Matrix):
         x = x.numpyvec(float)
     if isinstance(y, _matrix.Matrix):
