@@ -5,15 +5,13 @@ import math as _math
 import struct as _struct
 import sys as _sys
 
+from . import cons as _cons
 from .util import (
     classconst as _classconst,
-    coloured as _coloured,
-    entry as _entry,
     immutable as _immutable,
     instconst as _instconst,
     iterable as _iterable,
     maybe_unpack as _maybe_unpack,
-    nonctrl as _nonctrl,
     objtname as _objtname,
     singleton as _singleton,
     templated as _templated,
@@ -756,10 +754,10 @@ class Field:
         suffix = ""
         cells = m._cells
         if allow_flat and m.iscol:
-            suffix = _coloured(40, "ᵀ")
+            suffix = _cons.coloured(40, "ᵀ")
             cells = cells.T
         def rowstr(row):
-            return [" " * (width - len(_nonctrl(r))) + r for r in row]
+            return [" " * (width - len(_cons.nonctrl(r))) + r for r in row]
         rows = [rowstr(row) for row in cells]
         padded = (not short) or (width > 3)
         join = lambda x: "  ".join(x) if padded else " ".join(x)
@@ -794,10 +792,9 @@ class ComplexField(Field):
 
 @_templated(parents=Field)
 def _NonField(_base):
-    """
-    Wraps a non-field class in the field api, implementing some methods with
-    defaults.
-    """
+    # Wraps a non-field class in the field api, implementing some methods with
+    # defaults. Shouldn't be used directly, use `toField`.
+
     if not isinstance(_base, type):
         raise TypeError(f"expected a type, got {_objtname(_base)}")
     if issubclass(_base, Field):
@@ -850,16 +847,17 @@ _NonField.tnamer = lambda F: f"non-field type: {_tname(F, quoted=False)}"
 
 @_singleton
 class toField:
+    """
+    Returns a field-class-equivalent for the given kinda-field. If 'field' is
+    actually a subclass of 'Field', returns it without change, otherwise
+    returns an instantiation of '_NonField' which implements the api with
+    some default behaviour.
+    """
+
     def __init__(self):
         self._mapping = {}
 
     def __call__(self, field):
-        """
-        Returns a field-class-equivalent for the given kinda-field. If 'field' is
-        actually a subclass of 'Field', returns it without change, otherwise
-        returns an instantiation of '_NonField' which implements the api with
-        some default behaviour.
-        """
         if not isinstance(field, type):
             raise TypeError("expected a type for 'field', got "
                     f"{_objtname(field)}")
@@ -906,10 +904,10 @@ class lits:
         assert name in self._injects
         if field is ...:
             field = self._field
-        if field is None:
-            return True
         if name not in space:
             return False
+        if field is None:
+            return True
         got = space[name]
         try:
             expect = self._injects[name](field)
@@ -919,9 +917,9 @@ class lits:
             return True
         try:
             if isinstance(expect, Matrix):
-                return not expect.issame(got)
+                return not (expect.issame(got)).obj # TODO: change when bool
             else:
-                return expect != got
+                return (expect != got).obj # TODO: same
         except Exception:
             return True # assume nothing but the worst.
 
@@ -930,7 +928,8 @@ class lits:
         Sets the current/default field to the given field and injects constants
         such as 'e' and 'pi' into the globals.
         """
-        field = toField(field)
+        if field is not None:
+            field = toField(field)
         prev_field = self._field
         self._field = field
         if not inject:
@@ -940,7 +939,7 @@ class lits:
             space = _get_space()
         for name, getter in self._injects.items():
             # Dont wipe vars the user has set.
-            if self._is_overridden(space, name, prev_field):
+            if self._is_overridden(space, name, field=prev_field):
                 continue
             didset = False
             if field is not None:
@@ -1655,12 +1654,12 @@ def Matrix(field, shape):
         """
         Read-only numpy nd-array of the matrix, of the shape 'm.shape.tonumpy'.
         'totype' dictates the dtype of the returned array:
-        - none uses the natural dtype of the field (typically 'object' unless the
-            field is numeric).
-        - 'int' casts to integer and returns dtype 'np.int64' (note this will
-            fail on overflow).
-        - 'float' casts to floating and returns dtype 'np.float64'.
-        - 'complex' casts to complex and returns dtype 'np.complex128'.
+            none uses the natural dtype of the field (typically 'object' unless
+            the field is numeric);
+            'int' casts to integer and returns dtype 'np.int64' (note this will
+            fail on overflow);
+            'float' casts to floating and returns dtype 'np.float64';
+            'complex' casts to complex and returns dtype 'np.complex128'.
 
         WARNING: numpy uses different shape logic to matrices, so the returned
                  array is always at-least 2D (unless empty). To get a vector
@@ -1789,14 +1788,8 @@ def Matrix(field, shape):
         """
         Broadcasts the matrix to a new shape. Broadcasting allows axes which
         previously had a length of 1 to be "broadcast" to the (larger) requested
-        length by repeating along that axis. Note that for all axes in the new
-        shape, it must satisfy:
-            if current_length == 0: # (only occurs on empties)
-                assert new_length == 0
-            elif current_length == 1:
-                assert new_length > 0
-            else:
-                assert new_length == current_length
+        length by repeating along that axis. Otherwise, the new axis length must
+        be the same.
         """
         newshape = Shape(*newshape)
         m.shape.check_broadcastable(newshape)
@@ -3084,7 +3077,7 @@ def _matrix_fromnumpy(field, arr):
     arr = arr.reshape(shape.tonumpy)
     return Matrix[field, shape](arr)
 Matrix.fromnumpy = _matrix_fromnumpy
-
+del _matrix_fromnumpy
 
 
 
@@ -3175,11 +3168,11 @@ class Int(RealField):
 
     @classmethod
     def hashed(cls, a):
-        return hash(a)
+        return hash(a.__int__())
 
     @classmethod
     def rep(cls, a, short):
-        return repr(a)
+        return repr(a.__int__())
         # TODO:
         # ill impl later (with prog)
 
@@ -3389,11 +3382,11 @@ class Float(RealField):
 
     @classmethod
     def hashed(cls, a):
-        return hash(a)
+        return hash(a.__float__())
 
     @classmethod
     def rep(cls, a, short):
-        return repr(a)
+        return repr(a.__float__())
         # TODO:
         # ill impl later (with prog)
 
@@ -4968,7 +4961,7 @@ def mvars(long=None):
     """
     Prints all matrix variables in the current space.
     """
-    from engine import KW_PREV
+    from .engine import KW_PREV
 
     if long is None:
         long = not doesdflt2short()
@@ -4979,16 +4972,14 @@ def mvars(long=None):
     # Dont include the "last result" variable.
     mspace.pop(KW_PREV, None)
     # Dont include default injected vars.
-    for name, getter in lits._injects.items():
-        if name not in mspace:
-            continue
-        if not lits._is_overridden(space, name, getter, lits._field):
+    for name in lits._injects:
+        if not lits._is_overridden(mspace, name):
             mspace.pop(name, None)
 
     if not mspace:
-        print(_coloured(245, "no matrix variables."))
+        print(_cons.coloured(245, "no matrix variables."))
     for name, value in mspace.items():
-        pre = _coloured([208, 161], [name, " = "])
+        pre = _cons.coloured([208, 161], [name, " = "])
         pad = " " * (len(name) + len(" = "))
         mat = value.__repr__(short=not long)
         mat = mat.replace("\n", "\n" + pad)
@@ -5005,7 +4996,7 @@ def mhelp(*, field=None):
     def classify(c):
         if c.isalnum() or c == "_":
             return "identifier"
-        if c in ".+-*/%=&|@<>^~:":
+        if c in ".+-*/%=&|@<>^~:!":
             return "operator"
         if c in "()[]{}, ":
             return "boring"
@@ -5045,8 +5036,8 @@ def mhelp(*, field=None):
             txts.append(txt)
             cols.append(col)
             leading = False
-        name = _coloured(cols, txts)
-        print(_entry(name, desc, width=width, pwidth=22, lead=2))
+        name = _cons.coloured(cols, txts)
+        print(_cons.entry(name, desc, width=width, pwidth=22, lead=2))
 
     Mat = Empty[field]
     attrs = {name: attr for name, attr in vars(Mat).items()

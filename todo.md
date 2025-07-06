@@ -1,5 +1,4 @@
 - "remoce two chars from points to user" bro wtf does this MEAN lmao
-- rename 'plot' to 'plotting'
 - super specialised comparison-result matrix:
     - new "ComparisonField"
     - doesnt support `__bool__` unless single
@@ -16,8 +15,6 @@
 - `angle` for complex arg.
 - `isinf`/`isnan`/`isfinite`
 - read every numpy function and grab the good ones LMAO
-- fix exception coloured printing when the exception message contains newlines.
-    also like if the error spans lines what happens?
 - colour more prints (generic field, rational, empty list?)
 - implement _MatrixAt
 - linspace/logspace/arange as field mat methods.
@@ -26,11 +23,13 @@
 - optimise Field.rep
 - shortened matrix print
 - short and long themselves used with `with` for dflting.
-- make 'prog' file which handles logo, help msg, cmdline args, coloured printing,
-    error msgs, whatever
-- add `mat` keyword where mat[] makes matrices and alternate execution method
-    (-x, --bare-lists, --bare-matrices) to change what bare [] makes.
 - `ans` should be able to access attrs of it but never be set?
+- make 'prog' nicely handle errors
 - make a good readme
+- make 'prog' parser good lmao
+- parse all filenames at the start of execution (but obv still check before each)
+- make a no-colour arg
+- fix exception coloured printing when the exception message contains newlines.
+    also like if the error spans lines what happens?
 - remove the concept of 'lits' and instead make rigorous promotion structure?
 - sympy integration

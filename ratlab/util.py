@@ -1,7 +1,6 @@
 import functools as _functools
 import inspect as _inspect
 import math as _math
-import os as _os
 import re as _re
 import weakref as _weakref
 
@@ -29,18 +28,31 @@ def incremental(func):
 
 
 
-def maybe_pack(x, aslist=False):
-    """
-    When a function takes an argument which is a tuple/list of items, it's
-    helpful to also support being given a single item which then gets packed into
-    a 1-length tuple/list, which this facilitates. Always returns a tuple (or
-    a list if 'aslist', copying if already a list).
-    """
-    if isinstance(x, (tuple, list)):
-        x = [tuple, list][not not aslist](x)
-    else:
-        x = [tuple, list][not not aslist]([x])
+def _base_maybe_pack(x):
+    if isinstance(x, list):
+        x = tuple(x)
+    if not isinstance(x, tuple):
+        x = x,
     return x
+
+def maybe_pack(x, aslist=False, do_pack=(), also_do_pack=(str, bytes, dict)):
+    """
+    When a function takes an argument which is a sequence of items, it's helpful
+    to also support being given a single item which then gets packed into a
+    1-length tuple/list, which this facilitates. Always returns a tuple (or a
+    list if 'aslist', copying if already a list). Note that not all iterables
+    shouldn't be packed, so `do_pack` facilitates this by still wrapping a
+    single of that iterable type in a tuple/list.
+        def func(*, arg=()):
+            arg = maybe_pack(arg)
+            return arg
+        assert func(arg=[1]) == func(arg=1)
+    """
+    # still wrap some iterables.
+    dont_not = _base_maybe_pack(do_pack) + _base_maybe_pack(also_do_pack)
+    if isinstance(x, dont_not) or not iterable(x):
+        x = x,
+    return [tuple, list][not not aslist](x)
 
 def maybe_unpack(xs, dont_unpack=(), also_dont_unpack=(str, bytes, dict)):
     """
@@ -66,7 +78,7 @@ def maybe_unpack(xs, dont_unpack=(), also_dont_unpack=(str, bytes, dict)):
         return xs
     x = xs[0]
     # dont unpack all iterables.
-    dont = maybe_pack(dont_unpack) + maybe_pack(also_dont_unpack)
+    dont = _base_maybe_pack(dont_unpack) + _base_maybe_pack(also_dont_unpack)
     if isinstance(x, dont):
         return xs # dont.
     if not iterable(x):
@@ -200,7 +212,6 @@ class classconst:
     def __get__(self, instance, owner):
         return self._fget(owner)
 
-
 class instconst:
     """
     Makes the given method an instance property.
@@ -210,9 +221,6 @@ class instconst:
         self._fget = fget
         _functools.update_wrapper(self, fget)
 
-    def __set_name__(self, owner, name):
-        self._cache_name = f"_cached_{name}"
-
     def __get__(self, instance, owner):
         if instance is None:
             return self
@@ -220,37 +228,6 @@ class instconst:
 
     def __call__(self, instance):
         return self._fget(instance)
-
-
-class instcached:
-    """
-    Makes the given method a cached instance method.
-    - method decorator.
-    """
-    def __init__(self, fget):
-        self._fget = fget
-        _functools.update_wrapper(self, fget)
-
-    def __set_name__(self, owner, name):
-        self._cache_name = f"_cached_{name}"
-
-    def __get__(self, instance, owner):
-        if instance is None:
-            return self
-
-        if not hasattr(instance, self._cache_name):
-            # Get the signature without the first arg.
-            sig = _inspect.signature(self._fget)
-            params = list(sig.parameters.values())
-            params = params[1:]
-            sig = sig.replace(parameters=params)
-            # Wrap to auto-include instance.
-            @_functools.wraps(self._fget)
-            def wrapper(*args, **kwargs):
-                return self._fget(instance, *args, **kwargs)
-            cache = _Cached(wrapper, sig)
-            setattr(instance, self._cache_name, cache)
-        return getattr(instance, self._cache_name)
 
 
 
@@ -264,6 +241,7 @@ def iterable(obj):
         return True
     except Exception:
         return False
+
 
 
 def tname(t, namespaced=False, quoted=True):
@@ -289,153 +267,6 @@ def objtname(obj, namespaced=False, quoted=True):
     Alias for 'tname(type(obj))'.
     """
     return tname(type(obj), namespaced=namespaced, quoted=quoted)
-
-
-
-# Hack to enable console escape codes.
-_os.system("")
-
-def coloured(cols, txts):
-    """
-    When given the colour 'cols' and text 'txts' arrays, prints each element of
-    the text as its corresponding colour. If any text is already coloured, it is
-    left as that colour. Colour codes can be found at:
-    https://gist.github.com/fnky/458719343aabd01cfb17a3a4f7296797
-    """
-    cols = maybe_pack(cols, aslist=True)
-    txts = maybe_pack(txts, aslist=True)
-    if len(cols) != len(txts):
-        raise TypeError("must give one colour for each piece of text, got "
-                f"{len(cols)} colours and {len(txts)} texts")
-    for col in cols:
-        if not isinstance(col, int):
-            raise TypeError(f"expected integer colour code, got {objtname(col)}")
-    for txt in txts:
-        if not isinstance(txt, str):
-            raise TypeError(f"expected string text, got {objtname(txt)}")
-
-    leading_off_code = _re.compile(r"^\x1B\[0m")
-    leading_col_code = _re.compile(r"^\x1B\[38;5;([0-9]+)m")
-    leading_ctrl_code = _re.compile(r"^\x1B\[[0-9;]*[A-Za-z]")
-    col_code = lambda c: f"\x1B[38;5;{c}m" if c >= 0 else "\x1B[0m"
-
-    # Decompose into a list of characters (without control codes) and which
-    # colour they should be.
-    chars = []
-    codes = []
-    full = "".join(txts)
-    cur_col = -1
-    while True:
-        while True:
-            # Check for an off code.
-            match = leading_off_code.match(full)
-            if match is not None:
-                cur_col = -1
-                full = full[len(match.group(0)):]
-                continue
-            # Check for a colour code.
-            match = leading_col_code.match(full)
-            if match is not None:
-                cur_col = int(match.group(1))
-                full = full[len(match.group(0)):]
-                continue
-            # Ignore any other code.
-            match = leading_ctrl_code.match(full)
-            if match is not None:
-                full = full[len(match.group(0)):]
-                continue
-            break
-        if not full:
-            break
-        codes.append(cur_col)
-        chars.append(full[0])
-        full = full[1:]
-
-    # Construct the coloured string, only colouring where necessary.
-    wants = [c for col, txt in zip(cols, txts)
-               for c in [col] * len(nonctrl(txt))]
-    assert len(chars) == len(codes)
-    assert len(chars) == len(wants)
-    for i, c in enumerate(codes):
-        if c != -1:
-            wants[i] = c
-    # Reset to nothing at the end.
-    chars.append("")
-    wants.append(-1)
-
-    segs = [] # funny
-    prev = -1
-    for w, c in zip(wants, chars):
-        if w != prev:
-            segs.append(col_code(w))
-            prev = w
-        segs.append(c)
-    return "".join(segs)
-
-def nonctrl(string):
-    """
-    Returns 'string' with all console control codes removed.
-    """
-    if not isinstance(string, str):
-        raise TypeError(f"expected a str 'string', got {objtname(string)}")
-    control_code = _re.compile(r"\x1B\[[0-9;]*[A-Za-z]")
-    return control_code.sub("", string)
-
-def idxctrl(string, i):
-    """
-    Returns the correct index into 'string' which indexes the character
-    'nonctrl(string)[i]'.
-    """
-    if not isinstance(string, str):
-        raise TypeError(f"expected a str 'string', got {objtname(string)}")
-    if not isinstance(i, int):
-        raise TypeError(f"expected an integer 'i', got {objtname(i)}")
-    if i >= len(string):
-        return i
-    if i < 0:
-        raise IndexError(f"expected a positive index, got: {i}")
-    leading_control_code = _re.compile(r"^(?:\x1B\[[0-9;]*[A-Za-z])+")
-    missing = 0
-    for _ in range(i + 1):
-        new = leading_control_code.sub("", string)
-        missing += len(string) - len(new)
-        string = new[1:]
-    return missing + i
-
-
-def entry(name, desc=None, *, width=100, pwidth=20, lead=2):
-    """
-    Returns a string of the form "<name> .... <desc>", with total width as given
-    and points stopping at 'pwidth' at the earliest. If 'desc' is none, just
-    returns 'name' wrapped at 'width'. 'lead' spaces will be inserted before each
-    line, to pad the string.
-    """
-    name = " ".join(name.split())
-    parts = []
-    pad_to = 0
-    wrapme = ""
-    first = True
-    if desc is not None:
-        desc = " ".join(desc.split())
-        left = " " * lead + name + " .."
-        left += "." * (pwidth - len(nonctrl(left))) + " "
-        parts.append(left)
-        pad_to = len(nonctrl(left))
-        wrapme = desc
-    else:
-        first = False
-        pad_to = lead
-        wrapme = name
-
-    while wrapme:
-        line = wrapme[:idxctrl(wrapme, width - pad_to)]
-        if len(nonctrl(line)) == width - pad_to and " " in line:
-            line = line[:line.rindex(" ")]
-        wrapme = wrapme[len(line):].lstrip()
-        pad = " " * (0 if first else pad_to)
-        parts.append(pad + line + "\n" * (not not wrapme))
-        first = False
-    return "".join(parts)
 
 
 
@@ -503,9 +334,11 @@ def singleton(cls):
     def throw(cls, *args, **kwargs):
         raise TypeError("cannot create another instance of singleton "
                 f"{tname(cls)}")
+    if getattr(instance, "__doc__", None) is None:
+        if getattr(cls, "__doc__", None) is not None:
+            instance.__doc__ = cls.__doc__
     cls.__new__ = throw
     return instance
-
 
 
 

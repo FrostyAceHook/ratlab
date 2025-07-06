@@ -8,7 +8,6 @@ import os as _os
 import re as _re
 import sys as _sys
 import threading as _threading
-import traceback as _traceback
 import uuid as _uuid
 import warnings as _warnings
 from importlib import abc as _importlib_abc
@@ -16,7 +15,8 @@ from importlib import import_module as _importlib_import
 from importlib.util import spec_from_file_location as _importlib_spec
 from pathlib import Path as _Path
 
-from .util import coloured as _coloured, objtname as _objtname
+from . import cons as _cons
+from .util import objtname as _objtname
 
 
 
@@ -176,16 +176,6 @@ Holds the backgrounds tasks and the objects they return.
 
 
 
-# Overview of syntax changes:
-# - added 'lst' "keyword" to create list literals via `lst[1,2,3]`
-# - any list literals become row matrices.
-# - any subscripts on matrix literals append a row and are a matrix literal
-#       (looks like [1,2][3,4] and includes [1,2][3,4][5,6]).
-# - any literals within math expressions in matrix cells get cast to the current
-#       field. note this only propagates via some ops. (looks like
-#       [lit(1), lit(1) * lit(2) * function_call(1)], note the last 1 is not
-#       cast (to get around this, you must wrap it in a matrix literal [1])).
-
 
 # Functions exposed so that the transformed source can call them:
 
@@ -194,10 +184,10 @@ def _EXPOSED_literal(x):
     x, = _bg["matrix"].castall([x], field=field)
     return x
 
-def _EXPOSED_list(*elements):
+def _EXPOSED_hstack(*elements):
     return _bg["matrix"].hstack(*elements)
 
-def _EXPOSED_slice(matrix_literal, *sliced_by):
+def _EXPOSED_vstack(matrix_literal, *sliced_by):
     append_me = _bg["matrix"].hstack(*sliced_by)
     return _bg["matrix"].vstack(matrix_literal, append_me)
 
@@ -214,7 +204,7 @@ def _EXPOSED_print(value, *assigns):
     cols = [208, 161] * len(assigns)
     pad = " " * sum(len(x) for x in txts)
     mat = repr(value).replace("\n", "\n" + pad)
-    print(_coloured(cols, txts) + mat)
+    print(_cons.coloured(cols, txts) + mat)
 
 def _EXPOSED_clear():
     """
@@ -252,6 +242,7 @@ def _EXPOSED_quit():
     raise _ExitConsoleException()
 
 KW_LIST = "lst"
+KW_MATRIX = "mat"
 KW_PREV = "ans"
 
 COMMANDS = {"clear": _EXPOSED_clear, "history": _EXPOSED_history,
@@ -260,9 +251,33 @@ COMMANDS = {"clear": _EXPOSED_clear, "history": _EXPOSED_history,
 _EXPOSED = {k: v for k, v in globals().items() if k.startswith("_EXPOSED")}
 _DESOPXE = {v: k for k, v in _EXPOSED.items()} # reversed exposed.
 
-KEYWORDS = {KW_LIST, KW_PREV}
+KEYWORDS = {KW_LIST, KW_MATRIX, KW_PREV}
 KEYWORDS |= set(COMMANDS.keys())
 KEYWORDS |= set(_EXPOSED.keys())
+
+
+
+def _add_globals(space):
+    # Put all the injects.
+    for name, star, value in _bg.injects:
+        space[name] = value
+        if not star:
+            continue
+        for subname, subvalue in vars(value).items():
+            if subname.startswith("_"):
+                continue
+            space[subname] = subvalue
+
+    # Set an initial field (modifying the `space` and not our globals).
+    initial_field = _bg["matrix"].Complex
+    _bg["matrix"].lits(initial_field, inject=True, space=space)
+
+    # Splice every "exposed" object into the space.
+    for name, value in _EXPOSED.items():
+        if name in space:
+            raise RuntimeError(f"? exposed {repr(name)} already set")
+        space[name] = value
+
 
 
 class _Transformer(_ast.NodeTransformer):
@@ -303,18 +318,18 @@ class _Transformer(_ast.NodeTransformer):
     def is_matlit(self, node):
         if not isinstance(node, _ast.Call):
             return False
-        names = {_EXPOSED_list.__name__, _EXPOSED_slice.__name__}
+        names = {_EXPOSED_hstack.__name__, _EXPOSED_vstack.__name__}
         return self.is_named(node.func, names)
 
 
-    def __init__(self, source, filename, console):
+    def __init__(self, source, filename, console, bare_lists=False):
         super().__init__()
         self.source = source
         self.filename = filename
-        self.wrap_lits = False
-        self.row_vector = False
-        self.pierce_tuple = False
         self.console = console
+        self.bare_lists = bare_lists
+        self.wrap_lits = False
+        self.pierce_tuple = False
 
     def console_things(self, body):
         if not body:
@@ -415,8 +430,6 @@ class _Transformer(_ast.NodeTransformer):
         if isinstance(node, _ast.Tuple) and not self.pierce_tuple:
             self.wrap_lits = False
         self.pierce_tuple = False
-        if not isinstance(node, _ast.List):
-            self.row_vector = False
 
         new_node = super().visit(node)
         self.wrap_lits = was_wrapping_lits
@@ -477,8 +490,13 @@ class _Transformer(_ast.NodeTransformer):
         return node
 
     def visit_List(self, node):
-        # Only transform loads into matrices.
+        # Only transform loads into matrices, leave set and del to keep syntax
+        # like `[a,b] = 1,2` and `del [a,b]`.
         if not self.is_load(node):
+            return self.generic_visit(node)
+
+        # If we doing bare lists, don't transform to matrix.
+        if self.bare_lists:
             return self.generic_visit(node)
 
         # If it's immediately wrapped in a tuple, unpack it to have the same
@@ -489,44 +507,37 @@ class _Transformer(_ast.NodeTransformer):
             tpl = node.elts[0]
             if self.is_load(tpl): # ig check its load?
                 node.elts = tpl.elts
-        # All list literals are matrices.
-        self.wrap_lits = True
-        # Pop whether to row vector or not.
-        rowme = self.row_vector
-        self.row_vector = False
         # Transform elements.
+        self.wrap_lits = True
         node = self.generic_visit(node)
-        # Make it a row vector if this literal is becoming a 2D matrix, otherwise
-        # column vector.
-        # NEVERMIND, its kinda ass. mainly for when concating matrices, like:
-        #  x = [1,2]  (x = [1][2])
-        #  [x, x]   (!= [1,1][2,2], it =[1][2][1][2])
-        new_node = self.ast_call(_EXPOSED_list, *node.elts)
+        # Make the hstack call.
+        new_node = self.ast_call(_EXPOSED_hstack, *node.elts)
         return self.copyloc(new_node, node)
 
     def visit_Subscript(self, node):
         # Handle the thing we subscripting, so we can know if its a matrix
         # literal.
-        self.row_vector = True
         node.value = self.visit(node.value)
 
         # Find what we're doing based on what we're subscripting.
         if self.is_named(node.value, KW_LIST):
             what = "list" # create a list literal.
+        elif self.is_named(node.value, KW_MATRIX):
+            what = "matrix literal" # create a matrix literal.
         elif self.is_matlit(node.value):
-            what = "matrix" # append a row to a matrix literal.
+            what = "matrix row" # append a row to a matrix literal.
         else:
             what = "normal" # idk normal subscript things.
 
         # Now can recurse to the new row/index.
-        self.wrap_lits = (what == "matrix")
+        self.wrap_lits = what.startswith("matrix")
         self.pierce_tuple = True
         node.slice = self.visit(node.slice)
 
         if what == "list":
             # Make it a list, preserving context.
             if isinstance(node.slice, _ast.Tuple):
-                elts = node.slice.elts[:] # unpack if tuple.
+                elts = node.slice.elts # unpack if tuple.
             else:
                 elts = [node.slice]
             for elt in elts:
@@ -534,13 +545,13 @@ class _Transformer(_ast.NodeTransformer):
             new_node = _ast.List(elts=elts, ctx=node.ctx)
             return self.copyloc(new_node, node)
 
-        if what == "matrix":
+        if what.startswith("matrix"):
             # Ensure its a load.
             if isinstance(node.ctx, _ast.Store):
                 self.syntaxerrorme("cannot assign to a matrix literal", node)
             if isinstance(node.ctx, _ast.Del):
                 self.syntaxerrorme("cannot delete a matrix literal", node)
-            # Get all the slice elements.
+            # Elements already transformed, just need to get them.
             elts = node.slice
             if isinstance(elts, _ast.Tuple):
                 if not self.is_load(elts):
@@ -553,19 +564,27 @@ class _Transformer(_ast.NodeTransformer):
                 if isinstance(elt, _ast.Slice):
                     self.syntaxerrorme("cannot use slices as elements of a "
                             "matrix literal", elt)
-            # Create a call to concat the row.
-            new_node = self.ast_call(_EXPOSED_slice, node.value, *elts)
+            # Make a row or make the literal.
+            if what == "matrix literal":
+                new_node = self.ast_call(_EXPOSED_hstack, *elts)
+            elif what == "matrix row":
+                new_node = self.ast_call(_EXPOSED_vstack, node.value, *elts)
+            else:
+                assert False
             return self.copyloc(new_node, node)
 
         return node
 
 
+
 class _Loader(_importlib_abc.Loader):
-    def __init__(self, fullname, path):
+    def __init__(self, fullname, path, kwargs):
         # Module name. not used by us but i think we need it.
         self.fullname = fullname
         # Source file path. lowkey used by us.
         self.path = path
+        # Forwarded to transformer.
+        self.__kwargs = kwargs
 
     def create_module(self, spec):
         return None
@@ -574,13 +593,22 @@ class _Loader(_importlib_abc.Loader):
         with open(self.path, "r", encoding="utf-8") as f:
             source = f.read()
 
-        # Transform and compile.
-        transformer = _Transformer(source, self.path, console=False)
+        # Add the ratlab globals.
+        _add_globals(module.__dict__)
+
+        # Transform and execute.
+        transformer = _Transformer(source, self.path, console=False,
+                **self.__kwargs)
         parsed = transformer.cook()
         compiled = compile(parsed, filename=self.path, mode="exec")
         exec(compiled, module.__dict__)
 
+
 class _PathFinder(_importlib_abc.MetaPathFinder):
+    def __init__(self, **kwargs):
+        # Forwarded to transformer.
+        self.__kwargs = kwargs
+
     def find_spec(self, fullname, path, target=None):
         if path is None:
             searchme = _sys.path
@@ -590,150 +618,49 @@ class _PathFinder(_importlib_abc.MetaPathFinder):
 
         filename = fullname.rsplit(".")[-1]
         for base in searchme:
+            # Check for script files.
             base = _Path(base)
             rat_path = base / f"{filename}.rat"
             if rat_path.is_file():
-                loader = _Loader(fullname, rat_path)
+                loader = _Loader(fullname, rat_path, self.__kwargs)
                 return _importlib_spec(fullname, rat_path, loader=loader)
 
+            # Check for script folders/modules.
             package_path = base / filename
             init_path = package_path / "__init__.rat"
             if init_path.is_file():
-                loader = _Loader(fullname, init_path)
+                loader = _Loader(fullname, init_path, self.__kwargs)
                 return _importlib_spec(fullname, init_path, loader=loader,
                         submodule_search_locations=[package_path])
 
         return None
 
-@_contextlib.contextmanager
-def _use_rat_importer():
-    if not _use_rat_importer._count:
-        _sys.meta_path.insert(0, _use_rat_importer._finder)
-    _use_rat_importer._count += 1
-    try:
-        yield
-    finally:
-        _use_rat_importer._count -= 1
-        if not _use_rat_importer._count:
-            _sys.meta_path.remove(_use_rat_importer._finder)
-_use_rat_importer._count = 0
-_use_rat_importer._finder = _PathFinder()
-
-
-def _pretty_print_exception(exc, callout, tb=True):
-    # manually coloured exception printer.
-    def issquiggles(s):
-        if s is None:
-            return False
-        if not s.strip():
-            return False
-        return all(c.strip() in {"", "~", "^"} for c in s)
-    def colour(lines, i):
-        line = lines[i]
-        next_line = None if i == len(lines) - 1 else lines[i + 1]
-        if not line.strip():
-            # Blank.
-            return ""
-        elif line.startswith("Traceback "):
-            # "Traceback (most recent call last):".
-            return _coloured(203, line)
-        elif line.startswith("  File"):
-            # Traceback file+line.
-            if False and line.endswith(", in <module>"):
-                # not a big fan of "in <module>", mostly bc it inconsistently
-                # shows up, but ig leave it in for now.
-                line = line[:len(", in <module>")]
-            # regex me.
-            with_in = r'(\s*File )(".*?")(, line )(\d+)(, in )(\S+)'
-            without_in = r'(\s*File )(".*?")(, line )(\d+)'
-            match = _re.match(with_in, line)
-            if match is not None:
-                txts = list(match.groups())
-                cols = [7, 244, 255, 244, 7, 165, 7, 34]
-            else:
-                match = _re.match(without_in, line)
-                if match is None:
-                    return line
-                txts = list(match.groups())
-                cols = [7, 244, 255, 244, 7, 165]
-            fname = txts.pop(1)
-            if fname.startswith('"<') and fname.endswith('/console>"'):
-                txts.insert(1, fname[:-len('console>"')])
-                txts.insert(2, "console")
-                txts.insert(3, '>"')
-            elif _os.sep not in fname:
-                txts.insert(1, fname[0])
-                txts.insert(2, fname[1:-1])
-                txts.insert(3, fname[-1])
-            else:
-                folder, file = fname.rsplit(_os.sep, 1)
-                txts.insert(1, folder + _os.sep)
-                txts.insert(2, file[:-1])
-                txts.insert(3, file[-1])
-            return _coloured(cols, txts)
-        elif _re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*:', line) is not None:
-            # Specific exception and its message.
-            txts = line.split(":", 1)
-            txts[0] += ":"
-            return _coloured([163, 171], txts)
-        elif _re.match(r'^[a-zA-Z_][a-zA-Z0-9_]*$', line) is not None:
-            # Exception without a message.
-            return _coloured(163, line)
-        elif issquiggles(line):
-            # Markings.
-            txts = ["".join(g) for _, g in _itertools.groupby(line)]
-            cols = [{" ": -1, "~": 55, "^": 93}[x[0]] for x in txts]
-            return _coloured(cols, txts)
-        # otherwise assume source code or something.
-
-        # If the next line is squiggles, highlight the squiggled code.
-        if issquiggles(next_line) and len(line) >= len(next_line):
-            next_txts = ["".join(g) for _, g in _itertools.groupby(next_line)]
-            cols = [{" ": -1, "~": 210, "^": 203}[x[0]] for x in next_txts]
-            # cols.append(-1)
-            # Group this line in the same manner as the next.
-            lens = [len(s) for s in next_txts]
-            txts = []
-            i = 0
-            for l in lens:
-                txts.append(line[i:i + l])
-                i += l
-            if i < len(line):
-                if cols[-1] == -1:
-                    txts[-1] += line[i:]
-                else:
-                    cols.append(-1)
-                    txts.append(line[i:])
-            return _coloured(cols, txts)
-
-        # actually the "During handling of the ..." line also falls here.
-        return line
-    if not tb:
-        etb = None
-    else:
-        etb = exc.__traceback__
-        if etb is not None:
-            # Cut the `exec` call from the traceback.
-            etb = etb.tb_next
-    tbe = _traceback.TracebackException(type(exc), exc, etb)
-    old = "".join(tbe.format())
-    oldlines = old.splitlines()
-    new = "\n".join(colour(oldlines, i) for i in range(len(oldlines)))
-    print(_coloured(124, f"## {callout}"))
-    print(new)
-
-
 
 
 class Context:
-    def __init__(self):
+    def __init__(self, bare_lists=False):
         self._space_dict = None
+        self._bare_lists = bare_lists
+        self._importer_count = 0
+        self._finder = _PathFinder(bare_lists=bare_lists)
 
     @property
     def _space(self):
         if not self._initialised:
             raise RuntimeError("space is not initialised")
         return self._space_dict
+
+    @_contextlib.contextmanager
+    def _use_importer(self):
+        if not self._importer_count:
+            _sys.meta_path.insert(0, self._finder)
+        self._importer_count += 1
+        try:
+            yield
+        finally:
+            self._importer_count -= 1
+            if not self._importer_count:
+                _sys.meta_path.remove(self._finder)
 
     @property
     def _initialised(self):
@@ -754,27 +681,8 @@ class Context:
             "__package__": __package__,
             "__builtins__": __builtins__,
         }
-
-        # Put all the injects.
-        for name, star, value in _bg.injects:
-            space[name] = value
-            if not star:
-                continue
-            for subname, subvalue in vars(value).items():
-                if subname.startswith("_"):
-                    continue
-                space[subname] = subvalue
-
-        # Set an initial field (modifying the `space` and not our globals).
-        initial_field = _bg["matrix"].Complex
-        _bg["matrix"].lits(initial_field, inject=True, space=space)
-
-        # Splice every "exposed" object into the space.
-        for name, value in _EXPOSED.items():
-            if name in space:
-                raise RuntimeError(f"? exposed {repr(name)} already set")
-            space[name] = value
-
+        # Chuck the ratlab globals in.
+        _add_globals(space)
         # Done.
         self._space_dict = space
 
@@ -790,22 +698,23 @@ class Context:
 
         try:
             # Transform and compile.
-            transformer = _Transformer(source, filename, console)
+            transformer = _Transformer(source, filename, console,
+                    not not self._bare_lists)
             parsed = transformer.cook()
             compiled = compile(parsed, filename=filename, mode="exec")
         except Exception as e:
-            _pretty_print_exception(e, "TYPO", tb=False)
+            print(_cons.pretty_exception(e, "TYPO", tb=False))
             return False
         try:
             # Enable the rat module importer.
-            with _use_rat_importer():
+            with self._use_importer():
                 # Execute, with both locals and globals to simulate module-level
                 # (filescope) code.
                 exec(compiled, self._space, self._space)
         except Exception as e:
             if isinstance(e, _ExitConsoleException) and console:
                 raise
-            _pretty_print_exception(e, "ERROR", tb=True)
+            print(_cons.pretty_exception(e, "ERROR", tb=True))
             return False
         return True
 
@@ -818,7 +727,7 @@ class Context:
         def get_input():
             source = ""
             while True:
-                print(_coloured(73, ".. " if source else ">> "), end="")
+                print(_cons.coloured(73, ".. " if source else ">> "), end="")
 
                 # Delay the start of background loading (since its a tad slow to
                 # start up) as late as possible to reduce loading time.
@@ -865,7 +774,7 @@ class Context:
                 self._execute(source)
 
         except _ExitConsoleException:
-            print(_coloured([73, 80], ["-- ", "okie leaving."]))
+            print(_cons.coloured([73, 80], ["-- ", "okie leaving."]))
 
 
 
@@ -909,12 +818,12 @@ class Context:
                 before = before + " "
             if after:
                 after = " " + after
-            txts = [before, after, ", ignore?", " (y/n): "]
-            cols = [   203,   203,         203,        210]
+            txts = ["ratlab: ", before, after, ", ignore?", " (y/n): "]
+            cols = [       124,    203,   203,         203,        210]
             pcols, ptxts = coloured_esc(path)
-            txts[1:1] = ptxts
-            cols[1:1] = pcols
-            msg = _coloured(cols, txts)
+            txts[2:2] = ptxts
+            cols[2:2] = pcols
+            msg = _cons.coloured(cols, txts)
             while True:
                 response = input(msg).strip().casefold()
                 if not response:
@@ -932,7 +841,7 @@ class Context:
             pcols, ptxts = coloured_esc(path)
             txts[2:2] = ptxts
             cols[2:2] = pcols
-            print(_coloured(cols, txts))
+            print(_cons.coloured(cols, txts))
             quit()
 
         # Handle missing/invalid paths.
@@ -957,4 +866,4 @@ class Context:
             ignore = query("exception in file", path)
             if not ignore:
                 error("exception in file", path)
-            print(_coloured([73, 80], ["-- ", "okie continuing."]))
+            print(_cons.coloured([73, 80], ["-- ", "okie continuing."]))
