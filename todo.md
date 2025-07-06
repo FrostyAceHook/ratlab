@@ -14,6 +14,7 @@
 - `offdiag` for off diagonal mat construction
 - `angle` for complex arg.
 - `isinf`/`isnan`/`isfinite`
+- formula descriptions for means
 - read every numpy function and grab the good ones LMAO
 - colour more prints (generic field, rational, empty list?)
 - implement _MatrixAt
@@ -29,6 +30,7 @@
 - make 'prog' parser good lmao
 - parse all filenames at the start of execution (but obv still check before each)
 - make a no-colour arg
+- iroot/ilog
 - fix exception coloured printing when the exception message contains newlines.
     also like if the error spans lines what happens?
 - remove the concept of 'lits' and instead make rigorous promotion structure?

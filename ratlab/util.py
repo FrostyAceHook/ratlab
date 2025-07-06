@@ -522,3 +522,32 @@ def simplest_ratio(x):
             break
     g = _math.gcd(n, d)
     return n // g, d // g
+
+
+
+def ilog10(x):
+    """
+    floor(log10(x)), where x is a strictly positive integer.
+    """
+    if not isinstance(x, int):
+        raise TypeError(f"expected integer, got {objtname(x)}")
+    if x <= 0:
+        raise ValueError(f"expected 'x > 0', got: {x}")
+    if x == 1:
+        return 0
+
+    # Find approx log10 = log2(x) / log2(10)
+    #                  ~= log2(x) * (1233 / 2^12)
+    ilog2 = x.bit_length() - 1
+    ilog10 = ((ilog2 - 1) * 1233) >> 12 # c my beloved.
+
+    # Find the exact ilog10.
+    lower = 10 ** ilog10
+    while lower > x:
+        ilog10 -= 1
+        lower //= 10
+    upper = lower * 10
+    while upper <= x:
+        ilog10 += 1
+        upper *= 10
+    return ilog10

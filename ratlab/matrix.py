@@ -733,7 +733,8 @@ class Field:
 
         # cheeky matrix of the reps to make access easy.
         reps = m._apply(repme, str, m)
-        lens = reps._apply(len, int, reps)
+        reps_nonctrl = reps._apply(_cons.nonctrl, str, reps)
+        lens = reps_nonctrl._apply(len, int, reps_nonctrl)
         width = int(lens.maxx)
         return Field._mat_rep_helper(reps, short, width, m.lastaxis, multiline,
                 allow_flat=True)
@@ -2223,7 +2224,7 @@ def Matrix(field, shape):
                 ret = single(ret)
             # Unpack to field and cells.
             return ret.field, ret._cells
-        return M._apply(wrapped, rfield=rfield, *xs, user=True, cast=True)
+        return M._apply(wrapped, rfield, *xs, user=True, cast=True)
 
     def apply(m, func, *os, rfield=None):
         """
@@ -3142,9 +3143,13 @@ class Int(RealField):
 
     @classmethod
     def power(cls, a, b):
-        raise NotImplementedError("ipower")
+        if b < 0:
+            return cls.root(a, -b)
+        return a ** b
     @classmethod
     def root(cls, a, b):
+        if b < 0:
+            return cls.power(a, -b)
         raise NotImplementedError("iroot")
     @classmethod
     def log(cls, a, b):
@@ -3172,9 +3177,7 @@ class Int(RealField):
 
     @classmethod
     def rep(cls, a, short):
-        return repr(a.__int__())
-        # TODO:
-        # ill impl later (with prog)
+        return _cons.pretty_number(a.__int__(), short)
 
 
     @classmethod
@@ -3386,9 +3389,7 @@ class Float(RealField):
 
     @classmethod
     def rep(cls, a, short):
-        return repr(a.__float__())
-        # TODO:
-        # ill impl later (with prog)
+        return _cons.pretty_number(a.__float__(), short)
 
 
 
@@ -3827,9 +3828,7 @@ class Complex(ComplexField):
 
     @classmethod
     def rep(cls, a, short):
-        return repr(a.__complex__())
-        # TODO:
-        # ill impl later (with prog)
+        return _cons.pretty_number(a.__complex__(), short)
 
 
 
@@ -4536,7 +4535,7 @@ def logmean(x, y, *, field=None):
     Logarithmic mean of 'x' and 'y': (x - y) / ln(x / y)
     """
     x, y = castall([x, y], field=field)
-    f = lambda a, b: a if (a == b) else (a - b) / (a / b).ln
+    f = lambda a, b: a if (a == b).obj else (a - b) / (a / b).ln # TODO: bool
     return x.apply(f, y)
 
 

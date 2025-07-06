@@ -1,9 +1,14 @@
 import itertools as _itertools
+import math as _math
 import os as _os
 import re as _re
 import traceback as _traceback
 
-from .util import maybe_pack as _maybe_pack, objtname as _objtname
+from .util import (
+    ilog10 as _ilog10,
+    maybe_pack as _maybe_pack,
+    objtname as _objtname,
+)
 
 
 # Hack to enable console escape codes.
@@ -151,6 +156,126 @@ def entry(name, desc=None, *, width=100, pwidth=20, lead=2):
         parts.append(pad + line + "\n" * (not not wrapme))
         first = False
     return "".join(parts)
+
+
+
+def pretty_number(x, short=True):
+    """
+    Coloured string representing the given number.
+    """
+    plus = coloured(161, "+")
+    minus = coloured(161, "-")
+    i = coloured(38, "i")
+    col_num = 135
+
+    if isinstance(x, int):
+        if x < 0:
+            return minus + pretty_number(-x, short=short)
+        if x == 0:
+            return coloured(col_num, "0")
+
+        # Cant just use float since it may overflows/lose precision.
+        threshold = 10
+
+        # Find exact digit count.
+        digits = 1 + _ilog10(x)
+
+        # Print in full if short enough, or we gotta.
+        full = not short or (digits <= threshold)
+
+        # Fine to convert for small ints.
+        if full:
+            return coloured(col_num, str(x))
+
+        # Otherwise, make it into a 6 digit mantissa and exponent.
+        mantlen = 6
+        exp = digits - 1
+
+        # First cut down to mantlen+1 digits, then round, then remaining digits.
+        dif = digits - mantlen - 1
+        assert dif >= 0
+        x //= pow(10, dif)
+        x += 5 # round (most helpful research paper comment).
+        if x >= pow(10, mantlen + 1): # may have added a digit.
+            exp += 1
+            x //= 10
+        x //= 10
+
+        # Get mant and exp string, trimming trailing zeros.
+        mant = str(x)
+        exp = str(exp)
+        while len(mant) > 1 and mant[-1] == "0":
+            mant = mant[:-1]
+        if len(mant) > 1:
+            mant = mant[0] + "." + mant[1:]
+
+        # dujj.
+        return coloured(col_num, f"{mant}e{exp}")
+
+    if isinstance(x, float):
+        x = complex(x)
+    if not isinstance(x, complex):
+        raise TypeError(f"expected int, float, or complex, got {_objtname(x)}")
+
+    re = x.real
+    im = x.imag
+    def frep(n):
+        if n != n:
+            return coloured(col_num, "nan")
+        if n == float("inf"):
+            return coloured(col_num, "inf")
+        if n == 0.0: # -0.0 -> 0.0
+            n = 0.0
+        if n < 0.0:
+            return minus + frep(-n)
+        s = f"{n:.6g}" if short else repr(n)
+        # "xxx.0" -> "xxx"
+        if s.endswith(".0"):
+            s = s[:-2]
+        if "e" not in s:
+            return coloured(col_num, s)
+        # "xxx.xe-0y" -> "xxx.xe-y"
+        # "xxx.xe+0y" -> "xxx.xey"
+        s = s.replace("e-0", "e-")
+        s = s.replace("e+", "e")
+        s = s.replace("e0", "e")
+        s = s.replace(".0e", "e") # incase.
+        return coloured(col_num, s)
+
+    sep = plus
+
+    if im == 0.0:
+        im_s = ""
+    elif im == 1.0:
+        im_s = i
+    else:
+        if im == -1.0:
+            sep = minus
+            im_s = ""
+        elif im < 0.0:
+            sep = minus
+            im_s = frep(-im)
+        else:
+            im_s = frep(im)
+        im_s = f"{im_s}{i}"
+
+    if re == 0.0:
+        re_s = ""
+    else:
+        re_s = frep(re)
+
+    if not re_s and not im_s:
+        return frep(0.0)
+
+    if not im_s:
+        return re_s
+
+    if not re_s:
+        if sep == plus:
+            sep = ""
+        return f"{sep}{im_s}"
+
+    return f"{re_s}{sep}{im_s}"
 
 
 def pretty_exception(exc, callout=None, tb=True):

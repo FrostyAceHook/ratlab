@@ -279,8 +279,28 @@ def _add_globals(space):
         space[name] = value
 
 
+@_contextlib.contextmanager
+def _eat_fuckass_warnings():
+    # stupid syntaxwarnings.
+    with _warnings.catch_warnings():
+        _warnings.simplefilter("ignore", SyntaxWarning)
+        yield
+
 
 class _Transformer(_ast.NodeTransformer):
+    def cook(self):
+        with _eat_fuckass_warnings():
+            module = _ast.parse(self.source, self.filename)
+            module = self.visit(module)
+            # Console has additional changes.
+            if self.console:
+                self.console_things(module.body) # poor things.
+                # Also add console inputs in the history.
+                HISTORY.add(self.filename)
+            # Compile me.
+            return compile(module, filename=self.filename, mode="exec")
+
+
     def ast_call(self, func, *args):
         assert func in _DESOPXE
         return _ast.Call(
@@ -391,8 +411,9 @@ class _Transformer(_ast.NodeTransformer):
                 i += 1
                 continue
             if isinstance(node, _ast.AugAssign):
-                # Add an assign to prev.
-                new_node = _ast.Assign(targets=[prev], value=node.target)
+                # Add an assign to prev, making a new load reference to the name.
+                value = _ast.Name(id=node.target.id, ctx=_ast.Load())
+                new_node = _ast.Assign(targets=[prev], value=value)
                 self.copyloc(new_node, node)
                 body.insert(i + 1, new_node)
                 i += 2
@@ -404,17 +425,6 @@ class _Transformer(_ast.NodeTransformer):
             body.insert(i + 1, new_node)
             i += 2
             continue
-
-
-    def cook(self):
-        module = _ast.parse(self.source, self.filename)
-        module = self.visit(module)
-        # Console has additional changes.
-        if self.console:
-            self.console_things(module.body) # poor things.
-            # Also add console inputs in the history.
-            HISTORY.add(self.filename)
-        return module
 
 
     def visit(self, node):
@@ -578,13 +588,13 @@ class _Transformer(_ast.NodeTransformer):
 
 
 class _Loader(_importlib_abc.Loader):
-    def __init__(self, fullname, path, kwargs):
+    def __init__(self, fullname, path, ctx):
         # Module name. not used by us but i think we need it.
         self.fullname = fullname
         # Source file path. lowkey used by us.
         self.path = path
-        # Forwarded to transformer.
-        self.__kwargs = kwargs
+        # ratlab context object.
+        self.__ctx = ctx
 
     def create_module(self, spec):
         return None
@@ -597,17 +607,15 @@ class _Loader(_importlib_abc.Loader):
         _add_globals(module.__dict__)
 
         # Transform and execute.
-        transformer = _Transformer(source, self.path, console=False,
-                **self.__kwargs)
-        parsed = transformer.cook()
-        compiled = compile(parsed, filename=self.path, mode="exec")
-        exec(compiled, module.__dict__)
+        transformer = self.__ctx._transformer(source, self.path, console=False)
+        code = transformer.cook()
+        exec(code, module.__dict__)
 
 
 class _PathFinder(_importlib_abc.MetaPathFinder):
-    def __init__(self, **kwargs):
-        # Forwarded to transformer.
-        self.__kwargs = kwargs
+    def __init__(self, ctx):
+        # ratlab context object.
+        self.__ctx = ctx
 
     def find_spec(self, fullname, path, target=None):
         if path is None:
@@ -622,14 +630,14 @@ class _PathFinder(_importlib_abc.MetaPathFinder):
             base = _Path(base)
             rat_path = base / f"{filename}.rat"
             if rat_path.is_file():
-                loader = _Loader(fullname, rat_path, self.__kwargs)
+                loader = _Loader(fullname, rat_path, self.__ctx)
                 return _importlib_spec(fullname, rat_path, loader=loader)
 
             # Check for script folders/modules.
             package_path = base / filename
             init_path = package_path / "__init__.rat"
             if init_path.is_file():
-                loader = _Loader(fullname, init_path, self.__kwargs)
+                loader = _Loader(fullname, init_path, self.__ctx)
                 return _importlib_spec(fullname, init_path, loader=loader,
                         submodule_search_locations=[package_path])
 
@@ -638,11 +646,15 @@ class _PathFinder(_importlib_abc.MetaPathFinder):
 
 
 class Context:
+    """
+    Handles a variable space + execution of scripts and consoles.
+    """
+
     def __init__(self, bare_lists=False):
         self._space_dict = None
         self._bare_lists = bare_lists
         self._importer_count = 0
-        self._finder = _PathFinder(bare_lists=bare_lists)
+        self._finder = _PathFinder(self)
 
     @property
     def _space(self):
@@ -678,7 +690,7 @@ class Context:
             "__name__": "__main__",
             # dont set __file__.
             "__doc__": None,
-            "__package__": __package__,
+            "__package__": __package__, # pretend its here ig.
             "__builtins__": __builtins__,
         }
         # Chuck the ratlab globals in.
@@ -687,30 +699,37 @@ class Context:
         self._space_dict = space
 
 
+    def _transformer(self, source, filename, console):
+        return _Transformer(source, filename, console, not not self._bare_lists)
+
+
     def _execute(self, source, filename=None):
         # For console if filename is none.
         console = (filename is None)
         if console:
+            # Give each console line/executed code a unique name.
             filename = f"<{_uuid.uuid4()}/console>"
             # Store source for some nice error printing.
             lines = [line + "\n" for line in source.splitlines()]
             _linecache.cache[filename] = (len(source), None, lines, filename)
 
         try:
-            # Transform and compile.
-            transformer = _Transformer(source, filename, console,
-                    not not self._bare_lists)
-            parsed = transformer.cook()
-            compiled = compile(parsed, filename=filename, mode="exec")
+            transformer = self._transformer(source, filename, console)
+            code = transformer.cook()
         except Exception as e:
             print(_cons.pretty_exception(e, "TYPO", tb=False))
             return False
         try:
-            # Enable the rat module importer.
+            # Rev up the ratlab(r) module importer.
             with self._use_importer():
-                # Execute, with both locals and globals to simulate module-level
-                # (filescope) code.
-                exec(compiled, self._space, self._space)
+                # I don't wanna hear about this
+                # virus Jay
+                # get rid of it
+                # fastly         I am here for the American
+                #                people.
+                with _eat_fuckass_warnings():
+                    # Execute as module-level (filescope) code.
+                    exec(code, self._space)
         except Exception as e:
             if isinstance(e, _ExitConsoleException) and console:
                 raise
@@ -744,11 +763,9 @@ class Context:
                 if not line:
                     break
                 try:
-                    # dont let the stupid compile command print to stderr.
-                    with _warnings.catch_warnings():
-                        _warnings.simplefilter("ignore", SyntaxWarning)
-                        with _contextlib.redirect_stderr(_io.StringIO()):
-                            command = _codeop.compile_command(source)
+                    # dont let a fucking syntax warning make a peep.
+                    with _eat_fuckass_warnings():
+                        command = _codeop.compile_command(source)
                 except Exception as e:
                     break
                 if command is not None:
