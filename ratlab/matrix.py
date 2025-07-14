@@ -35,10 +35,8 @@ def _maybe_unpack_ints(xs):
 
 class Field:
     """
-    Base class for implementing operation over elements. Cannot do operations on
-    entire matrices, only performs for single elements of those matrices. See
-    'ExampleField' descriptions of all methods, as this class implements only the
-    mandatory methods.
+    Base class for implementing operations over elements. Cannot do operations on
+    entire matrices, only performs for single elements of those matrices.
     """
 
     @classmethod
@@ -47,18 +45,22 @@ class Field:
 
     @classmethod
     def fromobj(cls, obj): # create a field element from the given object.
-        raise TypeError(f"cannot create {_tname(cls)} from {_objtname(obj)} "
-                f"(value: {obj})")
+        raise TypeError(f"cannot create {_tname(cls)} from {_objtname(obj)}")
 
     @classmethod
+    def to_bool(cls, a): # bool(a), BUT this should not be implemented by typical
+                         # fields. it is preferred that a direct comparison must
+                         # be made.
+        raise TypeError(f"cannot cast {_tname(cls)} to bool")
+    @classmethod
     def to_int(cls, a): # int(a)
-        raise TypeError(f"cannot cast {_tname(cls)} to int (value: {a})")
+        raise TypeError(f"cannot cast {_tname(cls)} to int")
     @classmethod
     def to_float(cls, a): # float(a)
-        raise TypeError(f"cannot cast {_tname(cls)} to float (value: {a})")
+        raise TypeError(f"cannot cast {_tname(cls)} to float")
     @classmethod
     def to_complex(cls, a): # complex(a)
-        raise TypeError(f"cannot cast {_tname(cls)} to complex (value: {a})")
+        raise TypeError(f"cannot cast {_tname(cls)} to complex")
 
     @classmethod
     def consts(cls): # map of str to elements, all optional.
@@ -84,28 +86,32 @@ class Field:
     def one(cls): # probs dont override.
         return cls._get_const("__1__", "no multiplicative identity (one)")
     @_classconst
+    def i(cls): # probs dont override.
+        return cls._get_const("__i__", "no imaginary unit (i)")
+    @_classconst
     def e(cls): # probs dont override.
         return cls._get_const("__e__", "cannot represent euler's number (e)")
     @_classconst
     def pi(cls): # probs dont override.
         return cls._get_const("__pi__", "cannot represent pi")
-    @_classconst
-    def i(cls): # probs dont override.
-        return cls._get_const("__i__", "no imaginary unit (i)")
+
+
+    # Mathematical operations, all of which must return something which this
+    # field can still operate on.
 
     @classmethod
-    def iscomplex(cls): # do the elements have imaginary components?
-        raise TypeError(f"no concept of complex-vs-real over {_tname(cls)}")
-    @classmethod
     def real(cls, a): # Re(a)
-        raise TypeError(f"no concept of complex-vs-real over {_tname(cls)}")
+        raise TypeError(f"no concept of real-vs-imaginary over {_tname(cls)}")
     @classmethod
     def imag(cls, a): # Im(a)
-        raise TypeError(f"no concept of complex-vs-real over {_tname(cls)}")
+        raise TypeError(f"no concept of real-vs-imaginary over {_tname(cls)}")
 
     @classmethod
     def abs(cls, a): # |a|
         raise TypeError(f"cannot do absolution over {_tname(cls)}")
+    @classmethod
+    def sgn(cls, a): # signum(a) = a / |a|  (signum(0) = 0)
+        raise TypeError(f"cannot do signum function over {_tname(cls)}")
 
     @classmethod
     def add(cls, a, b): # a+b
@@ -168,9 +174,41 @@ class Field:
     def def_intt(cls, y, x, a, b): # (int(a..b) y dx)
         raise TypeError(f"cannot do definite integration over {_tname(cls)}")
 
+    # End mathematical operations.
+
+
+    # Field also needs to facilitate the manipulation of comparison results.
+    # Fields which implement the following methods generally should not implement
+    # the mathematical operations (as it doesn't make logical sense). Note that
+    # this exclusivity is not enforced.
+
     @classmethod
-    def issame(cls, a, b): # a is identical to b, must return bool
-        raise TypeError(f"cannot check identical over {_tname(cls)}")
+    def always(cls, a): # is always true? must return bool.
+        raise TypeError(f"no concept of always true over {_tname(cls)}")
+    @classmethod
+    def anytime(cls, a): # is true at any point? must return bool.
+        raise TypeError(f"no concept of anytime true over {_tname(cls)}")
+
+    @classmethod
+    def logical_not(cls, a): # not a
+        raise TypeError(f"cannot do logical-not over {_tname(cls)}")
+    @classmethod
+    def logical_and(cls, a, b): # a and b
+        raise TypeError(f"cannot do logical-and over {_tname(cls)}")
+    @classmethod
+    def logical_or(cls, a, b): # a or b
+        raise TypeError(f"cannot do logical-or over {_tname(cls)}")
+
+    # End comparison result operations.
+
+
+    # Comparing operations, all of which must return an element operable on by
+    # `cls.comparison_field()`. Note that both mathematical and comparison-result
+    # fields can/should implement comparison within themselves.
+
+    @classmethod
+    def comparison_field(cls): # field to use for the result of comparisons.
+        raise TypeError(f"cannot do comparison over {_tname(cls)}")
 
     @classmethod
     def eq(cls, a, b): # a == b
@@ -185,12 +223,19 @@ class Field:
     def le(cls, a, b): # a <= b
         raise TypeError(f"cannot do less-than-or-equal-to over {_tname(cls)}")
 
+    # End comparing operations.
+
+
+    @classmethod
+    def issame(cls, a, b): # a is identical to b? must return bool.
+        raise TypeError(f"cannot check identical over {_tname(cls)}")
+
     @classmethod
     def hashed(cls, a): # hash(a)
         raise TypeError(f"cannot do hashing over {_tname(cls)}")
 
     @classmethod
-    def rep(cls, a, short): # repr(a), with short+long form (`short` is bool).
+    def rep(cls, a, short): # repr(a), with short+long form (`short` is a bool)
         raise TypeError(f"cannot stringify over {_tname(cls)}")
 
 
@@ -217,7 +262,7 @@ class Field:
         if tofield is cls:
             raise RuntimeError("missing overload for "
                     f".numpyarr({totype.__name__})")
-        return tofield.fromfield(m).numpyarr(totype)
+        return tofield._mat_fromfield(m).numpyarr(totype)
 
     # These numpyarr should only be implemented if its faster (or if the field
     # is int/float/complex and we need an array of int/float/complex, but you
@@ -275,48 +320,59 @@ class Field:
         return M(cells)
 
     @classmethod
+    def _mat_all(cls, m):
+        return all(cls.to_bool(x) for x in m._cells)
+    @classmethod
+    def _mat_any(cls, m):
+        return any(cls.to_bool(x) for x in m._cells)
+
+    @classmethod
+    def _mat_always(cls, m):
+        return m._apply(cls.always, cls, m)
+    @classmethod
+    def _mat_anytime(cls, m):
+        return m._apply(cls.anytime, cls, m)
+
+    @classmethod
+    def _mat_not(cls, m):
+        return m._apply(cls.logical_not, cls, m)
+    @classmethod
+    def _mat_and(cls, m, o):
+        return m._apply(cls.logical_and, cls, m, o)
+    @classmethod
+    def _mat_or(cls, m, o):
+        return m._apply(cls.logical_or, cls, m, o)
+
+    @classmethod
+    def _mat_real(cls, m):
+        if m.isempty:
+            return m
+        return m._apply(cls.real, cls, m)
+    @classmethod
+    def _mat_imag(cls, m):
+        if m.isempty:
+            return m
+        return m._apply(cls.imag, cls, m)
+    @classmethod
+    def _mat_conj(cls, m):
+        if m.isempty:
+            return m
+        return m.real - m.i * m.imag
+
+    @classmethod
+    def _mat_abs(cls, m):
+        return m._apply(cls.abs, cls, m)
+    @classmethod
+    def _mat_sgn(cls, m):
+        return m._apply(cls.sgn, cls, m)
+
+    @classmethod
     def _mat_neg(cls, m):
         if m.isempty: # dont call .zero if no need.
             return m
         sub = cls.sub
         zero = cls.zero
         return m._apply(lambda x: sub(zero, x), cls, m)
-    @classmethod
-    def _mat_abs(cls, m):
-        return m._apply(cls.abs, cls, m)
-    @classmethod
-    def _mat_conj(cls, m):
-        if m.isempty: # dont call .iscomplex if no need.
-            return m
-        if not cls.iscomplex():
-            return m
-        return m.real - m.i * m.imag
-    @classmethod
-    def _mat_real(cls, m):
-        if m.isempty: # dont call .iscomplex if no need.
-            return m
-        if not cls.iscomplex():
-            return m
-        return m._apply(cls.real, cls, m)
-    @classmethod
-    def _mat_imag(cls, m):
-        if m.isempty: # dont call .iscomplex if no need.
-            return m
-        if not cls.iscomplex():
-            return m.zeros
-        return m._apply(cls.imag, cls, m)
-
-    @classmethod
-    def _mat_sign(cls, m):
-        # TODO:
-        if not m.issingle:
-            raise NotImplementedError("lemme whip up specialised bool first")
-        neg = bool(m <= 0)
-        pos = bool(m >= 0)
-        if neg + pos == 0:
-            raise ValueError(f"could not determine sign of: {s}")
-        return pos - neg # one of -1, 0, or 1.
-
     @classmethod
     def _mat_add(cls, m, o):
         return m._apply(cls.add, cls, m, o)
@@ -452,21 +508,20 @@ class Field:
     def _mat_def_intt(cls, y, x, a, b):
         return y._apply(y.field.def_intt, y.field, y, x, a, b)
 
-    @classmethod
-    def _mat_issame(cls, m, o):
-        return m._apply(cls.issame, bool, m, o)
+
     @classmethod
     def _mat_eq(cls, m, o):
-        return m._apply(cls.eq, bool, m, o)
+        return m._apply(cls.eq, cls.comparison_field(), m, o)
     @classmethod
     def _mat_ne(cls, m, o):
-        return m._apply(cls.ne, bool, m, o)
+        return m._apply(cls.ne, cls.comparison_field(), m, o)
     @classmethod
     def _mat_lt(cls, m, o):
-        return m._apply(cls.lt, bool, m, o)
+        return m._apply(cls.lt, cls.comparison_field(), m, o)
     @classmethod
     def _mat_le(cls, m, o):
-        return m._apply(cls.le, bool, m, o)
+        return m._apply(cls.le, cls.comparison_field(), m, o)
+
 
     @classmethod
     def _mat_det(cls, m):
@@ -527,7 +582,7 @@ class Field:
                         det = add(det, subdet)
             return det
 
-        return single(determinant(cells, m.shape[0]), field=cls)
+        return single(determinant(cells, m.shape[0]), field=cls, _nocast=True)
 
     @classmethod
     def _mat_trace(cls, m):
@@ -705,6 +760,11 @@ class Field:
 
         return Matrix[cls, m.shape](cells)
 
+
+    @classmethod
+    def _mat_issame(cls, m, o):
+        return m._apply(cls.issame, bool, m, o)
+
     @classmethod
     def _mat_hash(cls, m):
         return hash((m.shape, ) + tuple(cls.hashed(x) for x in m._cells))
@@ -769,25 +829,21 @@ class Field:
 
 class RealField(Field):
     @classmethod
-    def iscomplex(cls):
-        return False
-    @classmethod
     def real(cls, a):
-        return a # since `iscomplex` is false, must return `a`.
+        return a
     @classmethod
     def imag(cls, a):
-        return cls.zero # since `iscomplex` is false, must return zero.
+        return cls.zero
 
-class ComplexField(Field):
     @classmethod
-    def iscomplex(cls):
-        return True
+    def _mat_real(cls, m):
+        return m
     @classmethod
-    def real(cls, a):
-        raise NotImplementedError("brother")
+    def _mat_imag(cls, m):
+        return m.zeros
     @classmethod
-    def imag(cls, a):
-        raise NotImplementedError("brother")
+    def _mat_conj(cls, m):
+        return m
 
 
 
@@ -918,9 +974,9 @@ class lits:
             return True
         try:
             if isinstance(expect, Matrix):
-                return not (expect.issame(got)).obj # TODO: change when bool
+                return not expect.issame(got).alll
             else:
-                return (expect != got).obj # TODO: same
+                return (expect != got).anyy
         except Exception:
             return True # assume nothing but the worst.
 
@@ -983,8 +1039,8 @@ def _get_space(depth=1):
 
 
 """
-Cheeky rant about how matrix interals will interoperate with numpy, since we have
-both different shaping logic and different memory layout expectations.
+Cheeky rant about how matrix internals will interoperate with numpy, since we
+have both different shaping logic and different memory layout expectations.
 
 Firstly, for empty the canonical shape and backing is:
     shape = (0,)
@@ -1545,31 +1601,31 @@ def Matrix(field, shape):
         """
         Single zero.
         """
-        return single(M.field.zero, field=M.field)
+        return single(M.field.zero, field=M.field, _nocast=True)
     @_classconst
     def one(M):
         """
         Single one.
         """
-        return single(M.field.one, field=M.field)
+        return single(M.field.one, field=M.field, _nocast=True)
     @_classconst
     def e(M):
         """
         Single euler's number (2.71828...).
         """
-        return single(M.field.e, field=M.field)
+        return single(M.field.e, field=M.field, _nocast=True)
     @_classconst
     def pi(M):
         """
         Single pi (3.14159...).
         """
-        return single(M.field.pi, field=M.field)
+        return single(M.field.pi, field=M.field, _nocast=True)
     @_classconst
     def i(M):
         """
         Single imaginary unit.
         """
-        return single(M.field.i, field=M.field)
+        return single(M.field.i, field=M.field, _nocast=True)
 
 
     @_classconst
@@ -1702,13 +1758,12 @@ def Matrix(field, shape):
 
     def __bool__(m):
         """
-        Cast a single to bool, returning true iff the element is not-equal-to
-        zero.
+        Cast a single to bool.
         """
         if not m.issingle:
             raise TypeError("expected single for scalar cast to bool, got "
                     f"{m.shape}")
-        return m.field.ne(m.field.zero, m.obj)
+        return m.field.to_bool(m.obj)
     def __int__(m):
         """
         Cast a single to int.
@@ -1733,7 +1788,6 @@ def Matrix(field, shape):
             raise TypeError("expected single for scalar cast to complex, got "
                     f"{m.shape}")
         return m.field.to_complex(m.obj)
-
 
 
     def tofield(m, newfield):
@@ -1771,7 +1825,7 @@ def Matrix(field, shape):
         # See the rant earlier in this file about numpy interoperation, short
         # answer is the backing array memory layout isnt what we expect so we got
         # work to do.
-        if m.ndim < 2:
+        if m.isvec:
             # If vector, it doesn't matter.
             cells = m._cells.reshape(-1)
         elif m.ndim == 2:
@@ -1942,7 +1996,16 @@ def Matrix(field, shape):
         if not m.isvec:
             raise TypeError(f"only vectors have bare iteration, got {m.shape} "
                     "(use .along or .ravel for matrix iterate)")
-        return (single(x, field=m.field) for x in m._cells.ravel())
+        return (single(x, field=m.field, _nocast=True) for x in m._cells.ravel())
+
+    def __len__(m):
+        """
+        Vector-only cell count, alias for 'm.size'.
+        """
+        if not m.isvec:
+            raise TypeError(f"only vectors have bare length, got {m.shape} (use "
+                    ".size for matrix cell count)")
+        return m.size
 
     def __getitem__(m, i):
         """
@@ -1953,26 +2016,19 @@ def Matrix(field, shape):
                     "(use .at for matrix cell access)")
         if isinstance(i, int):
             if i < -m.size or i >= m.size:
-                raise IndexError(f"index {i} out of bounds for size {m.size}")
+                raise IndexError(f"index {i} out of bounds for vector of size "
+                        f"{m.size}")
             if i < 0:
                 i += m.size
             i = slice(i, i + 1)
         if not isinstance(i, slice):
             raise TypeError("expected integer or slice to index vector, got "
                     f"{_objtname(i)}")
-        newshape = m.shape.withaxis(m.lastaxis, len(cells))
+        # Keep vector ndim (dont collapse to column).
         cells = m._cells.ravel().__getitem__(i)
+        newshape = m.shape.withaxis(m.lastaxis, len(cells))
         cells = cells.reshape(newshape.tonumpy)
         return Matrix[m.field, newshape](cells)
-
-    def __len__(m):
-        """
-        Vector-only cell count, alias for 'm.size'.
-        """
-        if not m.isvec:
-            raise TypeError(f"only vectors have bare length, got {m.shape} (use "
-                    ".size for matrix cell count)")
-        return m.size
 
 
     @_instconst
@@ -2106,8 +2162,7 @@ def Matrix(field, shape):
             return False
         if m.det == m.zero:
             return False
-        # TODO: make all
-        return bool(m.T == m.inv)
+        return (m.T == m.inv).alll
 
     @_instconst
     def issymmetric(m):
@@ -2271,7 +2326,7 @@ def Matrix(field, shape):
             seed = x._apply(f, m.field, seed, x)
         if seed is NO_SEED:
             assert m.isempty
-            return empty(m.field)
+            return m
         return seed
 
     def fold(m, func, axis=None, seed=NO_SEED, right=False):
@@ -2317,34 +2372,77 @@ def Matrix(field, shape):
         return m._fold(wrapped, axis=axis, seed=seed, right=right)
 
 
-    def __pos__(m):
+    @_instconst
+    def alll(m):
         """
-        Element-wise NOTHING.
+        Are all elements true? Returns a bool, not a matrix.
         """
-        return m
-    def __neg__(m):
+        return m.field._mat_all(m)
+    @_instconst
+    def anyy(m):
         """
-        Element-wise negation.
+        Are any elements true? Returns a bool, not a matrix.
         """
-        return m.field._mat_neg(m)
+        return m.field._mat_any(m)
+
+    @_instconst
+    def always(m):
+        """
+        Element-wise "is always true"?
+        """
+        return m.field._mat_always(m)
+    @_instconst
+    def anytime(m):
+        """
+        Element-wise "is true at any point"?
+        """
+        return m.field._mat_anytime(m)
+
+    def __invert__(m):
+        """
+        Element-wise logical-not.
+        """
+        return m.field._mat_not(m)
+    def __and__(m, o, *, reverse=False):
+        """
+        Element-wise logical-and.
+        """
+        m, o = m.cast(m, o)
+        if reverse:
+            m, o = o, m
+        return m.field._mat_and(m, o)
+    def __rand__(m, o):
+        return m.__and__(o, reverse=True)
+    def __or__(m, o, *, reverse=False):
+        """
+        Element-wise logical-or.
+        """
+        m, o = m.cast(m, o)
+        if reverse:
+            m, o = o, m
+        return m.field._mat_or(m, o)
+    def __ror__(m, o):
+        return m.__or__(o, reverse=True)
+
+
     def __abs__(m):
         """
         Element-wise absolution.
         """
         return m.field._mat_abs(m)
-
     @_instconst
     def abs(m):
         """
-        Alias for 'abs(m)'.
+        Element-wise absolution, alias for 'abs(m)'.
         """
         return m.__abs__()
     @_instconst
-    def conj(m):
+    def sgn(m):
         """
-        Element-wise complex conjugate.
+        Element-wise signum function: 0 if (x == 0), otherwise x / |x|
         """
-        return m.field._mat_conj(m)
+        return m.field._mat_sgn(m)
+
     @_instconst
     def real(m):
         """
@@ -2357,13 +2455,23 @@ def Matrix(field, shape):
         Element-wise take-imaginary.
         """
         return m.field._mat_imag(m)
-
     @_instconst
-    def sign(m):
+    def conj(m):
         """
-        Element-wise (-1, 0, or 1) corresponding to (<0, =0, or >0).
+        Element-wise complex conjugate.
         """
-        return m.field._mat_sign(m)
+        return m.field._mat_conj(m)
+
+    def __pos__(m):
+        """
+        Element-wise NOTHING.
+        """
+        return m
+    def __neg__(m):
+        """
+        Element-wise negation.
+        """
+        return m.field._mat_neg(m)
 
     def __add__(m, o, *, reverse=False):
         """
@@ -2595,15 +2703,6 @@ def Matrix(field, shape):
         return y.field._mat_def_intt(y, x, a, b)
 
 
-    def issame(m, o):
-        """
-        Element-wise identical check. Note this is different to '==' (which
-        checks for equivalent values, and may be different than identical
-        values).
-        """
-        m, o = m.cast(m, o)
-        return m.field._mat_issame(m, o)
-
     def __eq__(m, o):
         """
         Element-wise equal-to.
@@ -2634,6 +2733,15 @@ def Matrix(field, shape):
     def __ge__(m, o):
         m, o = m.cast(m, o)
         return o.field._mat_le(o, m)
+
+    def issame(m, o):
+        """
+        Element-wise identical check. Note this is different to '==' (which does
+        equivalence, and may be different than identical values).
+        """
+        m, o = m.cast(m, o)
+        return m.field._mat_issame(m, o)
+
 
     @_instconst
     def det(m):
@@ -2918,7 +3026,7 @@ def Matrix(field, shape):
         one = m.field.one
         eq = m.field.eq
         ne = m.field.ne
-        # TODO: vectorise eq
+        # TODO: bool auto-promotion
         return tuple(i for i, c in enumerate(sys.cols)
                      if 1 == sum(ne(zero, x) for x in c)
                      and 1 == sum(eq(one, x) for x in c))
@@ -2947,7 +3055,7 @@ def Matrix(field, shape):
         sys = m.rref
         zero = m.field.zero
         ne = m.field.ne
-        # TODO: vectorise eq
+        # TODO: bool auto-promotion
         nonzeros = (i for i, r in enumerate(sys.rows)
                     if any(ne(zero, x) for x in r))
         return tuple(sys.rows[i].T for i in nonzeros)
@@ -3120,15 +3228,18 @@ class Int(RealField):
         }
 
     @classmethod
+    def abs(cls, a):
+        return abs(a)
+    @classmethod
+    def sgn(cls, a):
+        raise (a > 0) - (a < 0)
+
+    @classmethod
     def add(cls, a, b):
         return a + b
     @classmethod
     def sub(cls, a, b):
         return a - b
-
-    @classmethod
-    def abs(cls, a):
-        return abs(a)
 
     @classmethod
     def mul(cls, a, b):
@@ -3144,20 +3255,27 @@ class Int(RealField):
     @classmethod
     def power(cls, a, b):
         if b < 0:
-            return cls.root(a, -b)
+            if a == 0:
+                raise ZeroDivisionError("0^(-x)")
+            if a == 1:
+                return 1
+            raise TypeError(f"expected integer power result over int, got: "
+                    f"{a} ** {b}")
         return a ** b
     @classmethod
     def root(cls, a, b):
+        if b == 0:
+            raise ZeroDivisionError("x^(1/0)")
         if b < 0:
-            return cls.power(a, -b)
+            return cls.power(cls.root(a, -b), -1)
         raise NotImplementedError("iroot")
     @classmethod
     def log(cls, a, b):
         raise NotImplementedError("ilog")
 
     @classmethod
-    def issame(cls, a, b):
-        return a == b
+    def comparison_field(cls):
+        return bool
     @classmethod
     def eq(cls, a, b):
         return a == b
@@ -3170,6 +3288,10 @@ class Int(RealField):
     @classmethod
     def le(cls, a, b):
         return a <= b
+
+    @classmethod
+    def issame(cls, a, b):
+        return a == b
 
     @classmethod
     def hashed(cls, a):
@@ -3187,8 +3309,7 @@ class Int(RealField):
         hi = (1 << 63) - 1
         lo = -(1 << 63)
         if ((cells < lo) | (cells > hi)).any():
-            raise ValueError("cannot cast too-large integer to int64, "
-                    "overflowed")
+            raise ValueError("cannot cast too-large value to int64, overflowed")
         return cells.astype(_np.int64)
 
     @classmethod
@@ -3198,8 +3319,8 @@ class Int(RealField):
         hif = _sys.float_info.max
         hi = int(hif) + int(_math.ulp(hif))//2 - 1
         lo = -hi
-        if ((cells > hi) | (cells < lo)).any():
-            raise ValueError("cannot cast too-large integer to float64, "
+        if ((cells < lo) | (cells > hi)).any():
+            raise ValueError("cannot cast too-large value to float64, "
                     "overflowed")
         return cells.astype(_np.float64)
 
@@ -3210,11 +3331,33 @@ class Int(RealField):
         hif = _sys.float_info.max
         hi = int(hif) + int(_math.ulp(hif))//2 - 1
         lo = -hi
-        if ((cells > hi) | (cells < lo)).any():
-            raise ValueError("cannot cast too-large integer to complex128, "
+        if ((cells < lo) | (cells > hi)).any():
+            raise ValueError("cannot cast too-large value to complex128, "
                     "overflowed")
         return cells.astype(_np.complex128)
 
+    @classmethod
+    def _mat_fromfield(cls, m):
+        # Note we can't use numpy method since that uses 64b (instead of
+        # unbounded) ints. However we will use the fields cast method.
+        toobj = _np.vectorize(m.field.to_int, otypes=[cls.dtype()])
+        return Matrix[cls, m.shape](toobj(m._cells))
+
+
+    # Apparently numpy just uses python integers when given an object dtype for
+    # these functions.
+    @classmethod
+    def _mat_eye(cls, M):
+        cells = _np.eye(M.shape[0], dtype=cls.dtype())
+        return M(cells)
+    @classmethod
+    def _mat_zeros(cls, M):
+        cells = _np.zeros(M.shape.tonumpy, dtype=cls.dtype())
+        return M(cells)
+    @classmethod
+    def _mat_ones(cls, M):
+        cells = _np.ones(M.shape.tonumpy, dtype=cls.dtype())
+        return M(cells)
 
 
 
@@ -3261,6 +3404,10 @@ def _float_eq(x, y, ulps=50):
     eq[inexact] |= (dif <= ulps)[inexact]
     return eq
 
+def _float_eq1(x, y, ulps=50):
+    x = _np.array([a], dtype=float)
+    y = _np.array([b], dtype=float)
+    return _float_eq(x, y)[0]
 
 
 class Float(RealField):
@@ -3305,15 +3452,18 @@ class Float(RealField):
         }
 
     @classmethod
+    def abs(cls, a):
+        return abs(a)
+    @classmethod
+    def sgn(cls, a):
+        raise float((a > 0) - (a < 0))
+
+    @classmethod
     def add(cls, a, b):
         return a + b
     @classmethod
     def sub(cls, a, b):
         return a - b
-
-    @classmethod
-    def abs(cls, a):
-        return abs(a)
 
     @classmethod
     def mul(cls, a, b):
@@ -3356,32 +3506,29 @@ class Float(RealField):
         return _math.atan2(y, x)
 
     @classmethod
-    def issame(cls, a, b):
-        # bytewise compare.
-        return _struct.pack("d", a) == _struct.pack("d", b)
-
+    def comparison_field(cls):
+        return bool
     @classmethod
     def eq(cls, a, b, ulps=15):
-        x = _np.array([a], dtype=float)
-        y = _np.array([b], dtype=float)
-        return bool(_float_eq(x, y))
+        return _float_eq1(x, y)
     @classmethod
     def ne(cls, a, b):
-        if __math.isnan(a) or _math.isnan(b):
+        if _math.isnan(a) or _math.isnan(b):
             return False
         return not cls.eq(a, b)
     @classmethod
     def lt(cls, a, b):
-        if _math.isnan(a) or _math.isnan(b):
-            return False
         return a < b
     @classmethod
     def le(cls, a, b):
-        if _math.isnan(a) or _math.isnan(b):
-            return False
         # note this isn't the same as `a == b || a < b` over the field, since ==
         # allows imprecision.
         return a <= b
+
+    @classmethod
+    def issame(cls, a, b):
+        # bytewise compare.
+        return _struct.pack("d", a) == _struct.pack("d", b)
 
     @classmethod
     def hashed(cls, a):
@@ -3406,7 +3553,7 @@ class Float(RealField):
         hi = _math.nextafter(float((1 << 63) - 1), 0.0)
         lo = _math.nextafter(float(-(1 << 63)), 0.0)
         if ((cells < lo) | (cells > hi)).any():
-            raise ValueError("overflow when casting to integer")
+            raise ValueError("cannot cast too-large value to int64, overflowed")
         return cells.astype(_np.int64)
 
     @classmethod
@@ -3427,7 +3574,9 @@ class Float(RealField):
         if hasattr(m.field, "_mat_numpyarr_float"):
             cells = m.field._mat_numpyarr_float(m)
             return Matrix[cls, m.shape](cells)
-        return super()._mat_fromfield(m)
+        # Use the fields cast method.
+        toobj = _np.vectorize(m.field.to_float, otypes=[cls.dtype()])
+        return Matrix[cls, m.shape](toobj(m._cells))
 
 
     @classmethod
@@ -3443,26 +3592,20 @@ class Float(RealField):
         cells = _np.ones(M.shape.tonumpy, dtype=cls.dtype())
         return M(cells)
 
-    @classmethod
-    def _mat_neg(cls, m):
-        cells = -m._cells
-        return type(m)(cells)
+
     @classmethod
     def _mat_abs(cls, m):
         cells = m._cells.__abs__()
         return type(m)(cells)
+    @classmethod
+    def _mat_sgn(cls, m):
+        cells = (m._cells < 0.0).astype(cls.dtype()) - (m._cells < 0.0)
+        return type(m)(cells)
 
     @classmethod
-    def _mat_sign(cls, m):
-        # TODO:
-        if not m.issingle:
-            raise NotImplementedError("lemme whip up specialised bool first")
-        neg = bool(m <= 0)
-        pos = bool(m >= 0)
-        if neg + pos == 0:
-            raise ValueError(f"could not determine sign of: {s}")
-        return pos - neg # one of -1, 0, or 1.
-
+    def _mat_neg(cls, m):
+        cells = -m._cells
+        return type(m)(cells)
     @classmethod
     def _mat_add(cls, m, o):
         cells = m._cells + o._cells
@@ -3570,42 +3713,42 @@ class Float(RealField):
     def _mat_issame(cls, m, o):
         # byte-wise compare, but maintaining element size.
         cells = (m._cells.view(_np.void) == o._cells.view(_np.void))
-        return Matrix[bool, m.shape](cells.astype(object))
+        return Matrix[bool, m.shape](cells)
     @classmethod
     def _mat_eq(cls, m, o):
         cells = _float_eq(m._cells, o._cells)
-        return Matrix[bool, m.shape](cells.astype(object))
+        return Matrix[bool, m.shape](cells)
     @classmethod
     def _mat_ne(cls, m, o):
         cells = ~_float_eq(m._cells, o._cells)
         cells &= (~_np.isnan(m._cells) & ~_np.isnan(o._cells))
-        return Matrix[bool, m.shape](cells.astype(object))
+        return Matrix[bool, m.shape](cells)
     @classmethod
     def _mat_lt(cls, m, o):
         cells = (m._cells < o._cells)
-        return Matrix[bool, m.shape](cells.astype(object))
+        return Matrix[bool, m.shape](cells)
     @classmethod
     def _mat_le(cls, m, o):
         cells = (m._cells <= o._cells)
-        return Matrix[bool, m.shape](cells.astype(object))
+        return Matrix[bool, m.shape](cells)
 
     @classmethod
     def _mat_det(cls, m):
         if m.isempty:
             return m.one
         val = _np.linalg.det(m._cells)
-        return single(val, field=cls)
+        return single(val, field=cls, _nocast=True)
 
     @classmethod
     def _mat_trace(cls, m):
         val = _np.trace(m._cells)
-        return single(val, field=cls)
+        return single(val, field=cls, _nocast=True)
 
     @classmethod
     def _mat_norm(cls, m):
         a = m._cells.reshape(-1)
         val = _np.linalg.norm(a)
-        return single(val, field=cls)
+        return single(val, field=cls, _nocast=True)
 
     @classmethod
     def _mat_dot(cls, m, o):
@@ -3614,14 +3757,14 @@ class Float(RealField):
         a = m._cells.reshape(-1)
         b = o._cells.reshape(-1)
         val = _np.vdot(a, b)
-        return single(val, field=cls)
+        return single(val, field=cls, _nocast=True)
 
     @classmethod
     def _mat_cross(cls, m, o):
         a = m._cells.reshape(-1)
         b = o._cells.reshape(-1)
         val = _np.cross(a, b)
-        return single(val, field=cls)
+        return single(val, field=cls, _nocast=True)
 
     @classmethod
     def _mat_matmul(cls, m, o):
@@ -3636,7 +3779,7 @@ class Float(RealField):
         # Note we ignore nans, bc who tf wants nans.
         if axis is None:
             val = _np.nansum(m._cells)
-            return single(val, field=cls)
+            return single(val, field=cls, _nocast=True)
         if axis >= m.ndim:
             return m
         # Use numpy-equiv axis and dont wipe that axis once sumed along.
@@ -3649,7 +3792,7 @@ class Float(RealField):
             return m.one if axis is None else m
         if axis is None:
             val = _np.nanprod(m._cells)
-            return single(val, field=cls)
+            return single(val, field=cls, _nocast=True)
         if axis >= m.ndim:
             return m
         npaxis = Permuter.tonumpyaxis(m.ndim, axis)
@@ -3659,7 +3802,7 @@ class Float(RealField):
     def _mat_minn(cls, m, axis):
         if axis is None:
             val = _np.nanmin(m._cells)
-            return single(val, field=cls)
+            return single(val, field=cls, _nocast=True)
         if axis >= m.ndim:
             return m
         npaxis = Permuter.tonumpyaxis(m.ndim, axis)
@@ -3670,7 +3813,7 @@ class Float(RealField):
     def _mat_maxx(cls, m, axis):
         if axis is None:
             val = _np.nanmax(m._cells)
-            return single(val, field=cls)
+            return single(val, field=cls, _nocast=True)
         if axis >= m.ndim:
             return m
         npaxis = Permuter.tonumpyaxis(m.ndim, axis)
@@ -3684,7 +3827,7 @@ class Float(RealField):
 
 
 
-class Complex(ComplexField):
+class Complex(Field):
     @classmethod
     def dtype(cls):
         return _np.dtype(complex)
@@ -3738,15 +3881,20 @@ class Complex(ComplexField):
         return complex(a.imag)
 
     @classmethod
+    def abs(cls, a):
+        return complex(abs(a))
+    @classmethod
+    def sgn(cls, a):
+        if a == 0:
+            return complex(0)
+        return a / abs(a)
+
+    @classmethod
     def add(cls, a, b):
         return a + b
     @classmethod
     def sub(cls, a, b):
         return a - b
-
-    @classmethod
-    def abs(cls, a):
-        return complex(abs(a))
 
     @classmethod
     def mul(cls, a, b):
@@ -3792,16 +3940,11 @@ class Complex(ComplexField):
                 f"{a}, and {b}")
 
     @classmethod
-    def issame(cls, a, b):
-        realeq = (_struct.pack("d", a.real) == _struct.pack("d", b.real))
-        imageq = (_struct.pack("d", a.imag) == _struct.pack("d", b.imag))
-        return realeq and imageq
-
+    def comparison_field(cls):
+        return bool
     @classmethod
     def eq(cls, a, b, ulps=15):
-        if _cmath.isnan(a) or _cmath.isnan(b):
-            return False
-        return Float.eq(a.real, b.real) and Float.eq(a.imag, b.imag)
+        return _float_eq1(a.real, b.real) and _float_eq1(a.imag, b.imag)
     @classmethod
     def ne(cls, a, b):
         if _cmath.isnan(a) or _cmath.isnan(b):
@@ -3809,18 +3952,20 @@ class Complex(ComplexField):
         return not cls.eq(a, b)
     @classmethod
     def lt(cls, a, b):
-        if _cmath.isnan(a) or _cmath.isnan(b):
-            return False
         if a.imag == 0.0 and b.imag == 0.0:
             return a.real < b.real
-        raise TypeError(f"cannot order complex, got: {a}, and {b}")
+        raise TypeError("cannot order complex (values were not all real)")
     @classmethod
     def le(cls, a, b):
-        if _cmath.isnan(a) or _cmath.isnan(b):
-            return False
         if a.imag == 0.0 and b.imag == 0.0:
             return a.real <= b.real
-        raise TypeError(f"cannot order complex, got: {a}, and {b}")
+        raise TypeError("cannot order complex (values were not all real)")
+
+    @classmethod
+    def issame(cls, a, b):
+        realeq = (_struct.pack("d", a.real) == _struct.pack("d", b.real))
+        imageq = (_struct.pack("d", a.imag) == _struct.pack("d", b.imag))
+        return realeq and imageq
 
     @classmethod
     def hashed(cls, a):
@@ -3870,7 +4015,9 @@ class Complex(ComplexField):
         if hasattr(m.field, "_mat_numpyarr_complex"):
             cells = m.field._mat_numpyarr_complex(m)
             return Matrix[cls, m.shape](cells)
-        return super()._mat_fromfield(m)
+        # Use the fields cast method.
+        toobj = _np.vectorize(m.field.to_complex, otypes=[cls.dtype()])
+        return Matrix[cls, m.shape](toobj(m._cells))
 
 
     @classmethod
@@ -3886,40 +4033,37 @@ class Complex(ComplexField):
         cells = _np.ones(M.shape.tonumpy, dtype=cls.dtype())
         return M(cells)
 
+
     @classmethod
-    def _mat_neg(cls, m):
-        cells = -m._cells
+    def _mat_real(cls, m):
+        # again, taking real collapses to float64.
+        cells = m._cells.real.astype(cls.dtype())
         return type(m)(cells)
     @classmethod
-    def _mat_abs(cls, m):
-        # numpy abs returns float64.
-        cells = m._cells.__abs__().astype(complex)
+    def _mat_imag(cls, m):
+        cells = m._cells.imag.astype(cls.dtype())
         return type(m)(cells)
     @classmethod
     def _mat_conj(cls, m):
         cells = _np.conj(m._cells)
         return type(m)(cells)
+
     @classmethod
-    def _mat_real(cls, m):
-        # again, taking real collapses to float64.
-        cells = m._cells.real.astype(complex)
+    def _mat_abs(cls, m):
+        # numpy abs returns float64.
+        cells = m._cells.__abs__().astype(cls.dtype())
         return type(m)(cells)
     @classmethod
-    def _mat_imag(cls, m):
-        cells = m._cells.imag.astype(complex)
+    def _mat_sgn(cls, m):
+        cells = m._cells.copy()
+        nonz = m._cells[m._cells != 0]
+        cells[m._cells != 0] = nonz / nonz.__abs__()
         return type(m)(cells)
 
     @classmethod
-    def _mat_sign(cls, m):
-        # TODO:
-        if not m.issingle:
-            raise NotImplementedError("lemme whip up specialised bool first")
-        neg = bool(m <= 0)
-        pos = bool(m >= 0)
-        if neg + pos == 0:
-            raise ValueError(f"could not determine sign of: {s}")
-        return pos - neg # one of -1, 0, or 1.
-
+    def _mat_neg(cls, m):
+        cells = -m._cells
+        return type(m)(cells)
     @classmethod
     def _mat_add(cls, m, o):
         cells = m._cells + o._cells
@@ -4020,7 +4164,7 @@ class Complex(ComplexField):
         b = b.real
         cells = _np.atan2(a, b)
         # complex me.
-        cells = cells.astype(complex)
+        cells = cells.astype(cls.dtype())
         return type(y)(cells)
 
     @classmethod
@@ -4036,7 +4180,7 @@ class Complex(ComplexField):
     def _mat_issame(cls, m, o):
         # byte-wise compare, but maintaining element size.
         cells = (m._cells.view(_np.void) == o._cells.view(_np.void))
-        return Matrix[bool, m.shape](cells.astype(object))
+        return Matrix[bool, m.shape](cells)
     @classmethod
     def _mat_eq(cls, m, o):
         mre = m._cells.real
@@ -4044,7 +4188,7 @@ class Complex(ComplexField):
         ore = o._cells.real
         oim = o._cells.imag
         cells = (_float_eq(mre, ore) & _float_eq(mim, oim))
-        return Matrix[bool, m.shape](cells.astype(object))
+        return Matrix[bool, m.shape](cells)
     @classmethod
     def _mat_ne(cls, m, o):
         mre = m._cells.real
@@ -4053,7 +4197,7 @@ class Complex(ComplexField):
         oim = o._cells.imag
         cells = ((~_float_eq(mre, ore)) & (~_float_eq(mim, oim)))
         cells &= ((~_np.isnan(m)) | (~_np.isnan(o)))
-        return Matrix[bool, m.shape](cells.astype(object))
+        return Matrix[bool, m.shape](cells)
     @classmethod
     def _mat_lt(cls, m, o):
         mim = m._cells.imag
@@ -4063,7 +4207,7 @@ class Complex(ComplexField):
         mre = m._cells.real
         ore = o._cells.real
         cells = (mre < ore)
-        return Matrix[bool, m.shape](cells.astype(object))
+        return Matrix[bool, m.shape](cells)
     @classmethod
     def _mat_le(cls, m, o):
         mim = m._cells.imag
@@ -4073,25 +4217,25 @@ class Complex(ComplexField):
         mre = m._cells.real
         ore = o._cells.real
         cells = (mre <= ore)
-        return Matrix[bool, m.shape](cells.astype(object))
+        return Matrix[bool, m.shape](cells)
 
     @classmethod
     def _mat_det(cls, m):
         if m.isempty:
             return m.one
         val = _np.linalg.det(m._cells)
-        return single(val, field=cls)
+        return single(val, field=cls, _nocast=True)
 
     @classmethod
     def _mat_trace(cls, m):
         val = _np.trace(m._cells)
-        return single(val, field=cls)
+        return single(val, field=cls, _nocast=True)
 
     @classmethod
     def _mat_norm(cls, m):
         a = m._cells.reshape(-1)
         val = _np.linalg.norm(a)
-        return single(val, field=cls)
+        return single(val, field=cls, _nocast=True)
 
     @classmethod
     def _mat_dot(cls, m, o):
@@ -4100,14 +4244,14 @@ class Complex(ComplexField):
         a = m._cells.reshape(-1)
         b = o._cells.reshape(-1)
         val = _np.vdot(a, b)
-        return single(val, field=cls)
+        return single(val, field=cls, _nocast=True)
 
     @classmethod
     def _mat_cross(cls, m, o):
         a = m._cells.reshape(-1)
         b = o._cells.reshape(-1)
         val = _np.cross(a, b)
-        return single(val, field=cls)
+        return single(val, field=cls, _nocast=True)
 
     @classmethod
     def _mat_matmul(cls, m, o):
@@ -4122,7 +4266,7 @@ class Complex(ComplexField):
         # Note we ignore nans, bc who tf wants nans.
         if axis is None:
             val = _np.nansum(m._cells)
-            return single(val, field=cls)
+            return single(val, field=cls, _nocast=True)
         if axis >= m.ndim:
             return m
         # Use numpy-equiv axis and dont wipe that axis once sumed along.
@@ -4135,7 +4279,7 @@ class Complex(ComplexField):
             return m.one if axis is None else m
         if axis is None:
             val = _np.nanprod(m._cells)
-            return single(val, field=cls)
+            return single(val, field=cls, _nocast=True)
         if axis >= m.ndim:
             return m
         npaxis = Permuter.tonumpyaxis(m.ndim, axis)
@@ -4145,7 +4289,7 @@ class Complex(ComplexField):
     def _mat_minn(cls, m, axis):
         if axis is None:
             val = _np.nanmin(m._cells)
-            return single(val, field=cls)
+            return single(val, field=cls, _nocast=True)
         if axis >= m.ndim:
             return m
         npaxis = Permuter.tonumpyaxis(m.ndim, axis)
@@ -4156,7 +4300,7 @@ class Complex(ComplexField):
     def _mat_maxx(cls, m, axis):
         if axis is None:
             val = _np.nanmax(m._cells)
-            return single(val, field=cls)
+            return single(val, field=cls, _nocast=True)
         if axis >= m.ndim:
             return m
         npaxis = Permuter.tonumpyaxis(m.ndim, axis)
@@ -4168,11 +4312,148 @@ class Complex(ComplexField):
         return super()._mat_rref(m, imprecise=True)
 
 
+class Bool(Field):
+    @classmethod
+    def dtype(cls):
+        return _np.dtype(bool)
+
+    @classmethod
+    def fromobj(cls, x):
+        if isinstance(x, bool):
+            return x.__bool__()
+        # dont use default __bool__ for int/float/complex, instead force a
+        # comparison.
+        if isinstance(x, (int, float, complex)):
+            raise TypeError(f"cannot create {_tname(cls)} implicitly from "
+                    f"{_objtname(x)}, you must use an explicit comparison")
+        if hasattr(x, "__bool__"):
+            return x.__bool__()
+        return super().fromobj(x)
+
+    @classmethod
+    def to_bool(cls, a):
+        return a.__bool__()
+    @classmethod
+    def to_int(cls, a):
+        return a.__int__()
+    @classmethod
+    def to_float(cls, a):
+        return a.__float__()
+    @classmethod
+    def to_complex(cls, a):
+        return complex(a.__float__())
+
+    @classmethod
+    def consts(cls):
+        return super().consts() | {
+            "__0__": False,
+            "__1__": True,
+        }
+
+    @classmethod
+    def always(cls, a):
+        return a
+    @classmethod
+    def anytime(cls, a):
+        return a
+    @classmethod
+    def logical_not(cls, a):
+        return not a
+    @classmethod
+    def logical_and(cls, a, b):
+        return a and b
+    @classmethod
+    def logical_or(cls, a, b):
+        return a or b
+
+    @classmethod
+    def comparison_field(cls):
+        return bool # shi man thats me.
+    @classmethod
+    def eq(cls, a, b):
+        return a == b
+    @classmethod
+    def ne(cls, a, b):
+        return a != b
+    @classmethod
+    def lt(cls, a, b):
+        return a < b
+    @classmethod
+    def le(cls, a, b):
+        return a <= b
+
+    @classmethod
+    def issame(cls, a, b):
+        return a == b
+
+    @classmethod
+    def hashed(cls, a):
+        return hash(a.__bool__())
+
+    @classmethod
+    def rep(cls, a, short):
+        return _cons.pretty_number(a.__bool__(), short)
+
+
+
+    @classmethod
+    def _mat_numpyarr_int(cls, m):
+        return m._cells.astype(_np.int64)
+    @classmethod
+    def _mat_numpyarr_float(cls, m):
+        return m._cells.astype(_np.float64)
+    @classmethod
+    def _mat_numpyarr_complex(cls, m):
+        return m._cells.astype(_np.complex128)
+
+    @classmethod
+    def _mat_eye(cls, M):
+        cells = _np.eye(M.shape[0], dtype=cls.dtype())
+        return M(cells)
+    @classmethod
+    def _mat_zeros(cls, M):
+        cells = _np.zeros(M.shape.tonumpy, dtype=cls.dtype())
+        return M(cells)
+    @classmethod
+    def _mat_ones(cls, M):
+        cells = _np.ones(M.shape.tonumpy, dtype=cls.dtype())
+        return M(cells)
+
+    @classmethod
+    def _mat_all(cls, m):
+        return bool(m._cells.all())
+    @classmethod
+    def _mat_any(cls, m):
+        return bool(m._cells.any())
+
+    @classmethod
+    def _mat_always(cls, m):
+        return m
+    @classmethod
+    def _mat_anytime(cls, m):
+        return m
+
+    @classmethod
+    def _mat_not(cls, m):
+        cells = (~m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_and(cls, m, o):
+        cells = (m._cells & o._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_or(cls, m, o):
+        cells = (m._cells | o._cells)
+        return type(m)(cells)
+
+
+
 
 # Map the python types to their proper field.
 toField.map_nonfield_to(int, Int)
 toField.map_nonfield_to(float, Float)
 toField.map_nonfield_to(complex, Complex)
+toField.map_nonfield_to(bool, Bool)
 
 
 
@@ -4185,10 +4466,14 @@ Refers to the single (1x1) matrix type over the given field. Note this is not a
 proper templated class, only a thin wrapper.
 """
 
-def single(x, *, field=None):
+def single(x, *, field=None, _nocast=False):
     """
     Single (1x1) matrix of the given object.
     """
+    if _nocast:
+        assert field is not None
+        cells = _np.array([[x]], dtype=field.dtype())
+        return Single[field](cells)
     xfield = toField(type(x))
     cells = _np.array([[x]], dtype=xfield.dtype())
     mat = Single[xfield](cells)
@@ -4247,6 +4532,31 @@ def castall(xs, broadcast=True, *, field=None):
     return Mat.cast(*xs, broadcast=broadcast)
 
 
+
+def alll(*xs, field=None):
+    """
+    Alias for 'xs[0].alll and xs[1].alll and ...'.
+    """
+    xs = castall(xs, field=field)
+    return all([x.alll for x in xs]) # dont shortcircuit.
+def anyy(*xs, field=None):
+    """
+    Alias for 'xs[0].anyy or xs[1].anyy or ...'.
+    """
+    xs = castall(xs, field=field)
+    return any([x.anyy for x in xs]) # dont shortcircuit.
+def always(x, *, field=None):
+    """
+    Alias for 'x.always'.
+    """
+    x, = castall([x], field=field)
+    return x.always
+def anytime(x, *, field=None):
+    """
+    Alias for 'x.anytime'.
+    """
+    x, = castall([x], field=field)
+    return x.anytime
 
 def det(x, *, field=None):
     """
@@ -4464,12 +4774,12 @@ def conj(x, *, field=None):
     """
     x, = castall([x], field=field)
     return x.conj
-def sign(x, *, field=None):
+def sgn(x, *, field=None):
     """
-    Alias for 'x.sign'.
+    Alias for 'x.sgn'.
     """
     x, = castall([x], field=field)
-    return x.sign
+    return x.sgn
 def issame(x, y, *, field=None):
     """
     Alias for 'x.issame(y)'.
@@ -4535,7 +4845,7 @@ def logmean(x, y, *, field=None):
     Logarithmic mean of 'x' and 'y': (x - y) / ln(x / y)
     """
     x, y = castall([x, y], field=field)
-    f = lambda a, b: a if (a == b).obj else (a - b) / (a / b).ln # TODO: bool
+    f = lambda a, b: a if (a == b) else (a - b) / (a / b).ln
     return x.apply(f, y)
 
 

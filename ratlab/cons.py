@@ -168,6 +168,13 @@ def pretty_number(x, short=True):
     i = coloured(38, "i")
     col_num = 135
 
+    if isinstance(x, bool):
+        lookup = ["nogh", "yeagh"]
+        if short:
+            lookup = "NY"
+        txt = lookup[x]
+        return coloured(col_num, txt)
+
     if isinstance(x, int):
         if x < 0:
             return minus + pretty_number(-x, short=short)

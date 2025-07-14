@@ -1,26 +1,29 @@
 - "remoce two chars from points to user" bro wtf does this MEAN lmao
-- super specialised comparison-result matrix:
-    - new "ComparisonField"
-    - doesnt support `__bool__` unless single
-    - is always iterable, to allow `all` and `any`
-    - natural consequence of this is empty must be alled or anyed
+- `zeros`/`ones` do NOT default to square
 - `flip` and `flipud`/`fliplr`
 - rename `rep` to `tile` and make `rep` do the numpy thing.
 - `rotate` function which does brfilters np shift
+- `matstack`:
+def matstack(*xs, field=None):
+    """
+    Concatenates the given matrices along the third axis (index 2).
+    """
+    return stack(2, *xs, field=field)
 - `max`/`min` do take-min/max when given multiple (stack then max_along type shi)
 - add hyperbolic trig
 - matrix eig
 - `full` function for matrix filled with one value.
 - `offdiag` for off diagonal mat construction
 - `angle` for complex arg.
+- `diag` takes multiple args
 - `isinf`/`isnan`/`isfinite`
+- `isreal` and `isimag` (along w rigorous treatment of -0.0i)
 - formula descriptions for means
 - read every numpy function and grab the good ones LMAO
 - colour more prints (generic field, rational, empty list?)
 - implement _MatrixAt
 - linspace/logspace/arange as field mat methods.
 - make field rep take all objects to string, so it can homogenise the display
-- vectorise .det/trace/friends for ndim>2 to drop first two axes?
 - optimise Field.rep
 - shortened matrix print
 - short and long themselves used with `with` for dflting.
@@ -33,5 +36,8 @@
 - iroot/ilog
 - fix exception coloured printing when the exception message contains newlines.
     also like if the error spans lines what happens?
-- remove the concept of 'lits' and instead make rigorous promotion structure?
+- vectorise all 2d operations for ndim>2 to drop first two axes?
+- remove the concept of 'lits' and instead make rigorous promotion structure
+- add fieldmethod again and integrate it with field promotion type shit
 - sympy integration
+- add `ef` and `pif` for floating e and pi, and make `e` and `pi` symbolic
