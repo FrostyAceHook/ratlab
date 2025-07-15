@@ -21,13 +21,13 @@ from .util import (
 import numpy as _np
 
 
-def _maybe_unpack_mats(xs):
-    return _maybe_unpack(xs, dont_unpack=Matrix)
+def _maybe_unpack_tuple(xs):
+    return _maybe_unpack(xs, only_unpack=tuple)
 
 def _maybe_unpack_ints(xs):
-    xs = _maybe_unpack_mats(xs)
+    xs = _maybe_unpack(xs, dont_unpack=Matrix)
     if len(xs) == 1 and isinstance(xs[0], Matrix) and xs[0].isvec:
-        return tuple(xs[0].numpyvec(int))
+        return tuple(xs[0].tofield(int).numpyvec())
     return xs
 
 
@@ -38,6 +38,8 @@ class Field:
     Base class for implementing operations over elements. Cannot do operations on
     entire matrices, only performs for single elements of those matrices.
     """
+    def __new__(cls):
+        raise TypeError("cannot instantiate fields")
 
     @classmethod
     def dtype(cls): # dtype to use for the backing numpy array.
@@ -341,7 +343,7 @@ class Field:
         raise TypeError(f"cannot do hashing over {_tname(cls)}")
 
     @classmethod
-    def rep(cls, a, short): # repr(a), with short+long form (`short` is a bool)
+    def stringify(cls, a, short): # repr(a), with short+long form
         raise TypeError(f"cannot stringify over {_tname(cls)}")
 
 
@@ -974,10 +976,10 @@ class Field:
         if m.isempty:
             return "my boy "*(not short) + "M.T."
 
-        rep = lambda x: cls.rep(x, short)
+        stringify = lambda x: cls.stringify(x, short)
 
         if m.issingle:
-            return rep(m.obj)
+            return stringify(m.obj)
 
         if short and not m.isvec:
             # Shorten elements of zero to a single dot.
@@ -987,9 +989,9 @@ class Field:
                         return "."
                 except:
                     pass
-                return rep(x)
+                return stringify(x)
         else:
-            repme = rep
+            repme = stringify
 
         # cheeky matrix of the reps to make access easy.
         reps = m._apply(repme, str, m)
@@ -1092,10 +1094,10 @@ def _NonField(_base):
             return a.__hash__()
         return super(_NonField[_base], cls).hashed(a)
     @classmethod
-    def rep(cls, a, short):
+    def stringify(cls, a, short):
         if hasattr(a, "__repr__"):
             return a.__repr__()
-        return super(_NonField[_base], cls).rep(a, short)
+        return super(_NonField[_base], cls).stringify(a, short)
 
     return locals()
 
@@ -1331,7 +1333,7 @@ class Permuter:
                         f"{order}")
             # Check ordering is logical.
             if len(set(order)) != len(order):
-                raise ValueError(f"cannot duplicate axes, got: {order}")
+                raise ValueError(f"cannot repeat axes, got: {order}")
             if order and max(order) != len(order) - 1:
                 assert max(order) > len(order) - 1
                 raise ValueError(f"missing axis for swap, axis {max(order)} is "
@@ -1746,36 +1748,36 @@ def Matrix(field, shape):
 
 
     @classmethod
-    def cast(M, *xs, broadcast=True):
+    def cast(M, *ms, broadcast=True):
         """
         Attempts to cast each object to a matrix over 'field', all with the same
         size. Note that the shape of this class is ignored. If 'broadcast' is
         false, shapes will be left unchanged.
         """
-        xs = _maybe_unpack_mats(xs)
-        if not xs:
+        ms = _maybe_unpack_tuple(ms)
+        if not ms:
             return ()
 
         # Cast to the correct field.
-        xs = tuple(x if isinstance(x, Matrix) else single(x) for x in xs)
-        xs = tuple(x.tofield(M.field) for x in xs)
+        ms = tuple(m if isinstance(m, Matrix) else single(m) for m in ms)
+        ms = tuple(m.tofield(M.field) for m in ms)
 
         # If no broadcasting, don't do broadcasting, so the final result won't be
         # broadcast. Also if only one nothing to broadcast against.
-        if not broadcast or len(xs) == 1:
-            return xs
+        if not broadcast or len(ms) == 1:
+            return ms
 
         # Handle empties.
-        if all(x.isempty for x in xs):
-            return xs
-        if any(x.isempty for x in xs):
+        if all(m.isempty for m in ms):
+            return ms
+        if any(m.isempty for m in ms):
             raise TypeError("cannot operate with a mix of empty and non-empty "
                     "matrices")
 
         # Broadcast all to the same (largest) shape.
-        ndim = max(x.ndim for x in xs)
-        newshape = Shape(max(x.shape[axis] for x in xs) for axis in range(ndim))
-        return tuple(x.broadcast(newshape) for x in xs)
+        ndim = max(m.ndim for m in ms)
+        newshape = Shape(max(m.shape[axis] for m in ms) for axis in range(ndim))
+        return tuple(m.broadcast(newshape) for m in ms)
 
 
     @_classconst
@@ -2019,28 +2021,6 @@ def Matrix(field, shape):
         cells = cells.reshape(newshape.tonumpy)
         return Matrix[m.field, newshape](cells)
 
-    @_instconst
-    def ravel(m):
-        """
-        Vector of cells in natural iteration order (sequential axes, which is
-        row-major), aka the flattened cells.
-        """
-        # See the rant earlier in this file about numpy interoperation, short
-        # answer is the backing array memory layout isnt what we expect so we got
-        # work to do.
-        if m.isvec:
-            # If vector, it doesn't matter.
-            cells = m._cells.reshape(-1)
-        elif m.ndim == 2:
-            # If 2d, can use f-style ordering to get our memory layout.
-            cells = m._cells.ravel(order="F")
-        else:
-            # For higher dimensions, easiest way to get the memory layout we
-            # expect is to do 2d matrix transpose then read off c-style. bob the
-            # builder type shi.
-            npaxes = tuple(range(len(m._cells.ndim) - 2)) + (-1, -2)
-            cells = m._cells.transpose(npaxes).ravel(order="C")
-        return m.fromnumpy(cells)
 
     def broadcast(m, *newshape):
         """
@@ -2054,13 +2034,6 @@ def Matrix(field, shape):
         cells = _np.broadcast_to(m._cells, newshape.tonumpy)
         return Matrix[m.field, newshape](cells)
 
-    def dropaxis(m, axis):
-        """
-        Removes the given axis from the shape, shifting the later axes down. Note
-        this axis must already have length 1 or 0 (aka it must not have
-        contributed to the size, and so dropping it does not remove any cells).
-        """
-        return m.reshape(m.shape.dropaxis(axis))
 
     def permute(m, *neworder):
         """
@@ -2093,6 +2066,57 @@ def Matrix(field, shape):
         return Matrix[m.field, newshape](cells)
 
 
+    @_instconst
+    def ravel(m):
+        """
+        Vector of cells in natural iteration order (sequential axes, which is
+        row-major), aka the flattened cells.
+        """
+        # See the rant earlier in this file about numpy interoperation, short
+        # answer is the backing array memory layout isnt what we expect so we got
+        # work to do.
+        if m.isvec:
+            # If vector, it doesn't matter.
+            cells = m._cells.reshape(-1)
+        elif m.ndim == 2:
+            # If 2d, can use f-style ordering to get our memory layout.
+            cells = m._cells.ravel(order="F")
+        else:
+            # For higher dimensions, easiest way to get the memory layout we
+            # expect is to do 2d matrix transpose then read off c-style. bob the
+            # builder type shi.
+            npaxes = tuple(range(len(m._cells.ndim) - 2)) + (-1, -2)
+            cells = m._cells.transpose(npaxes).ravel(order="C")
+        return m.fromnumpy(cells)
+
+
+    def drop(m, *axes):
+        """
+        Removes the given axes from the shape, shifting other axes down. The
+        lengths of these axes must be 0 or 1 (aka they must not have contributed
+        to the size). If axes are repeated, they are treated as-if they only
+        appeared once.
+        """
+        axes = _maybe_unpack_ints(axes)
+        for axis in axes:
+            if not isinstance(axis, int):
+                raise TypeError(f"expected integer axes, got {_objtname(axis)}")
+        if any(a < 0 for a in axes):
+            raise ValueError(f"axes cannot be negative, got: {axes}")
+        axes = set(axes)
+        shape = m.shape
+        for axis in sorted(axes, reverse=True):
+            shape = shape.dropaxis(axis)
+        return m.reshape(shape)
+    @_instconst
+    def dropall(m):
+        """
+        Removes all axes with lengths 0 or 1, shifting other axes down.
+        """
+        axes = tuple(axis for axis in range(m.ndim) if m.shape[axis] <= 1)
+        return m.drop(axes)
+
+
     def flip(m, *axes):
         """
         Reverses the order along the given axes. If any axes are repeated, it is
@@ -2111,6 +2135,13 @@ def Matrix(field, shape):
         cells = _np.flip(m._cells, npaxes)
         return Matrix[m.field, m.shape](cells)
     @_instconst
+    def flipall(m):
+        """
+        Reverses the order along all axes.
+        """
+        axes = tuple(range(m.ndim))
+        return m.flip(axes)
+    @_instconst
     def flipud(m):
         """
         Flip columns, alias for 'm.flip(0)'.
@@ -2124,59 +2155,38 @@ def Matrix(field, shape):
         return m.flip(1)
 
 
-    def tile(m, *counts):
+    def tile(m, *counts, axis=None):
         """
-        Tiles this matrix 'counts[axis]' times along each axis. See '.rep' for
-        element repeating instead of matrix repeating.
+        Tiles this matrix 'counts[axis]' times along each axis. If one bare
+        integer is given for 'counts', 'axis' must be specified to tile along
+        only that axis (to prevent this, wrap it in a tuple or give another 1).
+        If tiling a vector, one bare integer may be given without specifying
+        'axis' and it will tile along the vector's axis.
         """
-        counts = _maybe_unpack_ints(counts)
+        if len(counts) == 0:
+            raise TypeError("must specify some counts")
+        if len(counts) == 1 and isinstance(counts[0], int):
+            if axis is None:
+                if not m.isvec:
+                    raise TypeError("must specify axis when tiling a non-vector")
+                axis = m.lastaxis
+            if not isinstance(axis, int):
+                raise TypeError("expected an integer axis, got "
+                        f"{_objtname(axis)}")
+            if axis < 0:
+                raise ValueError(f"axis cannot be negative, got: {axis}")
+            counts = (1, ) * axis + (counts[0], )
+            axis = None
+        else:
+            counts = _maybe_unpack_ints(counts)
         for count in counts:
             if not isinstance(count, int):
-                raise TypeError("expected integer counts, got "
+                raise TypeError("expected an integer count, got "
                         f"{_objtname(count)}")
         if any(count < 0 for count in counts):
             raise ValueError(f"counts cannot be negative, got: {counts}")
-        if m.isempty:
-            return m
-        # Use shape as helper.
-        counts = Shape(counts)
-        if counts.isempty:
-            return empty(m.field)
-        # Reorder counts to the numpy ordering.
-        ndim = max(m.ndim, counts.ndim)
-        npcounts = Permuter.tonumpy(ndim)(counts)
-        npcounttuple = tuple(npcounts[axis] for axis in range(ndim))
-        cells = _np.tile(m._cells, npcounttuple)
-        return m.fromnumpy(cells)
-
-    def tile_along(m, axis, count):
-        """
-        Tiles this matrix 'count' times along 'axis'. See '.rep_along' for
-        element repeating instead of matrix repeating.
-        """
-        if not isinstance(axis, int):
-            raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
-        if axis < 0:
-            raise ValueError(f"axis cannot be negative, got: {axis}")
-        if not isinstance(count, int):
-            raise TypeError(f"expected an integer count, got {_objtname(count)}")
-        if count < 0:
-            raise TypeError(f"count cannot be negative, got: {count}")
-        return m.tile((1, )*axis + (count, ))
-
-
-    def rep(m, *counts):
-        """
-        Repeats each element in this matrix 'counts[axis]' times along each axis.
-        See '.tile' for matrix repeating instead of element repeating.
-        """
-        counts = _maybe_unpack_ints(counts)
-        for count in counts:
-            if not isinstance(count, int):
-                raise TypeError("expected integer counts, got "
-                        f"{_objtname(count)}")
-        if any(count < 0 for count in counts):
-            raise ValueError(f"counts cannot be negative, got: {counts}")
+        if axis is not None:
+            raise TypeError("cannot specify axis when using multiple counts")
         if m.isempty:
             return m
         # Use shape as helper.
@@ -2185,9 +2195,58 @@ def Matrix(field, shape):
             return empty(m.field)
         if counts.issingle:
             return m
-        # Numpy repeat is slightly different to our rep, as it allows repeat
-        # counts to differ at each index and cant repeat along several axes at
-        # the same time. So, we just repeat along each axis manually.
+        # Reorder counts to the numpy ordering.
+        ndim = max(2, m.ndim, counts.ndim)
+        npcounts = Permuter.tonumpy(ndim)(counts)
+        npcounttuple = tuple(npcounts[axis] for axis in range(ndim))
+        cells = _np.tile(m._cells, npcounttuple)
+        return m.fromnumpy(cells)
+
+
+    def repeat(m, *counts, axis=None):
+        """
+        Repeats each element in this matrix 'counts[axis]' times along each axis.
+        If one bare integer is given for 'counts', 'axis' must be specified to
+        repeat along only that axis (to prevent this, wrap it in a tuple or give
+        another 1). If repeating a vector, one bare integer may be given without
+        specifying 'axis' and it will repeat along the vector's axis.
+        """
+        if len(counts) == 0:
+            raise TypeError("must specify some counts")
+        if len(counts) == 1 and isinstance(counts[0], int):
+            if axis is None:
+                if not m.isvec:
+                    raise TypeError("must specify axis when repeating a non-"
+                            "vector")
+                axis = m.lastaxis
+            if not isinstance(axis, int):
+                raise TypeError("expected an integer axis, got "
+                        f"{_objtname(axis)}")
+            if axis < 0:
+                raise ValueError(f"axis cannot be negative, got: {axis}")
+            counts = (1, ) * axis + (counts[0], )
+            axis = None
+        else:
+            counts = _maybe_unpack_ints(counts)
+        for count in counts:
+            if not isinstance(count, int):
+                raise TypeError("expected an integer count, got "
+                        f"{_objtname(count)}")
+        if any(count < 0 for count in counts):
+            raise ValueError(f"counts cannot be negative, got: {counts}")
+        if axis is not None:
+            raise TypeError("cannot specify axis when using multiple counts")
+        if m.isempty:
+            return m
+        # Use shape as helper.
+        counts = Shape(counts)
+        if counts.isempty:
+            return empty(m.field)
+        if counts.issingle:
+            return m
+        # Numpy repeat is slightly different to ours, as it allows repeat counts
+        # to differ at each index and cant repeat along several axes at the same
+        # time. So, we just repeat along each axis manually.
         cells = m._cells
         # Add axes since numpy wont do it for us.
         npshape = (1,) * (counts.ndim - cells.ndim) + cells.shape
@@ -2198,38 +2257,48 @@ def Matrix(field, shape):
                 cells = _np.repeat(cells, counts[axis], axis=npaxis)
         return m.fromnumpy(cells)
 
-    def rep_along(m, axis, count):
-        """
-        Repeats each element in this matrix 'count' times along 'axis'. See
-        '.tile_along' for matrix repeating instead of element repeating.
-        """
-        if not isinstance(axis, int):
-            raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
-        if axis < 0:
-            raise ValueError(f"axis cannot be negative, got: {axis}")
-        if not isinstance(count, int):
-            raise TypeError(f"expected an integer count, got {_objtname(count)}")
-        if count < 0:
-            raise TypeError(f"count cannot be negative, got: {count}")
-        return m.rep((1, )*axis + (count, ))
 
-
-    def roll(m, axis, by):
+    def roll(m, *shifts, axis=None):
         """
-        Circularly rotates elements along the given axis by 'by' positions.
+        Circularly rotates elements by 'shifts[axis]' positions along each axis.
+        If one bare integer is given for 'shifts', 'axis' must be specified to
+        roll along only that axis (to prevent this, wrap it in a tuple or give
+        another 0). If 'm' is a vector, one integer shift may be given without
+        specifying 'axis' and it will roll along the vector axis.
         """
-        if not isinstance(axis, int):
-            raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
-        if axis < 0:
-            raise ValueError(f"axis cannot be negative, got: {axis}")
-        if not isinstance(by, int):
-            raise TypeError(f"expected an integer 'by', got {_objtname(by)}")
-        # Collapse to equivalent.
-        by %= m.shape[axis]
-        if by == 0 or axis >= m.ndim:
+        if len(shifts) == 0:
+            raise TypeError("must specify some shifts")
+        if len(shifts) == 1 and isinstance(shifts[0], int):
+            if axis is None:
+                if not m.isvec:
+                    raise TypeError("must specify 'axis' when rolling a non-"
+                            "vector")
+                axis = m.lastaxis
+            if not isinstance(axis, int):
+                raise TypeError("expected an integer axis, got "
+                        f"{_objtname(axis)}")
+            if axis < 0:
+                raise ValueError(f"axis cannot be negative, got: {axis}")
+            shifts = (0, ) * axis + (shift[0], )
+            axis = None
+        else:
+            shifts = _maybe_unpack_ints(shifts)
+            for shift in shifts:
+                if not isinstance(shift, int):
+                    raise TypeError("expected an integer shift, got "
+                            f"{_objtname(shift)}")
+        if axis is not None:
+            raise TypeError("cannot specify 'axis' when using multiple shifts")
+        if m.isempty:
             return m
-        npaxis = Permuter.tonumpyaxis(m.ndim, axis)
-        cells = _np.roll(m._cells, by, npaxis)
+        # Roll each axis (only doing axes which we actually have).
+        cells = m._cells
+        for axis, shift in enumerate(shifts[:m.ndim]):
+            shift %= m.shape[axis]
+            if shift == 0:
+                continue
+            npaxis = Permuter.tonumpyaxis(m.ndim, axis)
+            cells = _np.roll(cells, shift, npaxis)
         return Matrix[m.field, m.shape](cells)
 
 
@@ -2267,9 +2336,10 @@ def Matrix(field, shape):
         return m.fromnumpy(m._cells.diagonal(k))
 
 
-    def along(m, axis):
+    def along(m, axis, drop=False):
         """
-        Tuple of perpendicular matrices along the given axis.
+        Tuple of perpendicular matrices along the given axis. If 'drop', drops
+        the axis for each perpendicular matrix.
         """
         if not isinstance(axis, int):
             raise TypeError(f"expected integer axis, got {_objtname(axis)}")
@@ -2285,7 +2355,10 @@ def Matrix(field, shape):
             idx[axis] = slice(i, i + 1)
             idx = tuple(idx)
             return Permuter.tonumpy(m.ndim)(idx)
-        return tuple(m.at[idx(i)] for i in range(m.shape[axis]))
+        mats = tuple(m.at[idx(i)] for i in range(m.shape[axis]))
+        if drop:
+            mats = tuple(m.drop(axis) for m in mats)
+        return mats
 
     @_instconst
     def at(m):
@@ -3351,7 +3424,7 @@ def Matrix(field, shape):
 
     def cross(m, o):
         """
-        3-element vector cross product.
+        Vector 3-element cross product.
         """
         m, o = m.cast(m, o, broadcast=False)
         if not m.isvec or not o.isvec:
@@ -3853,7 +3926,7 @@ class Int(RealField):
         return hash(a.__int__())
 
     @classmethod
-    def rep(cls, a, short):
+    def stringify(cls, a, short):
         return _cons.pretty_number(a.__int__(), short)
 
 
@@ -4170,7 +4243,7 @@ class Float(RealField):
         return hash(a.__float__())
 
     @classmethod
-    def rep(cls, a, short):
+    def stringify(cls, a, short):
         return _cons.pretty_number(a.__float__(), short)
 
 
@@ -4810,7 +4883,7 @@ class Complex(Field):
         return hash(a.__complex__())
 
     @classmethod
-    def rep(cls, a, short):
+    def stringify(cls, a, short):
         return _cons.pretty_number(a.__complex__(), short)
 
 
@@ -5350,7 +5423,7 @@ class Bool(Field):
         return hash(a.__bool__())
 
     @classmethod
-    def rep(cls, a, short):
+    def stringify(cls, a, short):
         return _cons.pretty_number(a.__bool__(), short)
 
 
@@ -5436,12 +5509,13 @@ def single(x, *, field=None, _nocast=False):
     """
     if _nocast:
         assert field is not None
-        cells = _np.array([[x]], dtype=field.dtype())
-        return Single[field](cells)
-    xfield = toField(type(x))
-    cells = _np.array([[x]], dtype=xfield.dtype())
+        xfield = field
+    else:
+        xfield = toField(type(x))
+    cells = _np.empty((1, 1), dtype=xfield.dtype())
+    cells[0, 0] = x
     mat = Single[xfield](cells)
-    if field is not None:
+    if not _nocast and field is not None:
         mat = mat.tofield(field)
     return mat
 
@@ -5484,7 +5558,7 @@ def castall(ms, broadcast=True, *, field=None):
     """
     if not _iterable(ms):
         raise TypeError(f"expected an iterable 'ms', got {_objtname(ms)}")
-    ms = list(ms)
+    ms = tuple(ms)
     if not ms:
         return ()
     for m in ms:
@@ -5493,15 +5567,25 @@ def castall(ms, broadcast=True, *, field=None):
             break
     else:
         Mat = Single[_get_field(field)]
-    return Mat.cast(*ms, broadcast=broadcast)
+    return Mat.cast(ms, broadcast=broadcast)
 
 
 
-def flip(m, *axes, field=None):
+def drop(m, *axes, field=None):
     """
-    Alias for 'm.flip(*axes)'.
+    Alias for 'm.drop(*axes)' if given axes, otherwise alias for 'm.dropall'.
     """
     m, = castall([m], field=field)
+    if len(axes) == 0:
+        return m.dropall
+    return m.drop(*axes)
+def flip(m, *axes, field=None):
+    """
+    Alias for 'm.flip(*axes)' if given axes, otherwise alias for 'm.flipall'.
+    """
+    m, = castall([m], field=field)
+    if len(axes) == 0:
+        return m.flipall
     return m.flip(*axes)
 def flipud(m, *, field=None):
     """
@@ -5515,36 +5599,24 @@ def fliplr(m, *, field=None):
     """
     m, = castall([m], field=field)
     return m.fliplr
-def tile(m, *counts, field=None):
+def tile(m, *counts, axis=None, field=None):
     """
-    Alias for 'm.tile(*counts)'.
-    """
-    m, = castall([m], field=field)
-    return m.tile(*counts)
-def tile_along(m, axis, count, *, field=None):
-    """
-    Alias for 'm.tile_along(axis, count)'.
+    Alias for 'm.tile(*counts, axis=axis)'.
     """
     m, = castall([m], field=field)
-    return m.tile_along(axis, count)
-def rep(m, *counts, field=None):
+    return m.tile(*counts, axis=axis)
+def repeat(m, *counts, axis=None, field=None):
     """
-    Alias for 'm.rep(*counts)'.
-    """
-    m, = castall([m], field=field)
-    return m.rep(*counts)
-def rep_along(m, axis, count, *, field=None):
-    """
-    Alias for 'm.rep_along(axis, count)'.
+    Alias for 'm.repeat(*counts, axis=axis)'.
     """
     m, = castall([m], field=field)
-    return m.rep_along(axis, count)
-def roll(m, axis, by, *, field=None):
+    return m.repeat(*counts, axis=axis)
+def roll(m, *shifts, axis=None, field=None):
     """
-    Alias for 'm.roll(axis, count)'.
+    Alias for 'm.roll(*shifts, axis=axis)'.
     """
     m, = castall([m], field=field)
-    return m.roll(axis, count)
+    return m.roll(*shifts, axis=axis)
 
 def inv(m, *, field=None):
     """
@@ -5982,13 +6054,13 @@ def issame(x, y, *, field=None):
     return x.issame(y)
 def isreal(m, *, field=None):
     """
-    Alias for 'x.isreal'.
+    Alias for 'm.isreal'.
     """
     m, = castall([m], field=field)
     return m.isreal
 def isimag(m, *, field=None):
     """
-    Alias for 'x.isimag'.
+    Alias for 'm.isimag'.
     """
     m, = castall([m], field=field)
     return m.isimag
@@ -6128,7 +6200,7 @@ def stack(axis, *ms, field=None):
     """
     Stacks the given matrices along the given axis.
     """
-    ms = _maybe_unpack_mats(ms)
+    ms = _maybe_unpack_tuple(ms)
     ms = castall(ms, field=field, broadcast=False)
     field = _get_field(field, ms)
     if not isinstance(axis, int):
@@ -6155,7 +6227,7 @@ def stack(axis, *ms, field=None):
     # Get all cells with the right number of dimensions.
     ndim = max(ms[0].ndim, axis + 1)
     ys = [x._cells for x in ms]
-    ys = [y[(None,) * (ndim - y.ndim)] for y in ys]
+    ys = [y.reshape((1, ) * (ndim - y.ndim) + y.shape) for y in ys]
     npaxis = Permuter.tonumpyaxis(ndim, axis)
     cells = _np.concatenate(ys, axis=npaxis)
     return Matrix.fromnumpy(field, cells)
@@ -6177,9 +6249,9 @@ def matstack(*ms, field=None):
 
 def ravel(*ms, field=None):
     """
-    Concatenated vector of the raveled cells of all given matrices.
+    Concatenated vector of the ravelled cells of all given matrices.
     """
-    ms = _maybe_unpack_mats(ms)
+    ms = _maybe_unpack_tuple(ms)
     ms = castall(ms, field=field, broadcast=False)
     field = _get_field(field, ms)
     if len(ms) == 0:
@@ -6255,7 +6327,7 @@ def diag(*ms, k=None, emptyok=False, field=None):
     """
     if k is not None and not isinstance(k, int):
         raise TypeError(f"expected an integer 'k', got {_objtname(k)}")
-    ms = _maybe_unpack_mats(ms)
+    ms = _maybe_unpack_tuple(ms)
     ms = castall(ms, field=field, broadcast=False)
     field = _get_field(field, ms)
     if len(ms) == 1:
@@ -6346,7 +6418,7 @@ def lerp(x, X, Y, extend=False, *, field=None):
     if X.size != Y.shape[0]:
         raise TypeError("expected one 'Y' data point for each 'X', got "
                 f"{X.size} x-values and {Y.shape[0]} y-values")
-    Ys = [y.dropaxis(0) for y in Y.along(0)]
+    Ys = Y.along(0, drop=True)
     if x.isempty:
         return x
     if X.size == 0:
@@ -6707,6 +6779,8 @@ def mhelp(*, field=None):
         sig = _inspect.signature(func)
         sig = str(sig)
         sig = sig[1:-1]
+        if sig.endswith(", _nocast=False"):
+            sig = sig[:-len(", _nocast=False")]
         if sig.endswith(", *, field=None"):
             sig = sig[:-len(", *, field=None")]
         elif sig.endswith("*, field=None"):

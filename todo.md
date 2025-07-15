@@ -1,19 +1,17 @@
 - "remoce two chars from points to user" bro wtf does this MEAN lmao
-- make the `_along` not be _along and make axis optional (only for vecs) and make
-    the current un-suffixed by `.tile_each` or something
 - `max`/`min` do take-min/max when given multiple (stack then max_along type shi)
 - matrix eig
-- vectorise all 2d operations for ndim>2 to drop first two axes?
+- vectorise all 2d operations for ndim>2 to drop first two axes
 - formula descriptions for means
 - read every numpy function and grab the good ones LMAO
 - colour more prints (generic field, rational, empty list?)
 - implement _MatrixAt
 - linspace/logspace/arange as field mat methods.
-- make field rep take all objects to string, so it can homogenise the display
-- optimise Field.rep
+- make field stringify take all objects to string, so it can homogenise
+- optimise stringify
 - shortened matrix print
 - short and long themselves used with `with` for dflting.
-- `ans` should be able to access attrs of it but never be set?
+- `ans` has attributes
 - make 'prog' nicely handle errors
 - make a good readme
 - make 'prog' parser good lmao

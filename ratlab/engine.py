@@ -185,10 +185,10 @@ def _EXPOSED_literal(x):
     return x
 
 def _EXPOSED_hstack(*elements):
-    return _bg["matrix"].hstack(*elements)
+    return _bg["matrix"].hstack(elements)
 
 def _EXPOSED_vstack(matrix_literal, *sliced_by):
-    append_me = _bg["matrix"].hstack(*sliced_by)
+    append_me = _bg["matrix"].hstack(sliced_by)
     return _bg["matrix"].vstack(matrix_literal, append_me)
 
 def _EXPOSED_print(value, *assigns):

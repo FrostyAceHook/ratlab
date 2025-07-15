@@ -54,12 +54,14 @@ def maybe_pack(x, aslist=False, do_pack=(), also_do_pack=(str, bytes, dict)):
         x = x,
     return [tuple, list][not not aslist](x)
 
-def maybe_unpack(xs, dont_unpack=(), also_dont_unpack=(str, bytes, dict)):
+def maybe_unpack(xs, only_unpack=None, dont_unpack=(),
+        also_dont_unpack=(str, bytes, dict)):
     """
     When a function takes vargs, it's helpful to also support being given a
     single iterable, which this facilitates. Always returns a tuple. Note that
     not all iterables should be unpacked, so `dont_unpack` facilitates not
-    unpacking some types.
+    unpacking some types. `only_unpack` does similar, only unpacking the given
+    types if given.
         def func(*args):
             args = maybe_unpack(args)
             return args
@@ -77,12 +79,17 @@ def maybe_unpack(xs, dont_unpack=(), also_dont_unpack=(str, bytes, dict)):
     if len(xs) != 1:
         return xs
     x = xs[0]
+    if not iterable(x):
+        return xs
     # dont unpack all iterables.
     dont = _base_maybe_pack(dont_unpack) + _base_maybe_pack(also_dont_unpack)
     if isinstance(x, dont):
         return xs # dont.
-    if not iterable(x):
-        return xs
+    # only unpack some iterables.
+    if only_unpack is not None:
+        only = _base_maybe_pack(only_unpack)
+        if not isinstance(x, only):
+            return xs # dunt.
     return tuple(x)
 
 
@@ -357,7 +364,10 @@ class _Templated:
 
         # Make the default namer.
         def namer(*param_values):
-            tostr = lambda x: x.__name__ if isinstance(x, type) else repr(x)
+            def tostr(x):
+                if isinstance(x, type):
+                    return tname(x, quoted=False)
+                return repr(x)
             args = ", ".join(map(tostr, param_values))
             return f"{self.Base.__name__}[{args}]"
         self.namer = namer
