@@ -1,23 +1,9 @@
 - "remoce two chars from points to user" bro wtf does this MEAN lmao
-- `zeros`/`ones` do NOT default to square
-- `flip` and `flipud`/`fliplr`
-- rename `rep` to `tile` and make `rep` do the numpy thing.
-- `rotate` function which does brfilters np shift
-- `matstack`:
-def matstack(*xs, field=None):
-    """
-    Concatenates the given matrices along the third axis (index 2).
-    """
-    return stack(2, *xs, field=field)
+- make the `_along` not be _along and make axis optional (only for vecs) and make
+    the current un-suffixed by `.tile_each` or something
 - `max`/`min` do take-min/max when given multiple (stack then max_along type shi)
-- add hyperbolic trig
 - matrix eig
-- `full` function for matrix filled with one value.
-- `offdiag` for off diagonal mat construction
-- `angle` for complex arg.
-- `diag` takes multiple args
-- `isinf`/`isnan`/`isfinite`
-- `isreal` and `isimag` (along w rigorous treatment of -0.0i)
+- vectorise all 2d operations for ndim>2 to drop first two axes?
 - formula descriptions for means
 - read every numpy function and grab the good ones LMAO
 - colour more prints (generic field, rational, empty list?)
@@ -35,9 +21,11 @@ def matstack(*xs, field=None):
 - make a no-colour arg
 - iroot/ilog
 - fix exception coloured printing when the exception message contains newlines.
-    also like if the error spans lines what happens?
-- vectorise all 2d operations for ndim>2 to drop first two axes?
+    also like if the error spans lines what happens? also expection names which
+    contain dots.
 - remove the concept of 'lits' and instead make rigorous promotion structure
 - add fieldmethod again and integrate it with field promotion type shit
+- remove a lot of the .isempty checks in field-mat-method-impl
 - sympy integration
 - add `ef` and `pif` for floating e and pi, and make `e` and `pi` symbolic
+- add `nan` and `inf` as floating

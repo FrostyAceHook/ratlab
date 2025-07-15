@@ -72,6 +72,8 @@ class Field:
         # "__i__": 1j, # imaginary unit.
         # "__e__": 2.71828, # euler's number.
         # "__pi__": 3.14159, # pi.
+        # "__inf__": float("inf"), # positive real infinity.
+        # "__nan__": float("nan"), # not-a-number.
 
     @classmethod
     def _get_const(cls, key, msg): # probs dont override.
@@ -94,6 +96,12 @@ class Field:
     @_classconst
     def pi(cls): # probs dont override.
         return cls._get_const("__pi__", "cannot represent pi")
+    @_classconst
+    def inf(cls): # probs dont override.
+        return cls._get_const("__inf__", "cannot represent infinity")
+    @_classconst
+    def nan(cls): # probs dont override.
+        return cls._get_const("__nan__", "cannot represent not-a-number")
 
 
     # Mathematical operations, all of which must return something which this
@@ -105,10 +113,12 @@ class Field:
     @classmethod
     def imag(cls, a): # Im(a)
         raise TypeError(f"no concept of real-vs-imaginary over {_tname(cls)}")
-
     @classmethod
     def abs(cls, a): # |a|
         raise TypeError(f"cannot do absolution over {_tname(cls)}")
+    @classmethod
+    def angle(cls, a): # arg(a) = atan2(Im(a) / Re(a))  (angle(0) = 0)
+        raise TypeError(f"cannot do complex-angle over {_tname(cls)}")
     @classmethod
     def sgn(cls, a): # signum(a) = a / |a|  (signum(0) = 0)
         raise TypeError(f"cannot do signum function over {_tname(cls)}")
@@ -119,14 +129,15 @@ class Field:
     @classmethod
     def sub(cls, a, b): # a-b
         raise TypeError(f"cannot do subtraction over {_tname(cls)}")
-
     @classmethod
     def mul(cls, a, b): # a*b
         raise TypeError(f"cannot do multiplication over {_tname(cls)}")
     @classmethod
     def div(cls, a, b): # a/b
         raise TypeError(f"cannot do division over {_tname(cls)}")
-
+    @classmethod
+    def mod(cls, a, b): # positive result of a%b
+        raise TypeError(f"cannot do modulus over {_tname(cls)}")
     @classmethod
     def power(cls, a, b): # a^b
         raise TypeError(f"cannot do powers over {_tname(cls)}")
@@ -138,6 +149,20 @@ class Field:
         raise TypeError(f"cannot do logarithms over {_tname(cls)}")
 
     @classmethod
+    def floor(cls, a): # max(i in Z s.t. i <= a)
+        raise TypeError(f"cannot do floor function over {_tname(cls)}")
+    @classmethod
+    def ceil(cls, a): # min(i in Z s.t. i >= a)
+        raise TypeError(f"cannot do ceil function over {_tname(cls)}")
+    @classmethod
+    def trunc(cls, a): # floor(a) if a >= 0 else ceil(a)
+        raise TypeError(f"cannot do truncate function over {_tname(cls)}")
+    @classmethod
+    def rint(cls, a): # b s.t. b in Z and |b| is maximised and
+                      #        |a - b| <= |a - c| for all c in Z
+        raise TypeError(f"cannot do round-to-int function over {_tname(cls)}")
+
+    @classmethod
     def sin(cls, a): # sin(a)
         raise TypeError(f"cannot do trigonometric sine over {_tname(cls)}")
     @classmethod
@@ -146,6 +171,15 @@ class Field:
     @classmethod
     def tan(cls, a): # tan(a)
         raise TypeError(f"cannot do trigonometric tangent over {_tname(cls)}")
+    @classmethod
+    def csc(cls, a): # csc(a) = 1/sin(a)
+        raise TypeError(f"cannot do trigonometric cosecant over {_tname(cls)}")
+    @classmethod
+    def sec(cls, a): # sec(a) = 1/cos(a)
+        raise TypeError(f"cannot do trigonometric secant over {_tname(cls)}")
+    @classmethod
+    def cot(cls, a): # cot(a) = 1/tan(a)
+        raise TypeError(f"cannot do trigonometric cotangent over {_tname(cls)}")
 
     @classmethod
     def asin(cls, a): # arcsin(a)
@@ -160,7 +194,70 @@ class Field:
         raise TypeError("cannot do trigonometric inverse-tangent over "
                 f"{_tname(cls)}")
     @classmethod
-    def atan2(cls, y, x): # arctan(y/x), but quadrant-aware.
+    def acsc(cls, a): # arccsc(a) = arcsin(1/a)
+        raise TypeError("cannot do trigonometric inverse-cosecant over "
+                f"{_tname(cls)}")
+    @classmethod
+    def asec(cls, a): # arcsec(a) = arccos(1/a)
+        raise TypeError("cannot do trigonometric inverse-secant over "
+                f"{_tname(cls)}")
+    @classmethod
+    def acot(cls, a): # arccot(a) = arctan(1/a)
+        raise TypeError("cannot do trigonometric inverse-cotangent over "
+                f"{_tname(cls)}")
+
+    @classmethod
+    def sinh(cls, a): # sinh(a)
+        raise TypeError("cannot do trigonometric hyperbolic-sine over "
+                f"{_tname(cls)}")
+    @classmethod
+    def cosh(cls, a): # cosh(a)
+        raise TypeError("cannot do trigonometric hyperbolic-cosine over "
+                f"{_tname(cls)}")
+    @classmethod
+    def tanh(cls, a): # tanh(a)
+        raise TypeError("cannot do trigonometric hyperbolic-tangent over "
+                f"{_tname(cls)}")
+    @classmethod
+    def csch(cls, a): # csch(a) = 1/sinh(a)
+        raise TypeError("cannot do trigonometric hyperbolic-cosecant over "
+                f"{_tname(cls)}")
+    @classmethod
+    def sech(cls, a): # sech(a) = 1/cosh(a)
+        raise TypeError("cannot do trigonometric hyperbolic-secant over "
+                f"{_tname(cls)}")
+    @classmethod
+    def coth(cls, a): # coth(a) = 1/tanh(a)
+        raise TypeError("cannot do trigonometric hyperbolic-cotangent over "
+                f"{_tname(cls)}")
+
+    @classmethod
+    def asinh(cls, a): # arcsinh(a)
+        raise TypeError("cannot do trigonometric inverse-hyperbolic-sine over "
+                f"{_tname(cls)}")
+    @classmethod
+    def acosh(cls, a): # arccosh(a)
+        raise TypeError("cannot do trigonometric inverse-hyperbolic-cosine over "
+                f"{_tname(cls)}")
+    @classmethod
+    def atanh(cls, a): # arctanh(a)
+        raise TypeError("cannot do trigonometric inverse-hyperbolic-tangent "
+                f"over {_tname(cls)}")
+    @classmethod
+    def acsch(cls, a): # arccsch(a) = arcsinh(1/a)
+        raise TypeError("cannot do trigonometric inverse-hyperbolic-cosecant "
+                f"over {_tname(cls)}")
+    @classmethod
+    def asech(cls, a): # arcsech(a) = arccosh(1/a)
+        raise TypeError("cannot do trigonometric inverse-hyperbolic-secant over "
+                f"{_tname(cls)}")
+    @classmethod
+    def acoth(cls, a): # arccoth(a) = arctanh(1/a)
+        raise TypeError("cannot do trigonometric inverse-hyperbolic-cotangent "
+                f"over {_tname(cls)}")
+
+    @classmethod
+    def atan2(cls, y, x): # quadrant-aware arctan(y/x)
         raise TypeError("cannot do quadrant-aware trigonometric inverse-tangent "
                 f"over {_tname(cls)}")
 
@@ -224,6 +321,15 @@ class Field:
         raise TypeError(f"cannot do less-than-or-equal-to over {_tname(cls)}")
 
     # End comparing operations.
+
+
+    # Generally only applicable for floating point:
+    @classmethod
+    def isinf(cls, a): # does a represent an infinite value? must return bool.
+        raise TypeError(f"no concept of infinity over {_tname(cls)}")
+    @classmethod
+    def isnan(cls, a): # does a represent a not-a-number? must return bool.
+        raise TypeError(f"no concept of not-a-number over {_tname(cls)}")
 
 
     @classmethod
@@ -318,6 +424,14 @@ class Field:
         npshape = M.shape.tonumpy
         cells = _np.full(npshape, one, dtype=cls.dtype())
         return M(cells)
+    @classmethod
+    def _mat_full(cls, M, value):
+        if M.isempty:
+            return empty(M.field)
+        val = value.obj
+        npshape = M.shape.tonumpy
+        cells = _np.full(npshape, val, dtype=cls.dtype())
+        return M(cells)
 
     @classmethod
     def _mat_all(cls, m):
@@ -358,10 +472,12 @@ class Field:
         if m.isempty:
             return m
         return m.real - m.i * m.imag
-
     @classmethod
     def _mat_abs(cls, m):
         return m._apply(cls.abs, cls, m)
+    @classmethod
+    def _mat_angle(cls, m):
+        return m._apply(cls.angle, cls, m)
     @classmethod
     def _mat_sgn(cls, m):
         return m._apply(cls.sgn, cls, m)
@@ -385,6 +501,9 @@ class Field:
     @classmethod
     def _mat_div(cls, m, o):
         return m._apply(cls.div, cls, m, o)
+    @classmethod
+    def _mat_mod(cls, m, o):
+        return m._apply(cls.mod, cls, m, o)
 
     @classmethod
     def _mat_exp(cls, m):
@@ -455,6 +574,19 @@ class Field:
         return m._apply(cls.root, cls, m, n)
 
     @classmethod
+    def _mat_floor(cls, m):
+        return m._apply(cls.floor, cls, m)
+    @classmethod
+    def _mat_ceil(cls, m):
+        return m._apply(cls.ceil, cls, m)
+    @classmethod
+    def _mat_trunc(cls, m):
+        return m._apply(cls.trunc, cls, m)
+    @classmethod
+    def _mat_rint(cls, m):
+        return m._apply(cls.rint, cls, m)
+
+    @classmethod
     def _mat_sin(cls, m):
         return m._apply(cls.sin, cls, m)
     @classmethod
@@ -463,6 +595,15 @@ class Field:
     @classmethod
     def _mat_tan(cls, m):
         return m._apply(cls.tan, cls, m)
+    @classmethod
+    def _mat_csc(cls, m):
+        return m._apply(cls.csc, cls, m)
+    @classmethod
+    def _mat_sec(cls, m):
+        return m._apply(cls.sec, cls, m)
+    @classmethod
+    def _mat_cot(cls, m):
+        return m._apply(cls.cot, cls, m)
 
     @classmethod
     def _mat_asin(cls, m):
@@ -473,6 +614,54 @@ class Field:
     @classmethod
     def _mat_atan(cls, m):
         return m._apply(cls.atan, cls, m)
+    @classmethod
+    def _mat_acsc(cls, m):
+        return m._apply(cls.acsc, cls, m)
+    @classmethod
+    def _mat_asec(cls, m):
+        return m._apply(cls.asec, cls, m)
+    @classmethod
+    def _mat_acot(cls, m):
+        return m._apply(cls.acot, cls, m)
+
+    @classmethod
+    def _mat_sinh(cls, m):
+        return m._apply(cls.sinh, cls, m)
+    @classmethod
+    def _mat_cosh(cls, m):
+        return m._apply(cls.cosh, cls, m)
+    @classmethod
+    def _mat_tanh(cls, m):
+        return m._apply(cls.tanh, cls, m)
+    @classmethod
+    def _mat_csch(cls, m):
+        return m._apply(cls.csch, cls, m)
+    @classmethod
+    def _mat_sech(cls, m):
+        return m._apply(cls.sech, cls, m)
+    @classmethod
+    def _mat_coth(cls, m):
+        return m._apply(cls.coth, cls, m)
+
+    @classmethod
+    def _mat_asinh(cls, m):
+        return m._apply(cls.asinh, cls, m)
+    @classmethod
+    def _mat_acosh(cls, m):
+        return m._apply(cls.acosh, cls, m)
+    @classmethod
+    def _mat_atanh(cls, m):
+        return m._apply(cls.atanh, cls, m)
+    @classmethod
+    def _mat_acsch(cls, m):
+        return m._apply(cls.acsch, cls, m)
+    @classmethod
+    def _mat_asech(cls, m):
+        return m._apply(cls.asech, cls, m)
+    @classmethod
+    def _mat_acoth(cls, m):
+        return m._apply(cls.acoth, cls, m)
+
     @classmethod
     def _mat_atan2(cls, y, x):
         return y._apply(cls.atan2, cls, y, x)
@@ -521,6 +710,17 @@ class Field:
     @classmethod
     def _mat_le(cls, m, o):
         return m._apply(cls.le, cls.comparison_field(), m, o)
+
+
+    @classmethod
+    def _mat_isinf(cls, m):
+        return m._apply(cls.isinf, bool, m)
+    @classmethod
+    def _mat_isnan(cls, m):
+        return m._apply(cls.isnan, bool, m)
+    @classmethod
+    def _mat_isfinite(cls, m):
+        return ~cls._mat_isinf(m) & ~cls._mat_isnan(m)
 
 
     @classmethod
@@ -868,14 +1068,14 @@ def _NonField(_base):
     def to_int(cls, a):
         if hasattr(a, "__int__"):
             return a.__int__()
-        return super().to_int(a)
+        return super(_NonField[_base], cls).to_int(a)
     @classmethod
     def to_float(cls, a):
         if hasattr(a, "__float__"):
             return a.__float__()
         if hasattr(a, "__int__"):
             return float(a.__int__())
-        return super().to_float(a)
+        return super(_NonField[_base], cls).to_float(a)
     @classmethod
     def to_complex(cls, a):
         if hasattr(a, "__complex__"):
@@ -884,22 +1084,22 @@ def _NonField(_base):
             return complex(a.__float__())
         if hasattr(a, "__int__"):
             return complex(a.__int__())
-        return super().to_complex(a)
+        return super(_NonField[_base], cls).to_complex(a)
 
     @classmethod
     def hashed(cls, a):
         if hasattr(a, "__hash__"):
             return a.__hash__()
-        return super().hashed(a)
+        return super(_NonField[_base], cls).hashed(a)
     @classmethod
     def rep(cls, a, short):
         if hasattr(a, "__repr__"):
             return a.__repr__()
-        return super().rep(a, short)
+        return super(_NonField[_base], cls).rep(a, short)
 
     return locals()
 
-_NonField.tnamer = lambda F: f"non-field type: {_tname(F, quoted=False)}"
+_NonField.tnamer = lambda F: f"<non-field: {_tname(F, quoted=False)}>"
 
 
 @_singleton
@@ -1124,7 +1324,7 @@ class Permuter:
             order = _maybe_unpack_ints(order)
             for l in order:
                 if not isinstance(l, int):
-                    raise TypeError("dimension lengths must be ints, got "
+                    raise TypeError("expected integer dimension lengths, got "
                             f"{_objtname(l)}")
             if any(l < 0 for l in order):
                 raise ValueError(f"dimension lengths cannot be negative, got: "
@@ -1186,8 +1386,8 @@ class Permuter:
             raise TypeError("expected an integer number of dimensions, got "
                     f"{_objtname(ndim)}")
         if ndim < 0:
-            raise ValueError("cannot have a negative number of dimensions, "
-                    f"got: {ndim}")
+            raise ValueError("number of dimensions cannot be negative, got: "
+                    f"{ndim}")
         if ndim < p.ndim:
             raise ValueError("expected a number of dimensions >= this permuter's"
                     f"number of dimensions, got {ndim} while the permuter has "
@@ -1269,10 +1469,10 @@ class Shape:
             lens = _maybe_unpack_ints(lens)
             for l in lens:
                 if not isinstance(l, int):
-                    raise TypeError("dimension lengths must be ints, got "
+                    raise TypeError("expected integer dimension lengths, got "
                             f"{_objtname(l)}")
             if any(l < 0 for l in lens):
-                raise ValueError(f"dimension lengths cannot be negative, got: "
+                raise ValueError("dimension lengths cannot be negative, got: "
                         f"{lens}")
             # Collapse empty.
             if _math.prod(lens) == 0:
@@ -1304,10 +1504,10 @@ class Shape:
             raise ValueError("cannot have empty numpy shape")
         for l in npshape:
             if not isinstance(l, int):
-                raise TypeError("numpy shape elements must be ints, got "
+                raise TypeError("expected integer numpy shape elements, got "
                         f"{_objtname(l)}")
         if any(l < 0 for l in npshape):
-            raise ValueError(f"numpy shape elements cannot be negative, got: "
+            raise ValueError("numpy shape elements cannot be negative, got: "
                     f"{npshape}")
         if npshape == (0, ):
             return S.empty
@@ -1315,24 +1515,6 @@ class Shape:
             npshape += (1, ) # colvec.
         shape = Permuter.fromnumpy(len(npshape))(npshape)
         return S(shape)
-
-    @classmethod
-    def sqrshape(S, *lens):
-        """
-        Returns a shape of the given lengths. If only one length is given,
-        returns a square shape of that side-length.
-        """
-        lens = _maybe_unpack_ints(lens)
-        for l in lens:
-            if not isinstance(l, int):
-                raise TypeError("dimension lengths must be ints, got "
-                        f"{_objtname(l)}")
-        if any(l < 0 for l in lens):
-            raise ValueError(f"dimension lengths cannot be negative, got: "
-                    f"{lens}")
-        if len(lens) == 1:
-            lens *= 2
-        return S(lens)
 
 
     @_classconst
@@ -1609,6 +1791,12 @@ def Matrix(field, shape):
         """
         return single(M.field.one, field=M.field, _nocast=True)
     @_classconst
+    def i(M):
+        """
+        Single imaginary unit.
+        """
+        return single(M.field.i, field=M.field, _nocast=True)
+    @_classconst
     def e(M):
         """
         Single euler's number (2.71828...).
@@ -1621,11 +1809,17 @@ def Matrix(field, shape):
         """
         return single(M.field.pi, field=M.field, _nocast=True)
     @_classconst
-    def i(M):
+    def inf(M):
         """
-        Single imaginary unit.
+        Single infinity.
         """
-        return single(M.field.i, field=M.field, _nocast=True)
+        return single(M.field.inf, field=M.field, _nocast=True)
+    @_classconst
+    def nan(M):
+        """
+        Single not-a-number.
+        """
+        return single(M.field.nan, field=M.field, _nocast=True)
 
 
     @_classconst
@@ -1649,6 +1843,15 @@ def Matrix(field, shape):
         One-filled matrix.
         """
         return M.field._mat_ones(M)
+    @classmethod
+    def full(M, value):
+        """
+        Matrix filled with the given value.
+        """
+        value, = M.cast(value)
+        if not value.issingle:
+            raise TypeError(f"expected single for fill value, got {value.shape}")
+        return M.field._mat_full(M, value)
 
     @_classconst
     def size(M):
@@ -1890,6 +2093,200 @@ def Matrix(field, shape):
         return Matrix[m.field, newshape](cells)
 
 
+    def flip(m, *axes):
+        """
+        Reverses the order along the given axes. If any axes are repeated, it is
+        treated as another flip (so even counts of axes do nothing).
+        """
+        axes = _maybe_unpack_ints(axes)
+        for axis in axes:
+            if not isinstance(axis, int):
+                raise TypeError(f"expected integer axes, got {_objtname(axis)}")
+        if any(a < 0 for a in axes):
+            raise ValueError(f"axes cannot be negative, got: {axes}")
+        if m.isempty:
+            return m
+        axes = {a for a in axes if (axes.count(a) % 2) == 1 and a < m.ndim}
+        npaxes = tuple(Permuter.tonumpyaxis(m.ndim, a) for a in axes)
+        cells = _np.flip(m._cells, npaxes)
+        return Matrix[m.field, m.shape](cells)
+    @_instconst
+    def flipud(m):
+        """
+        Flip columns, alias for 'm.flip(0)'.
+        """
+        return m.flip(0)
+    @_instconst
+    def fliplr(m):
+        """
+        Flip rows, alias for 'm.flip(1)'.
+        """
+        return m.flip(1)
+
+
+    def tile(m, *counts):
+        """
+        Tiles this matrix 'counts[axis]' times along each axis. See '.rep' for
+        element repeating instead of matrix repeating.
+        """
+        counts = _maybe_unpack_ints(counts)
+        for count in counts:
+            if not isinstance(count, int):
+                raise TypeError("expected integer counts, got "
+                        f"{_objtname(count)}")
+        if any(count < 0 for count in counts):
+            raise ValueError(f"counts cannot be negative, got: {counts}")
+        if m.isempty:
+            return m
+        # Use shape as helper.
+        counts = Shape(counts)
+        if counts.isempty:
+            return empty(m.field)
+        # Reorder counts to the numpy ordering.
+        ndim = max(m.ndim, counts.ndim)
+        npcounts = Permuter.tonumpy(ndim)(counts)
+        npcounttuple = tuple(npcounts[axis] for axis in range(ndim))
+        cells = _np.tile(m._cells, npcounttuple)
+        return m.fromnumpy(cells)
+
+    def tile_along(m, axis, count):
+        """
+        Tiles this matrix 'count' times along 'axis'. See '.rep_along' for
+        element repeating instead of matrix repeating.
+        """
+        if not isinstance(axis, int):
+            raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
+        if axis < 0:
+            raise ValueError(f"axis cannot be negative, got: {axis}")
+        if not isinstance(count, int):
+            raise TypeError(f"expected an integer count, got {_objtname(count)}")
+        if count < 0:
+            raise TypeError(f"count cannot be negative, got: {count}")
+        return m.tile((1, )*axis + (count, ))
+
+
+    def rep(m, *counts):
+        """
+        Repeats each element in this matrix 'counts[axis]' times along each axis.
+        See '.tile' for matrix repeating instead of element repeating.
+        """
+        counts = _maybe_unpack_ints(counts)
+        for count in counts:
+            if not isinstance(count, int):
+                raise TypeError("expected integer counts, got "
+                        f"{_objtname(count)}")
+        if any(count < 0 for count in counts):
+            raise ValueError(f"counts cannot be negative, got: {counts}")
+        if m.isempty:
+            return m
+        # Use shape as helper.
+        counts = Shape(counts)
+        if counts.isempty:
+            return empty(m.field)
+        if counts.issingle:
+            return m
+        # Numpy repeat is slightly different to our rep, as it allows repeat
+        # counts to differ at each index and cant repeat along several axes at
+        # the same time. So, we just repeat along each axis manually.
+        cells = m._cells
+        # Add axes since numpy wont do it for us.
+        npshape = (1,) * (counts.ndim - cells.ndim) + cells.shape
+        cells = cells.reshape(npshape)
+        for axis in range(counts.ndim):
+            if counts[axis] > 1:
+                npaxis = Permuter.tonumpyaxis(cells.ndim, axis)
+                cells = _np.repeat(cells, counts[axis], axis=npaxis)
+        return m.fromnumpy(cells)
+
+    def rep_along(m, axis, count):
+        """
+        Repeats each element in this matrix 'count' times along 'axis'. See
+        '.tile_along' for matrix repeating instead of element repeating.
+        """
+        if not isinstance(axis, int):
+            raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
+        if axis < 0:
+            raise ValueError(f"axis cannot be negative, got: {axis}")
+        if not isinstance(count, int):
+            raise TypeError(f"expected an integer count, got {_objtname(count)}")
+        if count < 0:
+            raise TypeError(f"count cannot be negative, got: {count}")
+        return m.rep((1, )*axis + (count, ))
+
+
+    def roll(m, axis, by):
+        """
+        Circularly rotates elements along the given axis by 'by' positions.
+        """
+        if not isinstance(axis, int):
+            raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
+        if axis < 0:
+            raise ValueError(f"axis cannot be negative, got: {axis}")
+        if not isinstance(by, int):
+            raise TypeError(f"expected an integer 'by', got {_objtname(by)}")
+        # Collapse to equivalent.
+        by %= m.shape[axis]
+        if by == 0 or axis >= m.ndim:
+            return m
+        npaxis = Permuter.tonumpyaxis(m.ndim, axis)
+        cells = _np.roll(m._cells, by, npaxis)
+        return Matrix[m.field, m.shape](cells)
+
+
+    @_instconst
+    def T(m):
+        """
+        Swaps the first two axes.
+        """
+        return m.permute(1, 0)
+
+
+    @_instconst
+    def diag(m):
+        """
+        Vector of the main diagonal, for 2D matrices.
+        """
+        return m.diagk(0)
+    def diagk(m, k, emptyok=False):
+        """
+        Vector of the 'k'-th diagonal where k>0 is above the main diagonal and
+        k<0 is below, for 2D matrices.
+        """
+        if m.ndim > 2:
+            raise TypeError(f"only 2D matrices have a diagonal, got {m.shape}")
+        if not isinstance(k, int):
+            raise TypeError(f"expected an integer 'k', got {_objtname(k)}")
+        lo = -m.shape[0] + 1
+        hi = m.shape[1] - 1
+        if k < lo or k > hi:
+            if emptyok:
+                return empty(m.field)
+            raise TypeError(f"expected 'k' in {lo}..{hi}, got: {k}")
+        if m.isempty or m.issingle:
+            return m
+        return m.fromnumpy(m._cells.diagonal(k))
+
+
+    def along(m, axis):
+        """
+        Tuple of perpendicular matrices along the given axis.
+        """
+        if not isinstance(axis, int):
+            raise TypeError(f"expected integer axis, got {_objtname(axis)}")
+        if axis < 0:
+            raise ValueError(f"axis cannot be negative, got: {axis}")
+        # Empty is empty.
+        if m.isempty:
+            return ()
+        if axis >= m.ndim:
+            return (m, )
+        def idx(i):
+            idx = [slice(None)] * m.ndim
+            idx[axis] = slice(i, i + 1)
+            idx = tuple(idx)
+            return Permuter.tonumpy(m.ndim)(idx)
+        return tuple(m.at[idx(i)] for i in range(m.shape[axis]))
+
     @_instconst
     def at(m):
         """
@@ -1929,64 +2326,6 @@ def Matrix(field, shape):
                 valid matrix shape)).
         """
         return _MatrixAt(m)
-
-
-    def along(m, axis):
-        """
-        Tuple of perpendicular matrices along the given axis.
-        """
-        if not isinstance(axis, int):
-            raise TypeError(f"expected integer axis, got {_objtname(axis)}")
-        if axis < 0:
-            raise ValueError(f"cannot have negative axis, got: {axis}")
-        # Empty is empty.
-        if m.isempty:
-            return ()
-        if axis >= m.ndim:
-            return (m, )
-        def idx(i):
-            idx = [slice(None)] * m.ndim
-            idx[axis] = slice(i, i + 1)
-            idx = tuple(idx)
-            return Permuter.tonumpy(m.ndim)(idx)
-        return tuple(m.at[idx(i)] for i in range(m.shape[axis]))
-
-
-    def rep(m, *counts):
-        """
-        Repeats this matrix 'counts[axis]' times for each axis.
-        """
-        counts = _maybe_unpack_ints(counts)
-        for count in counts:
-            if not isinstance(count, int):
-                raise TypeError("expected an integer count, got "
-                        f"{_objtname(count)}")
-        if any(count < 0 for count in counts):
-            raise ValueError(f"cannot have negative counts, got: {counts}")
-        # Use shape as helper.
-        counts = Shape(counts)
-        if counts.isempty:
-            return empty(m.field)
-        # Reorder counts to the numpy ordering.
-        ndim = max(m.ndim, counts.ndim)
-        npcounts = Permuter.tonumpy(ndim)(counts)
-        npcounts = tuple(npcounts[axis] for axis in range(ndim))
-        cells = _np.tile(m._cells, npcounts)
-        return m.fromnumpy(cells)
-
-    def rep_along(m, axis, count):
-        """
-        Repeats this matrix 'count' times along 'axis'.
-        """
-        if not isinstance(axis, int):
-            raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
-        if axis < 0:
-            raise ValueError(f"axis cannot be negative, got: {axis}")
-        if not isinstance(count, int):
-            raise TypeError(f"expected an integer count, got {_objtname(count)}")
-        if count < 0:
-            raise TypeError(f"count cannot be negative, got: {count}")
-        return m.rep((1, )*axis + (count, ))
 
 
     def __iter__(m):
@@ -2071,43 +2410,9 @@ def Matrix(field, shape):
 
 
     @_instconst
-    def T(m):
-        """
-        Swaps the first two axes.
-        """
-        return m.permute(1, 0)
-
-    @_instconst
-    def inv(m):
-        """
-        Inverse matrix, for square 2D matrices.
-        """
-        if not m.issquare:
-            raise TypeError(f"cannot invert a non-square matrix, got {m.shape}")
-        if m.det == m.zero:
-            raise ValueError("cannot invert a non-invertible matrix, got det=0")
-        if m.isempty:
-            return m
-        aug = hstack(m, m.eye)
-        aug = aug.rref
-        return aug.at[:, m.shape[0]:]
-
-    @_instconst
-    def diag(m):
-        """
-        Vector of diagonal elements, for 2D matrices.
-        """
-        if m.ndim > 2:
-            raise TypeError(f"only 2D matrices have a diagonal, got {m.shape}")
-        if m.isempty or m.issingle:
-            return m
-        return m.fromnumpy(m._cells.diagonal())
-
-
-    @_instconst
     def isdiag(m):
         """
-        Is diagonal matrix? (square, and only diagonal is non-zero)
+        Is diagonal matrix? (square, and only main diagonal is non-zero)
         """
         if m.ndim > 2:
             raise TypeError(f"only 2D matrices can be diagonal, got {m.shape}")
@@ -2163,6 +2468,18 @@ def Matrix(field, shape):
         if m.det == m.zero:
             return False
         return (m.T == m.inv).alll
+    @_instconst
+    def isunitary(m):
+        """
+        Is unitary matrix? (conjugate transpose == inverse)
+        """
+        if m.ndim > 2:
+            raise TypeError(f"only 2D matrices can be orthogonal, got {m.shape}")
+        if not m.issquare:
+            return False
+        if m.det == m.zero:
+            return False
+        return (m.H == m.inv).alll
 
     @_instconst
     def issymmetric(m):
@@ -2174,11 +2491,7 @@ def Matrix(field, shape):
             raise TypeError(f"only 2D matrices can be symmetric, got {m.shape}")
         if not m.issquare:
             return False
-        for i in range(m.shape[0]):
-            for j in range(i):
-                if m.at[i, j] != m.at[j, i]:
-                    return False
-        return True
+        return (m.T == m).alll
 
 
     @classmethod
@@ -2425,24 +2738,6 @@ def Matrix(field, shape):
         return m.__or__(o, reverse=True)
 
 
-    def __abs__(m):
-        """
-        Element-wise absolution.
-        """
-        return m.field._mat_abs(m)
-    @_instconst
-    def abs(m):
-        """
-        Element-wise absolution, alias for 'abs(m)'.
-        """
-        return m.__abs__()
-    @_instconst
-    def sgn(m):
-        """
-        Element-wise signum function: 0 if (x == 0), otherwise x / |x|
-        """
-        return m.field._mat_sgn(m)
-
     @_instconst
     def real(m):
         """
@@ -2461,6 +2756,29 @@ def Matrix(field, shape):
         Element-wise complex conjugate.
         """
         return m.field._mat_conj(m)
+    def __abs__(m):
+        """
+        Element-wise absolution.
+        """
+        return m.field._mat_abs(m)
+    @_instconst
+    def abs(m):
+        """
+        Element-wise absolution, alias for 'abs(m)'.
+        """
+        return m.__abs__()
+    @_instconst
+    def angle(m):
+        """
+        Element-wise complex-argument.
+        """
+        return m.field._mat_angle(m)
+    @_instconst
+    def sgn(m):
+        """
+        Element-wise signum function: 0 if (x == 0), otherwise x / |x|
+        """
+        return m.field._mat_sgn(m)
 
     def __pos__(m):
         """
@@ -2516,6 +2834,17 @@ def Matrix(field, shape):
         return m.field._mat_div(m, o)
     def __rtruediv__(m, o):
         return m.__truediv__(o, reverse=True)
+
+    def __mod__(m, o, *, reverse=False):
+        """
+        Element-wise modulus.
+        """
+        m, o = m.cast(m, o)
+        if reverse:
+            m, o = o, m
+        return m.field._mat_mod(m, o)
+    def __rmod__(m, o):
+        return m.__mod__(o, reverse=True)
 
     @_instconst
     def exp(m):
@@ -2591,6 +2920,31 @@ def Matrix(field, shape):
         return m.field._mat_root(m, n)
 
     @_instconst
+    def floor(m):
+        """
+        Element-wise floor function.
+        """
+        return m.field._mat_floor(m)
+    @_instconst
+    def ceil(m):
+        """
+        Element-wise ceil function.
+        """
+        return m.field._mat_ceil(m)
+    @_instconst
+    def trunc(m):
+        """
+        Element-wise truncate function.
+        """
+        return m.field._mat_trunc(m)
+    @_instconst
+    def rint(m):
+        """
+        Element-wise round-to-integer function.
+        """
+        return m.field._mat_rint(m)
+
+    @_instconst
     def sin(m):
         """
         Element-wise trigonometric sine.
@@ -2608,25 +2962,144 @@ def Matrix(field, shape):
         Element-wise trigonometric tangent.
         """
         return m.field._mat_tan(m)
+    @_instconst
+    def csc(m):
+        """
+        Element-wise trigonometric cosecant: csc(x) = 1/sin(x)
+        """
+        return m.field._mat_csc(m)
+    @_instconst
+    def sec(m):
+        """
+        Element-wise trigonometric secant: sec(x) = 1/cos(x)
+        """
+        return m.field._mat_sec(m)
+    @_instconst
+    def cot(m):
+        """
+        Element-wise trigonometric cotangent: cot(x) = 1/tan(x)
+        """
+        return m.field._mat_cot(m)
 
     @_instconst
     def asin(m):
         """
-        Element-wise trigonometric inverse-sine.
+        Element-wise trigonometric inverse-sine:
+            asin(x) = y, s.t. y in [-pi/2, pi/2] and sin(y) = x
         """
         return m.field._mat_asin(m)
     @_instconst
     def acos(m):
         """
-        Element-wise trigonometric inverse-cosine.
+        Element-wise trigonometric inverse-cosine:
+            acos(x) = y, s.t. y in [0, pi] and cos(y) = x
         """
         return m.field._mat_acos(m)
     @_instconst
     def atan(m):
         """
-        Element-wise trigonometric inverse-tangent.
+        Element-wise trigonometric inverse-tangent:
+            atan(x) = y, s.t. y in (-pi/2, pi/2) and tan(y) = x
         """
         return m.field._mat_atan(m)
+    @_instconst
+    def acsc(m):
+        """
+        Element-wise trigonometric inverse-cosecant: acsc(x) = asin(1/x)
+        """
+        return m.field._mat_acsc(m)
+    @_instconst
+    def asec(m):
+        """
+        Element-wise trigonometric inverse-secant: asec(x) = acos(1/x)
+        """
+        return m.field._mat_asec(m)
+    @_instconst
+    def acot(m):
+        """
+        Element-wise trigonometric inverse-cotangent: acot(x) = atan(1/x)
+        """
+        return m.field._mat_acot(m)
+
+    @_instconst
+    def sinh(m):
+        """
+        Element-wise trigonometric hyperbolic-sine.
+        """
+        return m.field._mat_sinh(m)
+    @_instconst
+    def cosh(m):
+        """
+        Element-wise trigonometric hyperbolic-cosine.
+        """
+        return m.field._mat_cosh(m)
+    @_instconst
+    def tanh(m):
+        """
+        Element-wise trigonometric hyperbolic-tangent.
+        """
+        return m.field._mat_tanh(m)
+    @_instconst
+    def csch(m):
+        """
+        Element-wise trigonometric hyperbolic-cosecant: csch(x) = 1/sinh(x)
+        """
+        return m.field._mat_csch(m)
+    @_instconst
+    def sech(m):
+        """
+        Element-wise trigonometric hyperbolic-secant: sech(x) = 1/cosh(x)
+        """
+        return m.field._mat_sech(m)
+    @_instconst
+    def coth(m):
+        """
+        Element-wise trigonometric hyperbolic-cotangent: coth(x) = 1/tanh(x)
+        """
+        return m.field._mat_coth(m)
+
+    @_instconst
+    def asinh(m):
+        """
+        Element-wise trigonometric inverse-hyperbolic-sine:
+            asinh(x) = y, s.t. sinh(y) = x
+        """
+        return m.field._mat_asinh(m)
+    @_instconst
+    def acosh(m):
+        """
+        Element-wise trigonometric inverse-hyperbolic-cosine:
+            acosh(x) = y, s.t. y >= 0 and cosh(y) = x
+        """
+        return m.field._mat_acosh(m)
+    @_instconst
+    def atanh(m):
+        """
+        Element-wise trigonometric inverse-hyperbolic-tangent:
+            atanh(x) = y, s.t. tanh(y) = x
+        """
+        return m.field._mat_atanh(m)
+    @_instconst
+    def acsch(m):
+        """
+        Element-wise trigonometric inverse-hyperbolic-cosecant:
+            acsch(x) = asinh(1/x)
+        """
+        return m.field._mat_acsch(m)
+    @_instconst
+    def asech(m):
+        """
+        Element-wise trigonometric inverse-hyperbolic-secant:
+            asech(x) = acosh(1/x)
+        """
+        return m.field._mat_asech(m)
+    @_instconst
+    def acoth(m):
+        """
+        Element-wise trigonometric inverse-hyperbolic-cotangent:
+            acoth(x) = atanh(1/x)
+        """
+        return m.field._mat_acoth(m)
 
     @_instconst
     def torad(m):
@@ -2644,40 +3117,76 @@ def Matrix(field, shape):
     @_instconst
     def sind(m):
         """
-        Element-wise trigonometric sine, with input in degrees.
+        Alias for 'm.torad.sin'.
         """
         return m.torad.sin
     @_instconst
     def cosd(m):
         """
-        Element-wise trigonometric cosine, with input in degrees.
+        Alias for 'm.torad.cos'.
         """
         return m.torad.cos
     @_instconst
     def tand(m):
         """
-        Element-wise trigonometric tangent, with input in degrees.
+        Alias for 'm.torad.tan'.
         """
         return m.torad.tan
+    @_instconst
+    def cscd(m):
+        """
+        Alias for 'm.torad.csc'.
+        """
+        return m.torad.csc
+    @_instconst
+    def secd(m):
+        """
+        Alias for 'm.torad.sec'.
+        """
+        return m.torad.sec
+    @_instconst
+    def cotd(m):
+        """
+        Alias for 'm.torad.cot'.
+        """
+        return m.torad.cot
 
     @_instconst
     def asind(m):
         """
-        Element-wise trigonometric inverse-sine, with output in degrees.
+        Alias for 'm.asin.todeg'.
         """
         return m.asin.todeg
     @_instconst
     def acosd(m):
         """
-        Element-wise trigonometric inverse-cosine, with output in degrees.
+        Alias for 'm.acos.todeg'.
         """
         return m.acos.todeg
     @_instconst
     def atand(m):
         """
-        Element-wise trigonometric inverse-tangent, with output in degrees.
+        Alias for 'm.atan.todeg'.
         """
         return m.atan.todeg
+    @_instconst
+    def acscd(m):
+        """
+        Alias for 'm.acsc.todeg'.
+        """
+        return m.acsc.todeg
+    @_instconst
+    def asecd(m):
+        """
+        Alias for 'm.asec.todeg'.
+        """
+        return m.asec.todeg
+    @_instconst
+    def acotd(m):
+        """
+        Alias for 'm.acot.todeg'.
+        """
+        return m.acot.todeg
 
 
     def diff(y, x):
@@ -2742,6 +3251,51 @@ def Matrix(field, shape):
         m, o = m.cast(m, o)
         return m.field._mat_issame(m, o)
 
+    @_instconst
+    def isreal(m):
+        """
+        Element-wise imaginary component =0.
+        """
+        return (m.imag == m.zero)
+    @_instconst
+    def isimag(m):
+        """
+        Element-wise real component =0.
+        """
+        return (m.real == m.zero)
+    @_instconst
+    def isinf(m):
+        """
+        Element-wise "is infinite"?
+        """
+        return m.field._mat_isinf(m)
+    @_instconst
+    def isnan(m):
+        """
+        Element-wise "is not-a-number"?
+        """
+        return m.field._mat_isnan(m)
+    @_instconst
+    def isfinite(m):
+        """
+        Element-wise "is not infinite and is not not-a-number"?
+        """
+        return m.field._mat_isfinite(m)
+
+    @_instconst
+    def inv(m):
+        """
+        Inverse matrix, for square 2D matrices.
+        """
+        if not m.issquare:
+            raise TypeError(f"cannot invert a non-square matrix, got {m.shape}")
+        if m.det == m.zero:
+            raise ValueError("cannot invert a non-invertible matrix, got det=0")
+        if m.isempty:
+            return m
+        aug = hstack(m, m.eye)
+        aug = aug.rref
+        return aug.at[:, m.shape[0]:]
 
     @_instconst
     def det(m):
@@ -2827,44 +3381,6 @@ def Matrix(field, shape):
 
 
     @_instconst
-    def summ(m):
-        """
-        Sum of all elements, alias for 'm.summ_along(None)'.
-        """
-        return m.summ_along(None)
-    def summ_along(m, axis):
-        """
-        Additive sum of the values along the given axis. If 'axis' is none,
-        returns the sum over all elements.
-        """
-        if axis is not None:
-            if not isinstance(axis, int):
-                raise TypeError("expected an integer axis, got "
-                        f"{_objtname(axis)}")
-            if axis < 0:
-                raise ValueError(f"axis cannot be negative, got {axis}")
-        return m.field._mat_summ(m, axis)
-
-    @_instconst
-    def prod(m):
-        """
-        Product of all elements, alias for 'm.prod_along(None)'.
-        """
-        return m.prod_along(None)
-    def prod_along(m, axis):
-        """
-        Multiplicative product of the values along the given axis. If 'axis' is
-        none, returns the product over all elements.
-        """
-        if axis is not None:
-            if not isinstance(axis, int):
-                raise TypeError("expected an integer axis, got "
-                        f"{_objtname(axis)}")
-            if axis < 0:
-                raise ValueError(f"axis cannot be negative, got {axis}")
-        return m.field._mat_prod(m, axis)
-
-    @_instconst
     def minn(m):
         """
         Minimum of all elements, alias for 'm.minn_along(None)'.
@@ -2907,6 +3423,45 @@ def Matrix(field, shape):
             if axis < 0:
                 raise ValueError(f"axis cannot be negative, got {axis}")
         return m.field._mat_maxx(m, axis)
+
+
+    @_instconst
+    def summ(m):
+        """
+        Sum of all elements, alias for 'm.summ_along(None)'.
+        """
+        return m.summ_along(None)
+    def summ_along(m, axis):
+        """
+        Additive sum of the values along the given axis. If 'axis' is none,
+        returns the sum over all elements.
+        """
+        if axis is not None:
+            if not isinstance(axis, int):
+                raise TypeError("expected an integer axis, got "
+                        f"{_objtname(axis)}")
+            if axis < 0:
+                raise ValueError(f"axis cannot be negative, got {axis}")
+        return m.field._mat_summ(m, axis)
+
+    @_instconst
+    def prod(m):
+        """
+        Product of all elements, alias for 'm.prod_along(None)'.
+        """
+        return m.prod_along(None)
+    def prod_along(m, axis):
+        """
+        Multiplicative product of the values along the given axis. If 'axis' is
+        none, returns the product over all elements.
+        """
+        if axis is not None:
+            if not isinstance(axis, int):
+                raise TypeError("expected an integer axis, got "
+                        f"{_objtname(axis)}")
+            if axis < 0:
+                raise ValueError(f"axis cannot be negative, got {axis}")
+        return m.field._mat_prod(m, axis)
 
     @_instconst
     def mean(m):
@@ -3233,14 +3788,12 @@ class Int(RealField):
     @classmethod
     def sgn(cls, a):
         raise (a > 0) - (a < 0)
-
     @classmethod
     def add(cls, a, b):
         return a + b
     @classmethod
     def sub(cls, a, b):
         return a - b
-
     @classmethod
     def mul(cls, a, b):
         return a * b
@@ -3251,7 +3804,9 @@ class Int(RealField):
             raise TypeError(f"expected integer division result over int, got: "
                     f"{a} / {b}")
         return a // b
-
+    @classmethod
+    def mod(cls, a, b):
+        return a % b
     @classmethod
     def power(cls, a, b):
         if b < 0:
@@ -3449,6 +4004,8 @@ class Float(RealField):
             "__1__": 1.0,
             "__e__": _math.e,
             "__pi__": _math.pi,
+            "__inf__": float("inf"),
+            "__nan__": float("nan"),
         }
 
     @classmethod
@@ -3464,14 +4021,15 @@ class Float(RealField):
     @classmethod
     def sub(cls, a, b):
         return a - b
-
     @classmethod
     def mul(cls, a, b):
         return a * b
     @classmethod
     def div(cls, a, b):
         return a / b
-
+    @classmethod
+    def mod(cls, a, b):
+        return a % b
     @classmethod
     def power(cls, a, b):
         return a ** b
@@ -3483,6 +4041,19 @@ class Float(RealField):
         return _math.log(b) / _math.log(a)
 
     @classmethod
+    def floor(cls, a):
+        return _math.floor(a)
+    @classmethod
+    def ceil(cls, a):
+        return _math.ceil(a)
+    @classmethod
+    def trunc(cls, a):
+        return _math.trunc(a)
+    @classmethod
+    def rint(cls, a):
+        return _math.floor(a + 0.5) if (a > 0) else _math.ceil(a - 0.5)
+
+    @classmethod
     def sin(cls, a):
         return _math.sin(a)
     @classmethod
@@ -3491,6 +4062,15 @@ class Float(RealField):
     @classmethod
     def tan(cls, a):
         return _math.tan(a)
+    @classmethod
+    def csc(cls, a):
+        return 1 / _math.sin(a)
+    @classmethod
+    def sec(cls, a):
+        return 1 / _math.cos(a)
+    @classmethod
+    def cot(cls, a):
+        return 1 / _math.tan(a)
 
     @classmethod
     def asin(cls, a):
@@ -3501,6 +4081,54 @@ class Float(RealField):
     @classmethod
     def atan(cls, a):
         return _math.atan(a)
+    @classmethod
+    def acsc(cls, a):
+        return _math.asin(1 / a)
+    @classmethod
+    def asec(cls, a):
+        return _math.acos(1 / a)
+    @classmethod
+    def acot(cls, a):
+        return _math.atan(1 / a)
+
+    @classmethod
+    def sinh(cls, a):
+        return _math.sinh(a)
+    @classmethod
+    def cosh(cls, a):
+        return _math.cosh(a)
+    @classmethod
+    def tanh(cls, a):
+        return _math.tanh(a)
+    @classmethod
+    def csch(cls, a):
+        return 1 / _math.sinh(a)
+    @classmethod
+    def sech(cls, a):
+        return 1 / _math.cosh(a)
+    @classmethod
+    def coth(cls, a):
+        return 1 / _math.tanh(a)
+
+    @classmethod
+    def asinh(cls, a):
+        return _math.asinh(a)
+    @classmethod
+    def acosh(cls, a):
+        return _math.acosh(a)
+    @classmethod
+    def atanh(cls, a):
+        return _math.atanh(a)
+    @classmethod
+    def acsch(cls, a):
+        return _math.asinh(1 / a)
+    @classmethod
+    def asech(cls, a):
+        return _math.acosh(1 / a)
+    @classmethod
+    def acoth(cls, a):
+        return _math.atanh(1 / a)
+
     @classmethod
     def atan2(cls, y, x):
         return _math.atan2(y, x)
@@ -3524,6 +4152,13 @@ class Float(RealField):
         # note this isn't the same as `a == b || a < b` over the field, since ==
         # allows imprecision.
         return a <= b
+
+    @classmethod
+    def isinf(cls, a):
+        return _math.isinf(a)
+    @classmethod
+    def isnan(cls, a):
+        return _math.isnan(a)
 
     @classmethod
     def issame(cls, a, b):
@@ -3591,6 +4226,11 @@ class Float(RealField):
     def _mat_ones(cls, M):
         cells = _np.ones(M.shape.tonumpy, dtype=cls.dtype())
         return M(cells)
+    @classmethod
+    def _mat_full(cls, M, value):
+        val = value.obj
+        cells = _np.full(M.shape.tonumpy, val, dtype=cls.dtype())
+        return M(cells)
 
 
     @classmethod
@@ -3621,6 +4261,10 @@ class Float(RealField):
     @classmethod
     def _mat_div(cls, m, o):
         cells = m._cells / o._cells
+        return type(m)(cells)
+    @classmethod
+    def _mat_mod(cls, m, o):
+        cells = m._cells % o._cells
         return type(m)(cells)
 
     @classmethod
@@ -3671,6 +4315,24 @@ class Float(RealField):
         return type(m)(cells)
 
     @classmethod
+    def _mat_floor(cls, m):
+        cells = _np.floor(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_ceil(cls, m):
+        cells = _np.ceil(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_trunc(cls, m):
+        cells = _np.trunc(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_rint(cls, m):
+        cells = _np.floor(m._cells + 0.5)
+        cells[m._cells < 0] = _np.ceil(m._cells[m._cells < 0] - 0.5)
+        return type(m)(cells)
+
+    @classmethod
     def _mat_sin(cls, m):
         cells = _np.sin(m._cells)
         return type(m)(cells)
@@ -3681,6 +4343,18 @@ class Float(RealField):
     @classmethod
     def _mat_tan(cls, m):
         cells = _np.tan(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_csc(cls, m):
+        cells = 1 / _np.sin(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_sec(cls, m):
+        cells = 1 / _np.cos(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_cot(cls, m):
+        cells = 1 / _np.tan(m._cells)
         return type(m)(cells)
 
     @classmethod
@@ -3695,6 +4369,69 @@ class Float(RealField):
     def _mat_atan(cls, m):
         cells = _np.atan(m._cells)
         return type(m)(cells)
+    @classmethod
+    def _mat_acsc(cls, m):
+        cells = _np.asin(1 / m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_asec(cls, m):
+        cells = _np.acos(1 / m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_acot(cls, m):
+        cells = _np.atan(1 / m._cells)
+        return type(m)(cells)
+
+    @classmethod
+    def _mat_sinh(cls, m):
+        cells = _np.sinh(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_cosh(cls, m):
+        cells = _np.cosh(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_tanh(cls, m):
+        cells = _np.tanh(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_csch(cls, m):
+        cells = 1 / _np.sinh(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_sech(cls, m):
+        cells = 1 / _np.cosh(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_coth(cls, m):
+        cells = 1 / _np.tanh(m._cells)
+        return type(m)(cells)
+
+    @classmethod
+    def _mat_asinh(cls, m):
+        cells = _np.asinh(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_acosh(cls, m):
+        cells = _np.acosh(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_atanh(cls, m):
+        cells = _np.atanh(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_acsch(cls, m):
+        cells = _np.asinh(1 / m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_asech(cls, m):
+        cells = _np.acosh(1 / m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_acoth(cls, m):
+        cells = _np.atanh(1 / m._cells)
+        return type(m)(cells)
+
     @classmethod
     def _mat_atan2(cls, y, x):
         cells = _np.atan2(y._cells, x._cells)
@@ -3730,6 +4467,19 @@ class Float(RealField):
     @classmethod
     def _mat_le(cls, m, o):
         cells = (m._cells <= o._cells)
+        return Matrix[bool, m.shape](cells)
+
+    @classmethod
+    def _mat_isinf(cls, m):
+        cells = _np.isinf(m._cells)
+        return Matrix[bool, m.shape](cells)
+    @classmethod
+    def _mat_isnan(cls, m):
+        cells = _np.isnan(m._cells)
+        return Matrix[bool, m.shape](cells)
+    @classmethod
+    def _mat_isfinite(cls, m):
+        cells = _np.isfinite(m._cells)
         return Matrix[bool, m.shape](cells)
 
     @classmethod
@@ -3871,6 +4621,8 @@ class Complex(Field):
             "__i__": 1j,
             "__e__": complex(_math.e),
             "__pi__": complex(_math.pi),
+            "__inf__": complex("inf"),
+            "__nan__": complex("nan+nanj"),
         }
 
     @classmethod
@@ -3879,10 +4631,14 @@ class Complex(Field):
     @classmethod
     def imag(cls, a):
         return complex(a.imag)
-
     @classmethod
     def abs(cls, a):
         return complex(abs(a))
+    @classmethod
+    def angle(cls, a):
+        if a == 0:
+            return complex(0)
+        return complex(_math.atan2(a.imag, a.real))
     @classmethod
     def sgn(cls, a):
         if a == 0:
@@ -3895,14 +4651,18 @@ class Complex(Field):
     @classmethod
     def sub(cls, a, b):
         return a - b
-
     @classmethod
     def mul(cls, a, b):
         return a * b
     @classmethod
     def div(cls, a, b):
         return a / b
-
+    @classmethod
+    def mod(cls, a, b):
+        if a.imag == 0.0 and b.imag == 0.0:
+            return a % b
+        raise TypeError(f"cannot do modulus over complex values, got: {a}, and: "
+                f"{b}")
     @classmethod
     def power(cls, a, b):
         return a ** b
@@ -3914,6 +4674,20 @@ class Complex(Field):
         return _cmath.log(b) / _cmath.log(a)
 
     @classmethod
+    def floor(cls, a):
+        return _math.floor(a.real) + 1j * _math.floor(a.imag)
+    @classmethod
+    def ceil(cls, a):
+        return _math.ceil(a.real) + 1j * _math.ceil(a.imag)
+    @classmethod
+    def trunc(cls, a):
+        return _math.trunc(a.real) + 1j * _math.trunc(a.imag)
+    @classmethod
+    def rint(cls, a):
+        rnd = lambda x: _math.floor(x + 0.5) if (x > 0) else _math.ceil(x - 0.5)
+        return rnd(a.real) + 1j * rnd(a.imag)
+
+    @classmethod
     def sin(cls, a):
         return _cmath.sin(a)
     @classmethod
@@ -3922,6 +4696,15 @@ class Complex(Field):
     @classmethod
     def tan(cls, a):
         return _cmath.tan(a)
+    @classmethod
+    def csc(cls, a):
+        return 1 / _cmath.sin(a)
+    @classmethod
+    def sec(cls, a):
+        return 1 / _cmath.cos(a)
+    @classmethod
+    def cot(cls, a):
+        return 1 / _cmath.tan(a)
 
     @classmethod
     def asin(cls, a):
@@ -3933,11 +4716,59 @@ class Complex(Field):
     def atan(cls, a):
         return _cmath.atan(a)
     @classmethod
+    def acsc(cls, a):
+        return _cmath.asin(1 / a)
+    @classmethod
+    def asec(cls, a):
+        return _cmath.acos(1 / a)
+    @classmethod
+    def acot(cls, a):
+        return _cmath.atan(1 / a)
+
+    @classmethod
+    def sinh(cls, a):
+        return _cmath.sinh(a)
+    @classmethod
+    def cosh(cls, a):
+        return _cmath.cosh(a)
+    @classmethod
+    def tanh(cls, a):
+        return _cmath.tanh(a)
+    @classmethod
+    def csch(cls, a):
+        return 1 / _cmath.sinh(a)
+    @classmethod
+    def sech(cls, a):
+        return 1 / _cmath.cosh(a)
+    @classmethod
+    def coth(cls, a):
+        return 1 / _cmath.tanh(a)
+
+    @classmethod
+    def asinh(cls, a):
+        return _cmath.asinh(a)
+    @classmethod
+    def acosh(cls, a):
+        return _cmath.acosh(a)
+    @classmethod
+    def atanh(cls, a):
+        return _cmath.atanh(a)
+    @classmethod
+    def acsch(cls, a):
+        return _cmath.asinh(1 / a)
+    @classmethod
+    def asech(cls, a):
+        return _cmath.acosh(1 / a)
+    @classmethod
+    def acoth(cls, a):
+        return _cmath.atanh(1 / a)
+
+    @classmethod
     def atan2(cls, y, x):
-        if a.imag == 0.0 and b.imag == 0.0:
+        if y.imag == 0.0 and x.imag == 0.0:
             return complex(_math.atan2(y.real, x.real))
-        raise TypeError("cannot perform quadrant-aware atan on complex, got: "
-                f"{a}, and {b}")
+        raise TypeError("cannot perform quadrant-aware atan on complex values, "
+                f"got: {y}, and: {x}")
 
     @classmethod
     def comparison_field(cls):
@@ -3954,12 +4785,19 @@ class Complex(Field):
     def lt(cls, a, b):
         if a.imag == 0.0 and b.imag == 0.0:
             return a.real < b.real
-        raise TypeError("cannot order complex (values were not all real)")
+        raise TypeError(f"cannot order complex values, got: {a}, and: {b}")
     @classmethod
     def le(cls, a, b):
         if a.imag == 0.0 and b.imag == 0.0:
             return a.real <= b.real
-        raise TypeError("cannot order complex (values were not all real)")
+        raise TypeError(f"cannot order complex values, got: {a}, and: {b}")
+
+    @classmethod
+    def isinf(cls, a):
+        return _cmath.isinf(a)
+    @classmethod
+    def isnan(cls, a):
+        return _cmath.isnan(a)
 
     @classmethod
     def issame(cls, a, b):
@@ -4032,6 +4870,11 @@ class Complex(Field):
     def _mat_ones(cls, M):
         cells = _np.ones(M.shape.tonumpy, dtype=cls.dtype())
         return M(cells)
+    @classmethod
+    def _mat_full(cls, M, value):
+        val = value.obj
+        cells = _np.full(M.shape.tonumpy, val, dtype=cls.dtype())
+        return M(cells)
 
 
     @classmethod
@@ -4080,6 +4923,15 @@ class Complex(Field):
     def _mat_div(cls, m, o):
         cells = m._cells / o._cells
         return type(m)(cells)
+    @classmethod
+    def _mat_mod(cls, m, o):
+        a = m._cells
+        b = o._cells
+        if (a.imag == 0.0).all() and (b.imag == 0.0).all():
+            cells = (a.real % b.real).astype(cls.dtype())
+            return type(m)(cells)
+        raise ValueError("cannot do modulus over complex values, got non-zero "
+                "imaginary components")
 
     @classmethod
     def _mat_exp(cls, m):
@@ -4129,6 +4981,27 @@ class Complex(Field):
         return type(m)(cells)
 
     @classmethod
+    def _mat_floor(cls, m):
+        cells = _np.floor(m._cells.real) + 1j * _np.floor(m._cells.imag)
+        return type(m)(cells)
+    @classmethod
+    def _mat_ceil(cls, m):
+        cells = _np.ceil(m._cells.real) + 1j * _np.ceil(m._cells.imag)
+        return type(m)(cells)
+    @classmethod
+    def _mat_trunc(cls, m):
+        cells = _np.trunc(m._cells.real) + 1j * _np.trunc(m._cells.imag)
+        return type(m)(cells)
+    @classmethod
+    def _mat_rint(cls, m):
+        def rnd(x):
+            y = _np.floor(x + 0.5)
+            y[x < 0] = _np.ceil(x[x < 0] - 0.5)
+            return y
+        cells = rnd(m._cells.real) + 1j * rnd(m._cells.imag)
+        return type(m)(cells)
+
+    @classmethod
     def _mat_sin(cls, m):
         cells = _np.sin(m._cells)
         return type(m)(cells)
@@ -4139,6 +5012,18 @@ class Complex(Field):
     @classmethod
     def _mat_tan(cls, m):
         cells = _np.tan(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_csc(cls, m):
+        cells = 1 / _np.sin(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_sec(cls, m):
+        cells = 1 / _np.cos(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_cot(cls, m):
+        cells = 1 / _np.tan(m._cells)
         return type(m)(cells)
 
     @classmethod
@@ -4154,15 +5039,76 @@ class Complex(Field):
         cells = _np.atan(m._cells)
         return type(m)(cells)
     @classmethod
+    def _mat_acsc(cls, m):
+        cells = _np.asin(1 / m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_asec(cls, m):
+        cells = _np.acos(1 / m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_acot(cls, m):
+        cells = _np.atan(1 / m._cells)
+        return type(m)(cells)
+
+    @classmethod
+    def _mat_sinh(cls, m):
+        cells = _np.sinh(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_cosh(cls, m):
+        cells = _np.cosh(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_tanh(cls, m):
+        cells = _np.tanh(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_csch(cls, m):
+        cells = 1 / _np.sinh(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_sech(cls, m):
+        cells = 1 / _np.cosh(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_coth(cls, m):
+        cells = 1 / _np.tanh(m._cells)
+        return type(m)(cells)
+
+    @classmethod
+    def _mat_asinh(cls, m):
+        cells = _np.asinh(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_acosh(cls, m):
+        cells = _np.acosh(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_atanh(cls, m):
+        cells = _np.atanh(m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_acsch(cls, m):
+        cells = _np.asinh(1 / m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_asech(cls, m):
+        cells = _np.acosh(1 / m._cells)
+        return type(m)(cells)
+    @classmethod
+    def _mat_acoth(cls, m):
+        cells = _np.atanh(1 / m._cells)
+        return type(m)(cells)
+
+    @classmethod
     def _mat_atan2(cls, y, x):
-        a = y._cells
-        b = x._cells
-        if not (a.imag == 0.0).all():
-            raise ValueError("cannot do quadrant-aware atan over complex, got "
-                    "non-zero imaginary components")
-        a = a.real
-        b = b.real
-        cells = _np.atan2(a, b)
+        b = y._cells
+        a = x._cells
+        if not ((a.imag == 0.0).all() and (b.imag == 0.0).all()):
+            raise ValueError("cannot do quadrant-aware atan over complex "
+                    "values, got non-zero imaginary components")
+        cells = _np.atan2(b.real, a.real)
         # complex me.
         cells = cells.astype(cls.dtype())
         return type(y)(cells)
@@ -4217,6 +5163,19 @@ class Complex(Field):
         mre = m._cells.real
         ore = o._cells.real
         cells = (mre <= ore)
+        return Matrix[bool, m.shape](cells)
+
+    @classmethod
+    def _mat_isinf(cls, m):
+        cells = _np.isinf(m._cells)
+        return Matrix[bool, m.shape](cells)
+    @classmethod
+    def _mat_isnan(cls, m):
+        cells = _np.isnan(m._cells)
+        return Matrix[bool, m.shape](cells)
+    @classmethod
+    def _mat_isfinite(cls, m):
+        cells = _np.isfinite(m._cells)
         return Matrix[bool, m.shape](cells)
 
     @classmethod
@@ -4418,6 +5377,11 @@ class Bool(Field):
     def _mat_ones(cls, M):
         cells = _np.ones(M.shape.tonumpy, dtype=cls.dtype())
         return M(cells)
+    @classmethod
+    def _mat_full(cls, M, value):
+        val = value.obj
+        cells = _np.full(M.shape.tonumpy, val, dtype=cls.dtype())
+        return M(cells)
 
     @classmethod
     def _mat_all(cls, m):
@@ -4513,177 +5477,396 @@ def isempty(x):
 
 
 
-def castall(xs, broadcast=True, *, field=None):
+def castall(ms, broadcast=True, *, field=None):
     """
     When given an sequence of values/matrices, returns them as matrices cast to
     the same field and (optionally) broadcast to the same shape.
     """
-    if not _iterable(xs):
-        raise TypeError(f"expected an iterable for xs, got {_objtname(xs)}")
-    xs = list(xs)
-    if not xs:
+    if not _iterable(ms):
+        raise TypeError(f"expected an iterable 'ms', got {_objtname(ms)}")
+    ms = list(ms)
+    if not ms:
         return ()
-    for x in xs:
-        if isinstance(x, Matrix):
-            Mat = type(x)
+    for m in ms:
+        if isinstance(m, Matrix):
+            Mat = type(m)
             break
     else:
         Mat = Single[_get_field(field)]
-    return Mat.cast(*xs, broadcast=broadcast)
+    return Mat.cast(*ms, broadcast=broadcast)
 
 
 
-def alll(*xs, field=None):
+def flip(m, *axes, field=None):
     """
-    Alias for 'xs[0].alll and xs[1].alll and ...'.
+    Alias for 'm.flip(*axes)'.
     """
-    xs = castall(xs, field=field)
-    return all([x.alll for x in xs]) # dont shortcircuit.
-def anyy(*xs, field=None):
+    m, = castall([m], field=field)
+    return m.flip(*axes)
+def flipud(m, *, field=None):
     """
-    Alias for 'xs[0].anyy or xs[1].anyy or ...'.
+    Alias for 'm.flipud'.
     """
-    xs = castall(xs, field=field)
-    return any([x.anyy for x in xs]) # dont shortcircuit.
-def always(x, *, field=None):
+    m, = castall([m], field=field)
+    return m.flipud
+def fliplr(m, *, field=None):
     """
-    Alias for 'x.always'.
+    Alias for 'm.fliplr'.
     """
-    x, = castall([x], field=field)
-    return x.always
-def anytime(x, *, field=None):
+    m, = castall([m], field=field)
+    return m.fliplr
+def tile(m, *counts, field=None):
     """
-    Alias for 'x.anytime'.
+    Alias for 'm.tile(*counts)'.
     """
-    x, = castall([x], field=field)
-    return x.anytime
+    m, = castall([m], field=field)
+    return m.tile(*counts)
+def tile_along(m, axis, count, *, field=None):
+    """
+    Alias for 'm.tile_along(axis, count)'.
+    """
+    m, = castall([m], field=field)
+    return m.tile_along(axis, count)
+def rep(m, *counts, field=None):
+    """
+    Alias for 'm.rep(*counts)'.
+    """
+    m, = castall([m], field=field)
+    return m.rep(*counts)
+def rep_along(m, axis, count, *, field=None):
+    """
+    Alias for 'm.rep_along(axis, count)'.
+    """
+    m, = castall([m], field=field)
+    return m.rep_along(axis, count)
+def roll(m, axis, by, *, field=None):
+    """
+    Alias for 'm.roll(axis, count)'.
+    """
+    m, = castall([m], field=field)
+    return m.roll(axis, count)
 
-def det(x, *, field=None):
+def inv(m, *, field=None):
     """
-    Alias for 'x.det'.
+    Alias for 'm.inv'.
     """
-    x, = castall([x], field=field)
-    return x.det
-def trace(x, *, field=None):
+    m, = castall([m], field=field)
+    return m.inv
+def det(m, *, field=None):
     """
-    Alias for 'x.trace'.
+    Alias for 'm.det'.
     """
-    x, = castall([x], field=field)
-    return x.trace
-def norm(x, *, field=None):
+    m, = castall([m], field=field)
+    return m.det
+def trace(m, *, field=None):
     """
-    Alias for 'x.norm'.
+    Alias for 'm.trace'.
     """
-    x, = castall([x], field=field)
-    return x.norm
-def dot(x, y, *, field=None):
+    m, = castall([m], field=field)
+    return m.trace
+def norm(m, *, field=None):
     """
-    Alias for 'x.dot(y)'.
+    Alias for 'm.norm'.
     """
-    x, y = castall([x, y], field=field, broadcast=False)
-    return x.dot(y)
-def cross(x, y, *, field=None):
+    m, = castall([m], field=field)
+    return m.norm
+def dot(m, y, *, field=None):
     """
-    Alias for 'x.cross(y)'.
+    Alias for 'm.dot(y)'.
     """
-    x, y = castall([x, y], field=field, broadcast=False)
-    return x.cross(y)
-def sqrt(x, *, field=None):
+    m, y = castall([m, y], field=field, broadcast=False)
+    return m.dot(y)
+def cross(m, y, *, field=None):
     """
-    Alias for 'x.sqrt'.
+    Alias for 'm.cross(y)'.
     """
-    x, = castall([x], field=field)
-    return x.sqrt
-def cbrt(x, *, field=None):
+    m, y = castall([m, y], field=field, broadcast=False)
+    return m.cross(y)
+
+def alll(*ms, field=None):
     """
-    Alias for 'x.cbrt'.
+    Alias for 'ms[0].alll and ms[1].alll and ...'.
     """
-    x, = castall([x], field=field)
-    return x.cbrt
-def root(base, x, *, field=None):
+    ms = castall(ms, field=field)
+    return all([m.alll for m in ms]) # dont shortcircuit.
+def anyy(*ms, field=None):
     """
-    Alias for 'x.root(base)'.
+    Alias for 'ms[0].anyy or ms[1].anyy or ...'.
     """
-    x, = castall([x], field=field)
-    return x.root(base)
-def exp(x, *, field=None):
+    ms = castall(ms, field=field)
+    return any([m.anyy for m in ms]) # dont shortcircuit.
+def always(m, *, field=None):
     """
-    Alias for 'x.exp'.
+    Alias for 'm.always'.
     """
-    x, = castall([x], field=field)
-    return x.exp
-def exp2(x, *, field=None):
+    m, = castall([m], field=field)
+    return m.always
+def anytime(m, *, field=None):
     """
-    Alias for 'x.exp2'.
+    Alias for 'm.anytime'.
     """
-    x, = castall([x], field=field)
-    return x.exp2
-def exp10(x, *, field=None):
+    m, = castall([m], field=field)
+    return m.anytime
+
+def real(m, *, field=None):
     """
-    Alias for 'x.exp10'.
+    Alias for 'm.real'.
     """
-    x, = castall([x], field=field)
-    return x.exp10
-def ln(x, *, field=None):
+    m, = castall([m], field=field)
+    return m.real
+def imag(m, *, field=None):
     """
-    Alias for 'x.ln'.
+    Alias for 'm.imag'.
     """
-    x, = castall([x], field=field)
-    return x.ln
-def log2(x, *, field=None):
+    m, = castall([m], field=field)
+    return m.imag
+def conj(m, *, field=None):
     """
-    Alias for 'x.log2'.
+    Alias for 'm.conj'.
     """
-    x, = castall([x], field=field)
-    return x.log2
-def log10(x, *, field=None):
+    m, = castall([m], field=field)
+    return m.conj
+def angle(m, *, field=None):
     """
-    Alias for 'x.log10'.
+    Alias for 'm.angle'.
     """
-    x, = castall([x], field=field)
-    return x.log10
-def log(base, x, *, field=None):
+    m, = castall([m], field=field)
+    return m.angle
+def sgn(m, *, field=None):
     """
-    Alias for 'x.log(base)'.
+    Alias for 'm.sgn'.
     """
-    x, = castall([x], field=field)
-    return x.log(base)
-def sin(x, *, field=None):
+    m, = castall([m], field=field)
+    return m.sgn
+
+def sqrt(m, *, field=None):
     """
-    Alias for 'x.sin'.
+    Alias for 'm.sqrt'.
     """
-    x, = castall([x], field=field)
-    return x.sin
-def cos(x, *, field=None):
+    m, = castall([m], field=field)
+    return m.sqrt
+def cbrt(m, *, field=None):
     """
-    Alias for 'x.cos'.
+    Alias for 'm.cbrt'.
     """
-    x, = castall([x], field=field)
-    return x.cos
-def tan(x, *, field=None):
+    m, = castall([m], field=field)
+    return m.cbrt
+def root(base, m, *, field=None):
     """
-    Alias for 'x.tan'.
+    Alias for 'm.root(base)'.
     """
-    x, = castall([x], field=field)
-    return x.tan
-def asin(x, *, field=None):
+    m, = castall([m], field=field)
+    return m.root(base)
+def exp(m, *, field=None):
     """
-    Alias for 'x.asin'.
+    Alias for 'm.exp'.
     """
-    x, = castall([x], field=field)
-    return x.asin
-def acos(x, *, field=None):
+    m, = castall([m], field=field)
+    return m.exp
+def exp2(m, *, field=None):
     """
-    Alias for 'x.acos'.
+    Alias for 'm.exp2'.
     """
-    x, = castall([x], field=field)
-    return x.acos
-def atan(x, *, field=None):
+    m, = castall([m], field=field)
+    return m.exp2
+def exp10(m, *, field=None):
     """
-    Alias for 'x.atan'.
+    Alias for 'm.exp10'.
     """
-    x, = castall([x], field=field)
-    return x.atan
+    m, = castall([m], field=field)
+    return m.exp10
+def ln(m, *, field=None):
+    """
+    Alias for 'm.ln'.
+    """
+    m, = castall([m], field=field)
+    return m.ln
+def log2(m, *, field=None):
+    """
+    Alias for 'm.log2'.
+    """
+    m, = castall([m], field=field)
+    return m.log2
+def log10(m, *, field=None):
+    """
+    Alias for 'm.log10'.
+    """
+    m, = castall([m], field=field)
+    return m.log10
+def log(base, m, *, field=None):
+    """
+    Alias for 'm.log(base)'.
+    """
+    m, = castall([m], field=field)
+    return m.log(base)
+def floor(m, *, field=None):
+    """
+    Alias for 'm.floor'.
+    """
+    m, = castall([m], field=field)
+    return m.floor
+def ceil(m, *, field=None):
+    """
+    Alias for 'm.ceil'.
+    """
+    m, = castall([m], field=field)
+    return m.ceil
+def trunc(m, *, field=None):
+    """
+    Alias for 'm.trunc'.
+    """
+    m, = castall([m], field=field)
+    return m.trunc
+def rint(m, *, field=None):
+    """
+    Alias for 'm.rint'.
+    """
+    m, = castall([m], field=field)
+    return m.rint
+def sin(m, *, field=None):
+    """
+    Alias for 'm.sin'.
+    """
+    m, = castall([m], field=field)
+    return m.sin
+def cos(m, *, field=None):
+    """
+    Alias for 'm.cos'.
+    """
+    m, = castall([m], field=field)
+    return m.cos
+def tan(m, *, field=None):
+    """
+    Alias for 'm.tan'.
+    """
+    m, = castall([m], field=field)
+    return m.tan
+def csc(m, *, field=None):
+    """
+    Alias for 'm.csc'.
+    """
+    m, = castall([m], field=field)
+    return m.csc
+def sec(m, *, field=None):
+    """
+    Alias for 'm.sec'.
+    """
+    m, = castall([m], field=field)
+    return m.sec
+def cot(m, *, field=None):
+    """
+    Alias for 'm.cot'.
+    """
+    m, = castall([m], field=field)
+    return m.cot
+def asin(m, *, field=None):
+    """
+    Alias for 'm.asin'.
+    """
+    m, = castall([m], field=field)
+    return m.asin
+def acos(m, *, field=None):
+    """
+    Alias for 'm.acos'.
+    """
+    m, = castall([m], field=field)
+    return m.acos
+def atan(m, *, field=None):
+    """
+    Alias for 'm.atan'.
+    """
+    m, = castall([m], field=field)
+    return m.atan
+def acsc(m, *, field=None):
+    """
+    Alias for 'm.acsc'.
+    """
+    m, = castall([m], field=field)
+    return m.acsc
+def asec(m, *, field=None):
+    """
+    Alias for 'm.asec'.
+    """
+    m, = castall([m], field=field)
+    return m.asec
+def acot(m, *, field=None):
+    """
+    Alias for 'm.acot'.
+    """
+    m, = castall([m], field=field)
+    return m.acot
+def sinh(m, *, field=None):
+    """
+    Alias for 'm.sinh'.
+    """
+    m, = castall([m], field=field)
+    return m.sinh
+def cosh(m, *, field=None):
+    """
+    Alias for 'm.cosh'.
+    """
+    m, = castall([m], field=field)
+    return m.cosh
+def tanh(m, *, field=None):
+    """
+    Alias for 'm.tanh'.
+    """
+    m, = castall([m], field=field)
+    return m.tanh
+def csch(m, *, field=None):
+    """
+    Alias for 'm.csch'.
+    """
+    m, = castall([m], field=field)
+    return m.csch
+def sech(m, *, field=None):
+    """
+    Alias for 'm.sech'.
+    """
+    m, = castall([m], field=field)
+    return m.sech
+def coth(m, *, field=None):
+    """
+    Alias for 'm.coth'.
+    """
+    m, = castall([m], field=field)
+    return m.coth
+def asinh(m, *, field=None):
+    """
+    Alias for 'm.asinh'.
+    """
+    m, = castall([m], field=field)
+    return m.asinh
+def acosh(m, *, field=None):
+    """
+    Alias for 'm.acosh'.
+    """
+    m, = castall([m], field=field)
+    return m.acosh
+def atanh(m, *, field=None):
+    """
+    Alias for 'm.atanh'.
+    """
+    m, = castall([m], field=field)
+    return m.atanh
+def acsch(m, *, field=None):
+    """
+    Alias for 'm.acsch'.
+    """
+    m, = castall([m], field=field)
+    return m.acsch
+def asech(m, *, field=None):
+    """
+    Alias for 'm.asech'.
+    """
+    m, = castall([m], field=field)
+    return m.asech
+def acoth(m, *, field=None):
+    """
+    Alias for 'm.acoth'.
+    """
+    m, = castall([m], field=field)
+    return m.acoth
 def atan2(y, x, *, field=None):
     """
     Quadrant-aware 'atan(y / x)'.
@@ -4694,56 +5877,91 @@ def torad(degrees, *, field=None):
     """
     Alias for 'degrees.torad'.
     """
-    x, = castall([degrees], field=field)
-    return x.torad
+    m, = castall([degrees], field=field)
+    return m.torad
 def todeg(radians, *, field=None):
     """
     Alias for 'radians.todeg'.
     """
-    x, = castall([radians], field=field)
-    return x.todeg
-def sind(x, *, field=None):
+    m, = castall([radians], field=field)
+    return m.todeg
+def sind(m, *, field=None):
     """
-    Alias for 'x.sind'.
+    Alias for 'm.sind'.
     """
-    x, = castall([x], field=field)
-    return x.sind
-def cosd(x, *, field=None):
+    m, = castall([m], field=field)
+    return m.sind
+def cosd(m, *, field=None):
     """
-    Alias for 'x.cosd'.
+    Alias for 'm.cosd'.
     """
-    x, = castall([x], field=field)
-    return x.cosd
-def tand(x, *, field=None):
+    m, = castall([m], field=field)
+    return m.cosd
+def tand(m, *, field=None):
     """
-    Alias for 'x.tand'.
+    Alias for 'm.tand'.
     """
-    x, = castall([x], field=field)
-    return x.tand
-def asind(x, *, field=None):
+    m, = castall([m], field=field)
+    return m.tand
+def cscd(m, *, field=None):
     """
-    Alias for 'x.asind'.
+    Alias for 'm.cscd'.
     """
-    x, = castall([x], field=field)
-    return x.asind
-def acosd(x, *, field=None):
+    m, = castall([m], field=field)
+    return m.cscd
+def secd(m, *, field=None):
     """
-    Alias for 'x.acosd'.
+    Alias for 'm.secd'.
     """
-    x, = castall([x], field=field)
-    return x.acosd
-def atand(x, *, field=None):
+    m, = castall([m], field=field)
+    return m.secd
+def cotd(m, *, field=None):
     """
-    Alias for 'x.atand'.
+    Alias for 'm.cotd'.
     """
-    x, = castall([x], field=field)
-    return x.atand
+    m, = castall([m], field=field)
+    return m.cotd
+def asind(m, *, field=None):
+    """
+    Alias for 'm.asind'.
+    """
+    m, = castall([m], field=field)
+    return m.asind
+def acosd(m, *, field=None):
+    """
+    Alias for 'm.acosd'.
+    """
+    m, = castall([m], field=field)
+    return m.acosd
+def atand(m, *, field=None):
+    """
+    Alias for 'm.atand'.
+    """
+    m, = castall([m], field=field)
+    return m.atand
+def acscd(m, *, field=None):
+    """
+    Alias for 'm.acscd'.
+    """
+    m, = castall([m], field=field)
+    return m.acscd
+def asecd(m, *, field=None):
+    """
+    Alias for 'm.asecd'.
+    """
+    m, = castall([m], field=field)
+    return m.asecd
+def acotd(m, *, field=None):
+    """
+    Alias for 'm.acotd'.
+    """
+    m, = castall([m], field=field)
+    return m.acotd
 def atand2(y, x, *, field=None):
     """
     Quadrant-aware 'atand(y / x)'.
     """
-    y, x = castall([y, x], field=field)
-    return y._apply(lambda: y.field.atan2, y, x).todeg
+    return atan2(y, x, field=field).todeg
 def diff(y, x, *, field=None):
     """
     Alias for 'y.diff(x)'.
@@ -4756,112 +5974,125 @@ def intt(y, x, *bounds, field=None):
     """
     y, x = castall([y, x], field=field)
     return y.intt(x, *bounds)
-def real(x, *, field=None):
-    """
-    Alias for 'x.real'.
-    """
-    x, = castall([x], field=field)
-    return x.real
-def imag(x, *, field=None):
-    """
-    Alias for 'x.imag'.
-    """
-    x, = castall([x], field=field)
-    return x.imag
-def conj(x, *, field=None):
-    """
-    Alias for 'x.conj'.
-    """
-    x, = castall([x], field=field)
-    return x.conj
-def sgn(x, *, field=None):
-    """
-    Alias for 'x.sgn'.
-    """
-    x, = castall([x], field=field)
-    return x.sgn
 def issame(x, y, *, field=None):
     """
     Alias for 'x.issame(y)'.
     """
     x, y = castall([x, y], field=field)
     return x.issame(y)
-def summ(x, axis=None, *, field=None):
+def isreal(m, *, field=None):
     """
-    Alias for 'x.summ_along(axis)'.
+    Alias for 'x.isreal'.
     """
-    x, = castall([x], field=field)
-    return x.summ_along(axis)
-def prod(x, axis=None, *, field=None):
+    m, = castall([m], field=field)
+    return m.isreal
+def isimag(m, *, field=None):
     """
-    Alias for 'x.prod_along(axis)'.
+    Alias for 'x.isimag'.
     """
-    x, = castall([x], field=field)
-    return x.prod_along(axis)
-def minn(x, axis=None, *, field=None):
+    m, = castall([m], field=field)
+    return m.isimag
+def isinf(m, *, field=None):
     """
-    Alias for 'x.minn_along(axis)'.
+    Alias for 'm.isinf'.
     """
-    x, = castall([x], field=field)
-    return x.minn_along(axis)
-def maxx(x, axis=None, *, field=None):
+    m, = castall([m], field=field)
+    return m.isinf
+def isnan(m, *, field=None):
     """
-    Alias for 'x.maxx_along(axis)'.
+    Alias for 'm.isnan'.
     """
-    x, = castall([x], field=field)
-    return x.maxx_along(axis)
-def mean(x, axis=None, *, field=None):
+    m, = castall([m], field=field)
+    return m.isnan
+def isfinite(m, *, field=None):
     """
-    Alias for 'x.mean_along(axis)'.
+    Alias for 'm.isfinite'.
     """
-    x, = castall([x], field=field)
-    return x.mean_along(axis)
-def ave(x, axis=None, *, field=None):
+    m, = castall([m], field=field)
+    return m.isfinite
+def minn(m, axis=None, *, field=None):
     """
-    Alias for 'x.mean_along(axis)'.
+    Alias for 'm.minn_along(axis)'.
     """
-    x, = castall([x], field=field)
-    return x.mean_along(axis)
-def geomean(x, axis=None, *, field=None):
+    m, = castall([m], field=field)
+    return m.minn_along(axis)
+def maxx(m, axis=None, *, field=None):
     """
-    Alias for 'x.geomean_along(axis)'.
+    Alias for 'm.maxx_along(axis)'.
     """
-    x, = castall([x], field=field)
-    return x.geomean_along(axis)
-def harmean(x, axis=None, *, field=None):
+    m, = castall([m], field=field)
+    return m.maxx_along(axis)
+def summ(m, axis=None, *, field=None):
     """
-    Alias for 'x.harmean_along(axis)'.
+    Alias for 'm.summ_along(axis)'.
     """
-    x, = castall([x], field=field)
-    return x.harmean_along(axis)
-def quadmean(x, axis=None, *, field=None):
+    m, = castall([m], field=field)
+    return m.summ_along(axis)
+def prod(m, axis=None, *, field=None):
     """
-    Alias for 'x.quadmean_along(axis)'.
+    Alias for 'm.prod_along(axis)'.
     """
-    x, = castall([x], field=field)
-    return x.quadmean_along(axis)
+    m, = castall([m], field=field)
+    return m.prod_along(axis)
+def mean(m, axis=None, *, field=None):
+    """
+    Alias for 'm.mean_along(axis)'.
+    """
+    m, = castall([m], field=field)
+    return m.mean_along(axis)
+def ave(m, axis=None, *, field=None):
+    """
+    Alias for 'm.mean_along(axis)'.
+    """
+    m, = castall([m], field=field)
+    return m.mean_along(axis)
+def geomean(m, axis=None, *, field=None):
+    """
+    Alias for 'm.geomean_along(axis)'.
+    """
+    m, = castall([m], field=field)
+    return m.geomean_along(axis)
+def harmean(m, axis=None, *, field=None):
+    """
+    Alias for 'm.harmean_along(axis)'.
+    """
+    m, = castall([m], field=field)
+    return m.harmean_along(axis)
+def quadmean(m, axis=None, *, field=None):
+    """
+    Alias for 'm.quadmean_along(axis)'.
+    """
+    m, = castall([m], field=field)
+    return m.quadmean_along(axis)
 def logmean(x, y, *, field=None):
     """
     Logarithmic mean of 'x' and 'y': (x - y) / ln(x / y)
     """
     x, y = castall([x, y], field=field)
-    f = lambda a, b: a if (a == b) else (a - b) / (a / b).ln
+    if not alll(x > 0, y > 0):
+        raise ValueError("expected strictly positive values for logmean")
+    def f(a, b):
+        if a == 0 or b == 0:
+            return a.zero
+        if a == b:
+            return a
+        return (a - b) / (a / b).ln
     return x.apply(f, y)
 
 
-def short(x, *, field=None):
+def short(m, *, field=None):
     """
-    Prints a short string representation of 'x'.
+    Prints a short string representation of 'm'.
     """
-    x, = castall([x], field=field)
-    print(x.__repr__(short=True))
+    m, = castall([m], field=field)
+    print(m.__repr__(short=True))
 
-def long(x, *, field=None):
+def long(m, *, field=None):
     """
-    Prints a long string representation of 'x'.
+    Prints a long string representation of 'm'.
     """
-    x, = castall([x], field=field)
-    print(x.__repr__(short=False))
+    m, = castall([m], field=field)
+    print(m.__repr__(short=False))
 
 def doesdflt2short():
     """
@@ -4893,153 +6124,166 @@ dflt2long = _Dflt2(False, "Changes the default matrix print to long. Can also "
         "be used as a context manager to temporarily set.")
 
 
-def stack(axis, *xs, field=None):
+def stack(axis, *ms, field=None):
     """
     Stacks the given matrices along the given axis.
     """
-    xs = _maybe_unpack_mats(xs)
-    xs = castall(xs, field=field, broadcast=False)
-    field = _get_field(field, xs)
+    ms = _maybe_unpack_mats(ms)
+    ms = castall(ms, field=field, broadcast=False)
+    field = _get_field(field, ms)
     if not isinstance(axis, int):
         raise TypeError(f"expected an integer axis, got {_objtname(axis)}")
     if axis < 0:
         raise ValueError(f"axis cannot be negative, got: {axis}")
 
     # Stacking empty do NOTHIGN and stacking nothign do EMPTY.
-    if not xs:
+    if not ms:
         return empty(field)
-    if all(x.isempty for x in xs):
+    if all(m.isempty for m in ms):
         return empty(field)
 
     # Huge stack of one item.
-    if len(xs) == 1:
-        return xs[0]
+    if len(ms) == 1:
+        return ms[0]
 
     # Check perpendicular sizes.
-    perpshape = xs[0].shape.withaxis(axis, 1)
-    for x in xs:
-        if x.shape.withaxis(axis, 1) != perpshape:
+    perpshape = ms[0].shape.withaxis(axis, 1)
+    for m in ms:
+        if m.shape.withaxis(axis, 1) != perpshape:
             raise TypeError(f"expected a perpendicular shape of {perpshape} for "
-                    f"stacking, got {x.shape}")
+                    f"stacking, got {m.shape}")
     # Get all cells with the right number of dimensions.
-    ndim = max(xs[0].ndim, axis + 1)
-    ys = [x._cells for x in xs]
+    ndim = max(ms[0].ndim, axis + 1)
+    ys = [x._cells for x in ms]
     ys = [y[(None,) * (ndim - y.ndim)] for y in ys]
     npaxis = Permuter.tonumpyaxis(ndim, axis)
     cells = _np.concatenate(ys, axis=npaxis)
     return Matrix.fromnumpy(field, cells)
-
-def vstack(*xs, field=None):
+def vstack(*ms, field=None):
     """
     Vertically concatenates the given matrices.
     """
-    return stack(0, *xs, field=field)
-
-def hstack(*xs, field=None):
+    return stack(0, *ms, field=field)
+def hstack(*ms, field=None):
     """
     Horizontally concatenates the given matrices.
     """
-    return stack(1, *xs, field=field)
+    return stack(1, *ms, field=field)
+def matstack(*ms, field=None):
+    """
+    Concatenates the given matrices along the third axis (index 2).
+    """
+    return stack(2, *ms, field=field)
 
-def ravel(*xs, field=None):
+def ravel(*ms, field=None):
     """
     Concatenated vector of the raveled cells of all given matrices.
     """
-    xs = _maybe_unpack_mats(xs)
-    xs = castall(xs, field=field, broadcast=False)
-    field = _get_field(field, xs)
-    cells = _np.concatenate([x.ravel.numpyvec() for x in xs])
+    ms = _maybe_unpack_mats(ms)
+    ms = castall(ms, field=field, broadcast=False)
+    field = _get_field(field, ms)
+    if len(ms) == 0:
+        return empty(field)
+    cells = _np.concatenate([m.ravel.numpyvec() for m in ms])
     return Matrix.fromnumpy(field, cells)
 
-def rep(x, *counts, field=None):
+def tovec(*ms, field=None):
     """
-    Repeats the given matrix the given number of times along each dimension.
+    Concatenated column vector of the given matrices, values, or iterables.
     """
-    x, = castall([x], field=field)
-    return x.rep(*counts)
-
-def rep_along(x, axis, count, *, field=None):
-    """
-    Repeats the given matrix 'count' times along 'axis'.
-    """
-    x, = castall([x], field=field)
-    return x.rep_along(axis, count)
-
-def tovec(*xs, field=None):
-    """
-    Concatenated column vector of the given values and iterables.
-    """
-    # dont maybe unpack xs lmao.
+    # dont maybe unpack ms lmao.
     concat = []
-    for x in xs:
-        if not _iterable(x):
-            x, = castall([x], field=field)
-        if isinstance(x, Matrix):
+    for m in ms:
+        if isinstance(m, Matrix) or not _iterable(m):
+            m = [m]
+        for x in m:
+            if not isinstance(x, Matrix):
+                x, = castall([x], field=field, broadcast=False)
+            field = _get_field(field, [x])
             if not x.isvec:
-                raise TypeError("expected vectors to concatenate into column, "
-                        f"got {x.shape}")
-            concat.append(x.numpyvec())
-            if field is None:
-                field = x.field
-            continue
-        for y in x:
-            if not isinstance(y, Matrix):
-                y, = castall([y], field=field)
-            if not y.isvec:
                 raise TypeError("expected iterable to contain vectors to "
-                        f"concatenate into column, got {y.shape}")
-            if field is None:
-                field = y.field
-            concat.append(y.numpyvec())
+                        f"concatenate into column, got {x.shape}")
+            concat.append(x.numpyvec())
     field = _get_field(field)
+    if len(concat) == 0:
+        return empty(field)
     cells = _np.concatenate(concat)
     return Matrix.fromnumpy(field, cells)
 
 
 def eye(n, *, field=None):
     """
-    2D identity matrix, of the given size.
+    2D identity matrix of the given size.
     """
     field = _get_field(field)
     if not isinstance(n, int):
         raise TypeError(f"expected an integer size, got {_objtname(n)}")
     if n < 0:
-        raise ValueError(f"cannot have negative size, got: {n}")
-    return Matrix[field, (n, n)].eye
+        raise ValueError(f"size cannot be negative, got: {n}")
+    return Matrix[field, Shape(n, n)].eye
 
 def zeros(*lens, field=None):
     """
-    Zero-filled matrix of the given size, defaulting to square if only one axis
-    length is given.
+    Zero-filled matrix with the given axis lengths.
     """
     field = _get_field(field)
-    shape = Shape.sqrshape(*lens)
+    shape = Shape(*lens)
     return Matrix[field, shape].zeros
 
 def ones(*lens, field=None):
     """
-    One-filled matrix of the given size, defaulting to square if only one axis
-    length is given.
+    One-filled matrix with the given axis lengths.
     """
     field = _get_field(field)
-    shape = Shape.sqrshape(*lens)
+    shape = Shape(*lens)
     return Matrix[field, shape].ones
 
-def diag(x, *, field=None):
+def full(value, *lens, field=None):
     """
-    If given a vector, returns a diagonal matrix with that diagonal. If given a
-    matrix, returns the diagonal of that matrix.
+    Matrix filled with the given value and the given axis lengths.
     """
-    x, = castall([x], field=field)
-    field = _get_field(field, [x])
-    if x.isempty or x.issingle:
-        return x
-    if not x.isvec:
-        return x.diag
-    Mat = Matrix[field, Shape(x.size, x.size)]
-    cells = Mat.zeros._cells.copy()
-    _np.fill_diagonal(cells, x.numpyvec())
-    return Mat(cells)
+    value, = castall([value], field=field)
+    field = _get_field(field, [value])
+    shape = Shape(*lens)
+    return Matrix[field, shape].full(value)
+
+def diag(*ms, k=None, emptyok=False, field=None):
+    """
+    If given a matrix, returns the 'k'-th diagonal of that matrix (defaulting to
+    the main diagonal). Otherwise, concatenates all given vectors and returns a
+    square matrix with that vector as the 'k'-th diagonal.
+    """
+    if k is not None and not isinstance(k, int):
+        raise TypeError(f"expected an integer 'k', got {_objtname(k)}")
+    ms = _maybe_unpack_mats(ms)
+    ms = castall(ms, field=field, broadcast=False)
+    field = _get_field(field, ms)
+    if len(ms) == 1:
+        m = ms[0]
+        if not m.isvec:
+            if k is None:
+                k = 0
+            return m.diagk(k, emptyok=emptyok)
+    m = tovec(*ms, field=field)
+    if m.isempty:
+        # Not giving k also allows empty.
+        if emptyok or k is None:
+            return m
+        raise ValueError("cannot create a matrix with an empty 'k'-th diag")
+    # Create the main diagonal only first.
+    if m.issingle:
+        cells = m._cells
+    else:
+        cells = _np.full((m.size, m.size), field.zero, dtype=field.dtype())
+        _np.fill_diagonal(cells, m.numpyvec())
+    if k is not None and k != 0:
+        # If we didn't ask for main diagonal, pad it out.
+        if k > 0:
+            padby = ((0, k), (k, 0))
+        else:
+            padby = ((-k, 0), (0, -k))
+        cells = _np.pad(cells, padby, "constant", constant_values=field.zero)
+    return Matrix.fromnumpy(field, cells)
 
 def linspace(x0, x1, n, *, field=None):
     """
