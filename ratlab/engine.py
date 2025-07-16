@@ -452,7 +452,7 @@ class _Transformer(_ast.NodeTransformer):
         return node
 
     def visit_Name(self, node):
-        # Handle `last result` distinctly.
+        # Handle last-result distinctly.
         if self.is_named(node, KW_PREV):
             if not self.console:
                 self.syntaxerrorme("cannot reference Ratlab last-result keyword "
@@ -480,8 +480,10 @@ class _Transformer(_ast.NodeTransformer):
 
     def visit_Attribute(self, node):
         # No keywords have attributes.
-        # TODO: kwprev kinda does have attributes.
         for kw in KEYWORDS:
+            # Nevermind lmao u can definitely use attrs of last-result.
+            if kw == KW_PREV:
+                continue
             if self.is_named(node.value, kw):
                 self.syntaxerrorme("cannot access attributes of Ratlab keyword "
                         f"{repr(kw)}", node)
