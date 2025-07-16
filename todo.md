@@ -1,8 +1,6 @@
 - "remoce two chars from points to user" bro wtf does this MEAN lmao
-- `max`/`min` do take-min/max when given multiple (stack then max_along type shi)
 - matrix eig
 - vectorise all 2d operations for ndim>2 to drop first two axes
-- formula descriptions for means
 - read every numpy function and grab the good ones LMAO
 - colour more prints (generic field, rational, empty list?)
 - implement _MatrixAt

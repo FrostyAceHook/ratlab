@@ -21,8 +21,9 @@ from .util import (
 import numpy as _np
 
 
-def _maybe_unpack_tuple(xs):
-    return _maybe_unpack(xs, only_unpack=tuple)
+_SEQ_TYPES = (tuple, list)
+def _maybe_unpack_seq(xs):
+    return _maybe_unpack(xs, only_unpack=_SEQ_TYPES)
 
 def _maybe_unpack_ints(xs):
     xs = _maybe_unpack(xs, dont_unpack=Matrix)
@@ -842,12 +843,12 @@ class Field:
     @classmethod
     def _mat_summ(cls, m, axis):
         if m.isempty:
-            return m.zero if axis is None else m
+            return m.zero if axis is ... else m
         return m._fold(cls.add, axis)
     @classmethod
     def _mat_prod(cls, m, axis):
         if m.isempty:
-            return m.one if axis is None else m
+            return m.one if axis is ... else m
         return m._fold(cls.mul, axis)
     @classmethod
     def _mat_minn(cls, m, axis):
@@ -860,19 +861,19 @@ class Field:
 
     @classmethod
     def _mat_mean(cls, m, axis):
-        n = m.size if axis is None else m.shape[axis]
+        n = m.size if axis is ... else m.shape[axis]
         return m.summ_along(axis) / n
     @classmethod
     def _mat_geomean(cls, m, axis):
-        n = m.size if axis is None else m.shape[axis]
+        n = m.size if axis is ... else m.shape[axis]
         return m.prod_along(axis).root(n)
     @classmethod
     def _mat_harmean(cls, m, axis):
-        n = m.size if axis is None else m.shape[axis]
+        n = m.size if axis is ... else m.shape[axis]
         return n / (m.one / m).summ_along(axis)
     @classmethod
     def _mat_quadmean(cls, m, axis):
-        n = m.size if axis is None else m.shape[axis]
+        n = m.size if axis is ... else m.shape[axis]
         return ((m * m).summ_along(axis) / n).sqrt
 
     @classmethod
@@ -1754,7 +1755,7 @@ def Matrix(field, shape):
         size. Note that the shape of this class is ignored. If 'broadcast' is
         false, shapes will be left unchanged.
         """
-        ms = _maybe_unpack_tuple(ms)
+        ms = _maybe_unpack_seq(ms)
         if not ms:
             return ()
 
@@ -2186,7 +2187,7 @@ def Matrix(field, shape):
         if any(count < 0 for count in counts):
             raise ValueError(f"counts cannot be negative, got: {counts}")
         if axis is not None:
-            raise TypeError("cannot specify axis when using multiple counts")
+            raise TypeError("cannot specify axis with multiple counts")
         if m.isempty:
             return m
         # Use shape as helper.
@@ -2235,7 +2236,7 @@ def Matrix(field, shape):
         if any(count < 0 for count in counts):
             raise ValueError(f"counts cannot be negative, got: {counts}")
         if axis is not None:
-            raise TypeError("cannot specify axis when using multiple counts")
+            raise TypeError("cannot specify axis with multiple counts")
         if m.isempty:
             return m
         # Use shape as helper.
@@ -2271,7 +2272,7 @@ def Matrix(field, shape):
         if len(shifts) == 1 and isinstance(shifts[0], int):
             if axis is None:
                 if not m.isvec:
-                    raise TypeError("must specify 'axis' when rolling a non-"
+                    raise TypeError("must specify axis when rolling a non-"
                             "vector")
                 axis = m.lastaxis
             if not isinstance(axis, int):
@@ -2288,7 +2289,7 @@ def Matrix(field, shape):
                     raise TypeError("expected an integer shift, got "
                             f"{_objtname(shift)}")
         if axis is not None:
-            raise TypeError("cannot specify 'axis' when using multiple shifts")
+            raise TypeError("cannot specify axis with multiple shifts")
         if m.isempty:
             return m
         # Roll each axis (only doing axes which we actually have).
@@ -2674,9 +2675,9 @@ def Matrix(field, shape):
         return m.applyto(func, m, *os, rfield=rfield)
 
 
-    def _fold(m, func, axis=None, seed=NO_SEED, right=False):
+    def _fold(m, func, axis=..., seed=NO_SEED, right=False):
         # Expects func operate on field elements and return field elements. If
-        # `axis` is none, seed must be a field element, otherwise it must be a
+        # `axis` is `...`, seed must be a field element, otherwise it must be a
         # broadcastable perpendicular matrix. func always operates on and returns
         # field elements.
 
@@ -2687,7 +2688,7 @@ def Matrix(field, shape):
             f = func
             order = lambda x: x
 
-        if axis is None:
+        if axis is ...:
             # Iterate through the flat cells.
             flat = m._cells.reshape(-1)
             for x in order(flat):
@@ -2715,7 +2716,7 @@ def Matrix(field, shape):
             return m
         return seed
 
-    def fold(m, func, axis=None, seed=NO_SEED, right=False):
+    def fold(m, func, axis=..., seed=NO_SEED, right=False):
         """
         Constructs a matrix from the results of sequentially evaluating 'func'
         with the running value and the next value. Looks like:
@@ -2726,21 +2727,21 @@ def Matrix(field, shape):
         sequence (or the end if 'right'). 'seed' may be anything which satisfies
         the function, and it may be a matrix of the correct perpendicular size to
         seed a fold along an axis with different values for each run. If 'axis'
-        is none, this folding is performed along the ravelled array, otherwise it
-        is performed along that axis in parallel. If 'm' is empty, returns 'seed'
-        (which must be specified).
+        is '...', this folding is performed along the ravelled array, otherwise
+        it is performed along that axis in parallel. If 'm' is empty, returns
+        'seed' (which must be specified).
         """
         if not callable(func):
             raise TypeError(f"expected callable 'func', got {_objtname(func)}")
-        if axis is not None:
+        if axis is not ...:
             if not isinstance(axis, int):
                 raise TypeError("expected an integer axis, got "
                         f"{_objtname(axis)}")
             if axis < 0:
-                raise ValueError(f"axis cannot be negative, got {axis}")
+                raise ValueError(f"axis cannot be negative, got: {axis}")
         if seed is not NO_SEED:
             seed, = m.cast(seed, broadcast=False)
-            if axis is None:
+            if axis is ...:
                 if not seed.issingle:
                     raise TypeError("expected a single for 'seed' when folding "
                             f"over all elements, got {seed.shape}")
@@ -2752,8 +2753,8 @@ def Matrix(field, shape):
             if not isinstance(c, Matrix):
                 c = single(c, field=m.field)
             if not c.issingle:
-                raise TypeError("expected folding function to return a "
-                        f"single, got {c.shape}")
+                raise TypeError("expected folding function to return a single, "
+                        f"got {c.shape}")
             return c.obj
         return m._fold(wrapped, axis=axis, seed=seed, right=right)
 
@@ -3456,105 +3457,104 @@ def Matrix(field, shape):
     @_instconst
     def minn(m):
         """
-        Minimum of all elements, alias for 'm.minn_along(None)'.
+        Minimum of all elements, alias for 'm.minn_along(...)'.
         """
-        return m.minn_along(None)
+        return m.minn_along(...)
     def minn_along(m, axis):
         """
-        Minimum of the values along the given axis. If 'axis' is none, returns
+        Minimum of the values along the given axis. If 'axis' is '...', returns
         the minimum over all elements. In the case of ties, the earlier occurence
         is kept.
         """
         if m.isempty:
             raise TypeError("cannot find minimum of empty")
-        if axis is not None:
+        if axis is not ...:
             if not isinstance(axis, int):
                 raise TypeError("expected an integer axis, got "
                         f"{_objtname(axis)}")
             if axis < 0:
-                raise ValueError(f"axis cannot be negative, got {axis}")
+                raise ValueError(f"axis cannot be negative, got: {axis}")
         return m.field._mat_minn(m, axis)
 
     @_instconst
     def maxx(m):
         """
-        Maximum of all elements, alias for 'm.maxx_along(None)'.
+        Maximum of all elements, alias for 'm.maxx_along(...)'.
         """
-        return m.maxx_along(None)
+        return m.maxx_along(...)
     def maxx_along(m, axis):
         """
-        Maximum of the values along the given axis. If 'axis' is none, returns
+        Maximum of the values along the given axis. If 'axis' is '...', returns
         the maximum over all elements. In the case of ties, the earlier occurence
         is kept.
         """
         if m.isempty:
             raise TypeError("cannot find maximum of empty")
-        if axis is not None:
+        if axis is not ...:
             if not isinstance(axis, int):
                 raise TypeError("expected an integer axis, got "
                         f"{_objtname(axis)}")
             if axis < 0:
-                raise ValueError(f"axis cannot be negative, got {axis}")
+                raise ValueError(f"axis cannot be negative, got: {axis}")
         return m.field._mat_maxx(m, axis)
-
 
     @_instconst
     def summ(m):
         """
-        Sum of all elements, alias for 'm.summ_along(None)'.
+        Sum of all elements, alias for 'm.summ_along(...)'.
         """
-        return m.summ_along(None)
+        return m.summ_along(...)
     def summ_along(m, axis):
         """
-        Additive sum of the values along the given axis. If 'axis' is none,
+        Additive sum of the values along the given axis. If 'axis' is '...',
         returns the sum over all elements.
         """
-        if axis is not None:
+        if axis is not ...:
             if not isinstance(axis, int):
                 raise TypeError("expected an integer axis, got "
                         f"{_objtname(axis)}")
             if axis < 0:
-                raise ValueError(f"axis cannot be negative, got {axis}")
+                raise ValueError(f"axis cannot be negative, got: {axis}")
         return m.field._mat_summ(m, axis)
 
     @_instconst
     def prod(m):
         """
-        Product of all elements, alias for 'm.prod_along(None)'.
+        Product of all elements, alias for 'm.prod_along(...)'.
         """
-        return m.prod_along(None)
+        return m.prod_along(...)
     def prod_along(m, axis):
         """
         Multiplicative product of the values along the given axis. If 'axis' is
-        none, returns the product over all elements.
+        '...', returns the product over all elements.
         """
-        if axis is not None:
+        if axis is not ...:
             if not isinstance(axis, int):
                 raise TypeError("expected an integer axis, got "
                         f"{_objtname(axis)}")
             if axis < 0:
-                raise ValueError(f"axis cannot be negative, got {axis}")
+                raise ValueError(f"axis cannot be negative, got: {axis}")
         return m.field._mat_prod(m, axis)
 
     @_instconst
     def mean(m):
         """
-        Arithmetic mean of all elements, alias for 'm.mean_along(None)'.
+        Arithmetic mean of all elements, alias for 'm.mean_along(...)'.
         """
-        return m.mean_along(None)
+        return m.mean_along(...)
     def mean_along(m, axis):
         """
-        Arithmetic mean of the values along the given axis. If 'axis' is none,
-        returns the arithmetic mean over all elements.
+        Arithmetic mean of the values along the given axis (or along all elements
+        if 'axis' is '...'): sum[xi] / n
         """
         if m.isempty:
             raise TypeError("cannot find arithmetic mean of empty")
-        if axis is not None:
+        if axis is not ...:
             if not isinstance(axis, int):
                 raise TypeError("expected an integer axis, got "
                         f"{_objtname(axis)}")
             if axis < 0:
-                raise ValueError(f"axis cannot be negative, got {axis}")
+                raise ValueError(f"axis cannot be negative, got: {axis}")
         return m.field._mat_mean(m, axis)
     @_instconst
     def ave(m):
@@ -3571,65 +3571,65 @@ def Matrix(field, shape):
     @_instconst
     def geomean(m):
         """
-        Geometric mean of all elements, alias for 'm.geomean_along(None)'.
+        Geometric mean of all elements, alias for 'm.geomean_along(...)'.
         """
-        return m.geomean_along(None)
+        return m.geomean_along(...)
     def geomean_along(m, axis):
         """
-        Geometric mean of the values along the given axis. If 'axis' is none,
-        returns the geometric mean over all elements.
+        Geometric mean of the values along the given axis (or along all elements
+        if 'axis' is '...'): prod[xi] ** (1/n)
         """
         if m.isempty:
             raise TypeError("cannot find geometric mean of empty")
-        if axis is not None:
+        if axis is not ...:
             if not isinstance(axis, int):
                 raise TypeError("expected an integer axis, got "
                         f"{_objtname(axis)}")
             if axis < 0:
-                raise ValueError(f"axis cannot be negative, got {axis}")
+                raise ValueError(f"axis cannot be negative, got: {axis}")
         return m.field._mat_geomean(m, axis)
 
     @_instconst
     def harmean(m):
         """
-        Harmonic mean of all elements, alias for 'm.harmean_along(None)'.
+        Harmonic mean of all elements, alias for 'm.harmean_along(...)'.
         """
-        return m.harmean_along(None)
+        return m.harmean_along(...)
     def harmean_along(m, axis):
         """
-        Harmonic mean of the values along the given axis. If 'axis' is none,
-        returns the harmonic mean over all elements.
+        Harmonic mean of the values along the given axis (or along all elements
+        if 'axis' is '...'): n / sum[1/xi]
         """
         if m.isempty:
             raise TypeError("cannot find harmonic mean of empty")
-        if axis is not None:
+        if axis is not ...:
             if not isinstance(axis, int):
                 raise TypeError("expected an integer axis, got "
                         f"{_objtname(axis)}")
             if axis < 0:
-                raise ValueError(f"axis cannot be negative, got {axis}")
+                raise ValueError(f"axis cannot be negative, got: {axis}")
         return m.field._mat_harmean(m, axis)
 
     @_instconst
     def quadmean(m):
         """
         Quadratic mean (root-mean-square) of all elements, alias for
-        'm.quadmean_along(None)'.
+        'm.quadmean_along(...)'.
         """
-        return m.quadmean_along(None)
+        return m.quadmean_along(...)
     def quadmean_along(m, axis):
         """
-        Quadratic mean (root-mean-square) of the values along the given axis. If
-        'axis' is none, returns the quadratic mean over all elements.
+        Quadratic mean (root-mean-square) of the values along the given axis (or
+        along all elements if 'axis' is '...'): sqrt(n * sum[xi**2])
         """
         if m.isempty:
             raise TypeError("cannot find quadratic mean of empty")
-        if axis is not None:
+        if axis is not ...:
             if not isinstance(axis, int):
                 raise TypeError("expected an integer axis, got "
                         f"{_objtname(axis)}")
             if axis < 0:
-                raise ValueError(f"axis cannot be negative, got {axis}")
+                raise ValueError(f"axis cannot be negative, got: {axis}")
         return m.field._mat_quadmean(m, axis)
 
 
@@ -4598,9 +4598,9 @@ class Float(RealField):
     @classmethod
     def _mat_summ(cls, m, axis):
         if m.isempty:
-            return m.zero if axis is None else m
+            return m.zero if axis is ... else m
         # Note we ignore nans, bc who tf wants nans.
-        if axis is None:
+        if axis is ...:
             val = _np.nansum(m._cells)
             return single(val, field=cls, _nocast=True)
         if axis >= m.ndim:
@@ -4612,8 +4612,8 @@ class Float(RealField):
     @classmethod
     def _mat_prod(cls, m, axis):
         if m.isempty:
-            return m.one if axis is None else m
-        if axis is None:
+            return m.one if axis is ... else m
+        if axis is ...:
             val = _np.nanprod(m._cells)
             return single(val, field=cls, _nocast=True)
         if axis >= m.ndim:
@@ -4623,7 +4623,7 @@ class Float(RealField):
         return m.fromnumpy(cells)
     @classmethod
     def _mat_minn(cls, m, axis):
-        if axis is None:
+        if axis is ...:
             val = _np.nanmin(m._cells)
             return single(val, field=cls, _nocast=True)
         if axis >= m.ndim:
@@ -4634,7 +4634,7 @@ class Float(RealField):
 
     @classmethod
     def _mat_maxx(cls, m, axis):
-        if axis is None:
+        if axis is ...:
             val = _np.nanmax(m._cells)
             return single(val, field=cls, _nocast=True)
         if axis >= m.ndim:
@@ -5294,9 +5294,9 @@ class Complex(Field):
     @classmethod
     def _mat_summ(cls, m, axis):
         if m.isempty:
-            return m.zero if axis is None else m
+            return m.zero if axis is ... else m
         # Note we ignore nans, bc who tf wants nans.
-        if axis is None:
+        if axis is ...:
             val = _np.nansum(m._cells)
             return single(val, field=cls, _nocast=True)
         if axis >= m.ndim:
@@ -5308,8 +5308,8 @@ class Complex(Field):
     @classmethod
     def _mat_prod(cls, m, axis):
         if m.isempty:
-            return m.one if axis is None else m
-        if axis is None:
+            return m.one if axis is ... else m
+        if axis is ...:
             val = _np.nanprod(m._cells)
             return single(val, field=cls, _nocast=True)
         if axis >= m.ndim:
@@ -5319,7 +5319,7 @@ class Complex(Field):
         return m.fromnumpy(cells)
     @classmethod
     def _mat_minn(cls, m, axis):
-        if axis is None:
+        if axis is ...:
             val = _np.nanmin(m._cells)
             return single(val, field=cls, _nocast=True)
         if axis >= m.ndim:
@@ -5330,7 +5330,7 @@ class Complex(Field):
 
     @classmethod
     def _mat_maxx(cls, m, axis):
-        if axis is None:
+        if axis is ...:
             val = _np.nanmax(m._cells)
             return single(val, field=cls, _nocast=True)
         if axis >= m.ndim:
@@ -5558,7 +5558,8 @@ def castall(ms, broadcast=True, *, field=None):
     """
     if not _iterable(ms):
         raise TypeError(f"expected an iterable 'ms', got {_objtname(ms)}")
-    ms = tuple(ms)
+    if not isinstance(ms, (list, tuple)):
+        ms = tuple(ms)
     if not ms:
         return ()
     for m in ms:
@@ -5659,12 +5660,14 @@ def alll(*ms, field=None):
     """
     Alias for 'ms[0].alll and ms[1].alll and ...'.
     """
+    ms = _maybe_unpack_seq(ms)
     ms = castall(ms, field=field)
     return all([m.alll for m in ms]) # dont shortcircuit.
 def anyy(*ms, field=None):
     """
     Alias for 'ms[0].anyy or ms[1].anyy or ...'.
     """
+    ms = _maybe_unpack_seq(ms)
     ms = castall(ms, field=field)
     return any([m.anyy for m in ms]) # dont shortcircuit.
 def always(m, *, field=None):
@@ -6082,59 +6085,85 @@ def isfinite(m, *, field=None):
     """
     m, = castall([m], field=field)
     return m.isfinite
-def minn(m, axis=None, *, field=None):
+
+
+def _cast_for_fold(ms, axis, field):
+    if len(ms) == 1 and not isinstance(ms[0], _SEQ_TYPES):
+        m, = castall(ms, field=field)
+        if axis is None:
+            axis = ...
+    else:
+        ms = _maybe_unpack_seq(ms)
+        ms = castall(ms, field=field)
+        if axis is not None:
+            raise TypeError("cannot specify axis with multiple matrices")
+        axis = ms[0].ndim
+        m = stack(axis, ms)
+    return m, axis
+
+def minn(*ms, axis=None, field=None):
     """
-    Alias for 'm.minn_along(axis)'.
+    Alias for 'm.minn_along(axis)' if given one bare matrix, otherwise broadcasts
+    then stacks the given matrices and takes the minimum along the stacked axis.
     """
-    m, = castall([m], field=field)
+    m, axis = _cast_for_fold(ms, axis, field)
     return m.minn_along(axis)
-def maxx(m, axis=None, *, field=None):
+def maxx(*ms, axis=None, field=None):
     """
-    Alias for 'm.maxx_along(axis)'.
+    Alias for 'm.maxx_along(axis)' if given one bare matrix, otherwise broadcasts
+    then stacks the given matrices and takes the maximum along the stacked axis.
     """
-    m, = castall([m], field=field)
+    m, axis = _cast_for_fold(ms, axis, field)
     return m.maxx_along(axis)
-def summ(m, axis=None, *, field=None):
+def summ(*ms, axis=None, field=None):
     """
-    Alias for 'm.summ_along(axis)'.
+    Alias for 'm.summ_along(axis)' if given one bare matrix, otherwise broadcasts
+    then stacks the given matrices and takes the sum along the stacked axis.
     """
-    m, = castall([m], field=field)
+    m, axis = _cast_for_fold(ms, axis, field)
     return m.summ_along(axis)
-def prod(m, axis=None, *, field=None):
+def prod(*ms, axis=None, field=None):
     """
-    Alias for 'm.prod_along(axis)'.
+    Alias for 'm.prod_along(axis)' if given one bare matrix, otherwise broadcasts
+    then stacks the given matrices and takes the product along the stacked axis.
     """
-    m, = castall([m], field=field)
+    m, axis = _cast_for_fold(ms, axis, field)
     return m.prod_along(axis)
-def mean(m, axis=None, *, field=None):
+def mean(*ms, axis=None, field=None):
     """
-    Alias for 'm.mean_along(axis)'.
+    Alias for 'm.mean_along(axis)' if given one bare matrix, otherwise broadcasts
+    then stacks the given matrices and takes the mean along the stacked axis.
     """
-    m, = castall([m], field=field)
+    m, axis = _cast_for_fold(ms, axis, field)
     return m.mean_along(axis)
-def ave(m, axis=None, *, field=None):
+def ave(*ms, axis=None, field=None):
     """
-    Alias for 'm.mean_along(axis)'.
+    Alias for 'mean(*ms, axis=axis)'.
     """
-    m, = castall([m], field=field)
-    return m.mean_along(axis)
-def geomean(m, axis=None, *, field=None):
+    return mean(*ms, axis=axis, field=field)
+def geomean(*ms, axis=None, field=None):
     """
-    Alias for 'm.geomean_along(axis)'.
+    Alias for 'm.geomean_along(axis)' if given one bare matrix, otherwise
+    broadcasts then stacks the given matrices and takes the geometric mean along
+    the stacked axis.
     """
-    m, = castall([m], field=field)
+    m, axis = _cast_for_fold(ms, axis, field)
     return m.geomean_along(axis)
-def harmean(m, axis=None, *, field=None):
+def harmean(*ms, axis=None, field=None):
     """
-    Alias for 'm.harmean_along(axis)'.
+    Alias for 'm.harmean_along(axis)' if given one bare matrix, otherwise
+    broadcasts then stacks the given matrices and takes the harmonic mean along
+    the stacked axis.
     """
-    m, = castall([m], field=field)
+    m, axis = _cast_for_fold(ms, axis, field)
     return m.harmean_along(axis)
-def quadmean(m, axis=None, *, field=None):
+def quadmean(*ms, axis=None, field=None):
     """
-    Alias for 'm.quadmean_along(axis)'.
+    Alias for 'm.quadmean_along(axis)' if given one bare matrix, otherwise
+    broadcasts then stacks the given matrices and takes the quadratic mean along
+    the stacked axis.
     """
-    m, = castall([m], field=field)
+    m, axis = _cast_for_fold(ms, axis, field)
     return m.quadmean_along(axis)
 def logmean(x, y, *, field=None):
     """
@@ -6200,7 +6229,7 @@ def stack(axis, *ms, field=None):
     """
     Stacks the given matrices along the given axis.
     """
-    ms = _maybe_unpack_tuple(ms)
+    ms = _maybe_unpack_seq(ms)
     ms = castall(ms, field=field, broadcast=False)
     field = _get_field(field, ms)
     if not isinstance(axis, int):
@@ -6251,7 +6280,7 @@ def ravel(*ms, field=None):
     """
     Concatenated vector of the ravelled cells of all given matrices.
     """
-    ms = _maybe_unpack_tuple(ms)
+    ms = _maybe_unpack_seq(ms)
     ms = castall(ms, field=field, broadcast=False)
     field = _get_field(field, ms)
     if len(ms) == 0:
@@ -6327,7 +6356,7 @@ def diag(*ms, k=None, emptyok=False, field=None):
     """
     if k is not None and not isinstance(k, int):
         raise TypeError(f"expected an integer 'k', got {_objtname(k)}")
-    ms = _maybe_unpack_tuple(ms)
+    ms = _maybe_unpack_seq(ms)
     ms = castall(ms, field=field, broadcast=False)
     field = _get_field(field, ms)
     if len(ms) == 1:
