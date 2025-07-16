@@ -1158,6 +1158,8 @@ class lits:
         self._injects = {
             "e": (lambda field: Single[field].e),
             "pi": (lambda field: Single[field].pi),
+            "inf": (lambda field: Single[field].inf),
+            "nan": (lambda field: Single[field].nan),
         }
 
     def _is_overridden(self, space, name, field=...):
@@ -2086,7 +2088,7 @@ def Matrix(field, shape):
             # For higher dimensions, easiest way to get the memory layout we
             # expect is to do 2d matrix transpose then read off c-style. bob the
             # builder type shi.
-            npaxes = tuple(range(len(m._cells.ndim) - 2)) + (-1, -2)
+            npaxes = tuple(range(m._cells.ndim - 2)) + (-1, -2)
             cells = m._cells.transpose(npaxes).ravel(order="C")
         return m.fromnumpy(cells)
 
