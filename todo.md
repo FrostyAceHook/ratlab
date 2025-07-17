@@ -1,4 +1,6 @@
 - "remoce two chars from points to user" bro wtf does this MEAN lmao
+- revert overload in member methods like .tile/rep, leave that just to global
+    funcs
 - matrix eig
 - vectorise all 2d operations for ndim>2 to drop first two axes
 - read every numpy function and grab the good ones LMAO

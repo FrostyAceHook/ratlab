@@ -1383,6 +1383,22 @@ class Permuter:
         # tuple like this r strange.
         return order[axis]
 
+    @classmethod
+    def numpyT(P, ndim):
+        """
+        Numpy permutation tuple for a 2d transpose.
+        """
+        if not isinstance(ndim, int):
+            raise TypeError("expected an integer number of dimensions, got "
+                    f"{_objtname(ndim)}")
+        if ndim < 0:
+            raise ValueError("number of dimensions cannot be negative, got: "
+                    f"{ndim}")
+        if ndim < 2:
+            raise ValueError("shouldn't have a numpy array with fewer than 2 "
+                    "axes")
+        return tuple(range(ndim - 2)) + (-1, -2)
+
     def order(p, ndim):
         """
         Tuple of permutation for the given number of dimensions.
@@ -1464,28 +1480,61 @@ class Shape:
     meaning, other than repeating matrices).
     """
 
-    def __init__(s, *lens):
+    def __init__(s, *lens, size=None):
         """
-        Creates a shape with the given axis lengths.
+        Creates a shape with the given axis lengths. If 'size' is given, implies
+        a reshaping and allows '...' to occur once in the lengths, which causes
+        that axis length to be automatically sized.
         """
+        if size is not None:
+            if not isinstance(size, int):
+                raise TypeError("expected an integer size, got "
+                        f"{_objtname(size)}")
+            if size < 0:
+                raise ValueError(f"size cannot be negative, got: {size}")
         if len(lens) == 1 and isinstance(lens[0], Shape):
             lens = lens[0]._lens
         else:
             lens = _maybe_unpack_ints(lens)
-            for l in lens:
+            ilens = [l for l in lens if l is not ...]
+            for l in ilens:
                 if not isinstance(l, int):
-                    raise TypeError("expected integer dimension lengths, got "
-                            f"{_objtname(l)}")
-            if any(l < 0 for l in lens):
+                    extra = "or '...' " * (size is not None)
+                    raise TypeError(f"expected integer{extra} dimension "
+                            f"lengths, got {_objtname(l)}")
+            if any(l < 0 for l in ilens):
                 raise ValueError("dimension lengths cannot be negative, got: "
                         f"{lens}")
+            dotc = lens.count(...)
+            if dotc > 0:
+                if size is None:
+                    raise ValueError("cannot use '...' when not resizing")
+                if dotc > 1:
+                    raise ValueError("cannot use '...' more than once")
+                # Figure out ...
+                perp = _math.prod(ilens)
+                if size == 0:
+                    dynamic = 0
+                elif perp == 0:
+                    dynamic = 0 # catch error later.
+                elif (size % perp) > 0:
+                    raise ValueError("unable to determine '...' length, "
+                            f"stacking perpendicular sizes of {perp} will never "
+                            f"fit {size}")
+                else:
+                    dynamic = size // perp
+                lens = tuple(dynamic if l is ... else l for l in lens)
             # Collapse empty.
             if _math.prod(lens) == 0:
                 lens = (0, )
             # Trim any trailing 1s (note this collapses single to ()).
             while lens and lens[-1] == 1:
                 lens = lens[:-1]
+        if size is not None and _math.prod(lens) != size:
+            raise ValueError("cannot change size (no. elements) when reshaping, "
+                    f"expected {size} size, got {_math.prod(lens)}")
         s._lens = lens
+
     @_instconst
     def tonumpy(s):
         """
@@ -1559,13 +1608,13 @@ class Shape:
         """
         Is empty? (0x0)
         """
-        return s.size == 0
+        return s._lens == (0, )
     @_instconst
     def issingle(s):
         """
         Is only one cell? (1x1)
         """
-        return s.size == 1
+        return s._lens == ()
     @_instconst
     def isvec(s):
         """
@@ -1609,7 +1658,7 @@ class Shape:
         if axis < 0:
             raise ValueError(f"axis cannot be negative, got: {axis}")
         if axis >= s.ndim:
-            return 1 if s.size else 0
+            return 0 if s.isempty else 1
         return s._lens.__getitem__(axis)
 
     def insert(s, axis, shape):
@@ -1662,16 +1711,25 @@ class Shape:
                     f"has length {s[axis]}")
         return Shape(l for i, l in enumerate(s._lens) if i != axis)
 
+    @_instconst
+    def T(s):
+        """
+        Tranposed shape.
+        """
+        return s.withaxis(0, s[1]).withaxis(1, s[0])
+
     def check_broadcastable(s, o):
         if not isinstance(o, Shape):
             raise TypeError(f"expected a shape, got {_objtname(o)}")
         if s.isempty and o.isempty:
             return
         if s.isempty:
-            raise ValueError("cannot broadcast from empty")
+            raise ValueError("cannot broadcast from empty to non-empty, when "
+                    f"attempting to broadcast {s} to {o}")
         if o.isempty:
-            raise ValueError("cannot broadcast to empty")
-        for axis in range(max(o.ndim, s.ndim)):
+            raise ValueError("cannot broadcast to empty from non-empty, when "
+                    f"attempting to broadcast {s} to {o}")
+        for axis in range(max(s.ndim, o.ndim)):
             if s[axis] == 1:
                 continue
             if s[axis] != o[axis]:
@@ -2010,19 +2068,50 @@ def Matrix(field, shape):
 
     def reshape(m, *newshape):
         """
-        Views the ravelled cells under the given 'shape'. The size of the new
-        shape must be equal to the size of the current shape (aka cannot change
-        the number of elements). Note this is distinct to 'permute', which
-        changes axis ordering and therefore alters the ravelled cells.
+        Views the ravelled cells under the given shape. The size of the new shape
+        must be equal to the size of the current shape (aka cannot change the
+        number of elements). If '...' is given as an axis length, that axis is
+        automatically sized (if possible) to accomodate all elements (note it may
+        size to 0 if resizing empty).
         """
-        newshape = Shape(*newshape)
-        if newshape.size != m.shape.size:
-            raise ValueError("cannot change size (no. elements) when reshaping, "
-                    f"expected {m.shape.size} size, got {newshape.size}")
-        # Reshape the correctly (matrix-memory-layout) ravelled cells.
-        cells = m.ravel._cells
-        cells = cells.reshape(newshape.tonumpy)
+        if not newshape:
+            # technically a "reshape to single" but thats pretty useless so in
+            # the spirit of clearer code (since seeing x.reshape() kinda looks
+            # like it sohuld just not change shape) we dont allow no args.
+            raise TypeError("must specify a new shape")
+        newshape = Shape(*newshape, size=m.size)
+        # See the rant earlier in this file about numpy interoperation, short
+        # answer is the backing array memory layout isnt what we expect so we got
+        # work to do.
+        if m.isvec and newshape.isvec:
+            # If vector, it doesn't matter.
+            cells = m._cells.reshape(newshape.tonumpy)
+        elif m.ndim <= 2 and newshape.ndim <= 2:
+            # If 2d, can use f-style ordering to get our memory layout.
+            cells = m._cells.reshape(newshape.tonumpy, order="F")
+        else:
+            # For higher dimensions, easiest way to get the ravelled layout we
+            # expect is to do 2d matrix transpose then read off c-style. Then we
+            # gotta reshape into transposed and transpose back to our view. bob
+            # the builder type shi.
+            cells = m._cells
+            if not m.isvec: # No need to transpose if vector.
+                cells = cells.transpose(Permuter.numpyT(cells.ndim))
+            if newshape.isvec: # No need to do extra transposes if vector output.
+                cells = cells.reshape(newshape.tonumpy, order="C")
+            else:
+                cells = cells.reshape(newshape.T.tonumpy, order="C")
+                cells = cells.transpose(Permuter.numpyT(cells.ndim))
         return Matrix[m.field, newshape](cells)
+
+
+    @_instconst
+    def ravel(m):
+        """
+        Vector of cells in natural iteration order (sequential axes, which is
+        row-major), aka the flattened cells.
+        """
+        return m.reshape(Shape(m.size))
 
 
     def broadcast(m, *newshape):
@@ -2032,6 +2121,8 @@ def Matrix(field, shape):
         length by repeating along that axis. Otherwise, the new axis length must
         be the same.
         """
+        if not newshape: # give empty tuple for no-op
+            raise TypeError("must specify a new shape")
         newshape = Shape(*newshape)
         m.shape.check_broadcastable(newshape)
         cells = _np.broadcast_to(m._cells, newshape.tonumpy)
@@ -2042,20 +2133,31 @@ def Matrix(field, shape):
         """
         Permutes the axes into the given order (like a transpose).
         """
+        if not neworder: # give empty tuple for no-op
+            raise TypeError("must specify a new order")
         permuter = Permuter(*neworder)
         # Empty and single are invariant under permutation.
         if m.isempty or m.issingle:
+            return m
+        # No-op permutation.
+        if permuter.ndim == 0:
             return m
         newshape = permuter(m.shape)
         # Vector handled separately cause its easy (no data reordering).
         if m.isvec:
             cells = m._cells.reshape(newshape.tonumpy)
+        # Handle 2d tranpose separate bc speed.
+        elif m.ndim <= 2 and newshape.ndim <= 2:
+            # only option here is 2d transpose.
+            cells = m._cells.T
         else:
             cells = m._cells
             # Gotta make the missus happy. Numpy will never implicitly add
             # dimensions, to lets do that first.
-            ndim = max(newshape.ndim, m.ndim)
-            npshape = (1, ) * (newshape.ndim - m.ndim) + m.shape.tonumpy
+            new_ndim = max(2, newshape.ndim)
+            old_ndim = max(2, m.ndim)
+            ndim = max(new_ndim, old_ndim)
+            npshape = (1, ) * (new_ndim - old_ndim) + m.shape.tonumpy
             cells = cells.reshape(npshape)
             # Now gotta make the permutation tuple in the correct format.
             tonp = Permuter.tonumpy(ndim)
@@ -2069,37 +2171,14 @@ def Matrix(field, shape):
         return Matrix[m.field, newshape](cells)
 
 
-    @_instconst
-    def ravel(m):
-        """
-        Vector of cells in natural iteration order (sequential axes, which is
-        row-major), aka the flattened cells.
-        """
-        # See the rant earlier in this file about numpy interoperation, short
-        # answer is the backing array memory layout isnt what we expect so we got
-        # work to do.
-        if m.isvec:
-            # If vector, it doesn't matter.
-            cells = m._cells.reshape(-1)
-        elif m.ndim == 2:
-            # If 2d, can use f-style ordering to get our memory layout.
-            cells = m._cells.ravel(order="F")
-        else:
-            # For higher dimensions, easiest way to get the memory layout we
-            # expect is to do 2d matrix transpose then read off c-style. bob the
-            # builder type shi.
-            npaxes = tuple(range(m._cells.ndim - 2)) + (-1, -2)
-            cells = m._cells.transpose(npaxes).ravel(order="C")
-        return m.fromnumpy(cells)
-
-
     def drop(m, *axes):
         """
         Removes the given axes from the shape, shifting other axes down. The
         lengths of these axes must be 0 or 1 (aka they must not have contributed
-        to the size). If axes are repeated, they are treated as-if they only
-        appeared once.
+        to the size). If axes are repeated, additional occurences are ignored.
         """
+        if not axes: # give empty tuple for no-op
+            raise TypeError("must specify some axes")
         axes = _maybe_unpack_ints(axes)
         for axis in axes:
             if not isinstance(axis, int):
@@ -2108,6 +2187,8 @@ def Matrix(field, shape):
             raise ValueError(f"axes cannot be negative, got: {axes}")
         axes = set(axes)
         shape = m.shape
+        # Reverse iteration to not change the indices of future axes as we remove
+        # earlier ones.
         for axis in sorted(axes, reverse=True):
             shape = shape.dropaxis(axis)
         return m.reshape(shape)
@@ -2125,6 +2206,8 @@ def Matrix(field, shape):
         Reverses the order along the given axes. If any axes are repeated, it is
         treated as another flip (so even counts of axes do nothing).
         """
+        if not axes: # give empty tuple for no-op
+            raise TypeError("must specify some axes")
         axes = _maybe_unpack_ints(axes)
         for axis in axes:
             if not isinstance(axis, int):
@@ -2339,29 +2422,75 @@ def Matrix(field, shape):
         return m.fromnumpy(m._cells.diagonal(k))
 
 
-    def along(m, axis, drop=False):
+    def along(m, *axes, drop=False):
         """
-        Tuple of perpendicular matrices along the given axis. If 'drop', drops
-        the axis for each perpendicular matrix.
+        Tuple of perpendicular matrices when travelling along the given axes
+        sequentially. If 'drop', drops the axis travelled along in the returned
+        matrices.
         """
-        if not isinstance(axis, int):
-            raise TypeError(f"expected integer axis, got {_objtname(axis)}")
-        if axis < 0:
-            raise ValueError(f"axis cannot be negative, got: {axis}")
+        axes = _maybe_unpack_ints(axes)
+        for axis in axes:
+            if not isinstance(axis, int):
+                raise TypeError(f"expected integer axes, got {_objtname(axis)}")
+        if any(a < 0 for a in axes):
+            raise ValueError(f"axes cannot be negative, got: {axes}")
+        if len(set(axes)) != len(axes):
+            raise ValueError(f"cannot repeat axes, got: {axes}")
         # Empty is empty.
         if m.isempty:
             return ()
-        if axis >= m.ndim:
+        if not axes:
             return (m, )
-        def idx(i):
-            idx = [slice(None)] * m.ndim
+        def get(x, axis, i):
+            if axis >= x.ndim:
+                return x
+            idx = [slice(None)] * x.ndim
             idx[axis] = slice(i, i + 1)
             idx = tuple(idx)
-            return Permuter.tonumpy(m.ndim)(idx)
-        mats = tuple(m.at[idx(i)] for i in range(m.shape[axis]))
-        if drop:
-            mats = tuple(m.drop(axis) for m in mats)
-        return mats
+            idx = Permuter.tonumpy(x.ndim)(idx)
+            return x.at[idx]
+        # Iterate each axis (reversed to give the correct order overall).
+        traversed = (m, )
+        for axis in reversed(axes):
+            new = []
+            for x in traversed:
+                new.extend(get(x, axis, i) for i in range(x.shape[axis]))
+            traversed = new
+        # Drop if there are axes to drop.
+        hangingaxes = set(range(min(axes), m.ndim)) - set(axes)
+        if drop and hangingaxes:
+            traversed = tuple(x.drop(axes) for x in traversed)
+        return tuple(traversed)
+
+
+    def group(m, *axes, drop=False):
+        """
+        Treats the product of the given axes as a group and returns a tuple of
+        the iteration through all groups in the matrix in canonical order.
+        """
+        axes = _maybe_unpack_ints(axes)
+        for axis in axes:
+            if not isinstance(axis, int):
+                raise TypeError(f"expected integer axes, got {_objtname(axis)}")
+        if any(a < 0 for a in axes):
+            raise ValueError(f"axes cannot be negative, got: {axes}")
+        if len(set(axes)) != len(axes):
+            raise ValueError(f"cannot repeat axes, got: {axes}")
+        travel_axes = set(range(m.ndim)) - set(axes)
+        return m.along(sorted(travel_axes), drop=drop)
+    @_instconst
+    def cols(m):
+        """
+        Tuple of all columns in canonical order.
+        """
+        return m.group(0)
+    @_instconst
+    def rows(m):
+        """
+        Tuple of all rows in canonical order.
+        """
+        return m.group(1)
+
 
     @_instconst
     def at(m):
@@ -2444,45 +2573,6 @@ def Matrix(field, shape):
         newshape = m.shape.withaxis(m.lastaxis, len(cells))
         cells = cells.reshape(newshape.tonumpy)
         return Matrix[m.field, newshape](cells)
-
-
-    @_instconst
-    def cols(m):
-        """
-        Tuple of columns, for 2D matrices.
-        """
-        if m.ndim > 2:
-            raise TypeError(f"only 2D matrices can use .cols, got {m.shape} "
-                    "(use .along for other matrices)")
-        return m.along(1)
-    @_instconst
-    def rows(m):
-        """
-        Tuple of rows, for 2D matrices.
-        """
-        if m.ndim > 2:
-            raise TypeError(f"only 2D matrices can use .rows, got {m.shape} "
-                    "(use .along for other matrices)")
-        return m.along(0)
-    @_instconst
-    def colmajor(m):
-        """
-        Vector of cells in column-major order, for 2D matrices.
-        """
-        if m.ndim > 2:
-            raise TypeError(f"only 2D matrices can use .colmajor, got {m.shape} "
-                    "(use .ravel (maybe with .permute) for other matrices)")
-        # Can speed up ravelling in 2D by using numpy's two orderings.
-        return m.fromnumpy(m._cells.ravel(order="F"))
-    @_instconst
-    def rowmajor(m):
-        """
-        Vector of cells in row-major order, for 2D matrices.
-        """
-        if m.ndim > 2:
-            raise TypeError(f"only 2D matrices can use .rowmajor, got {m.shape} "
-                    "(use .ravel (maybe with .permute) for other matrices)")
-        return m.fromnumpy(m._cells.ravel(order="C"))
 
 
     @_instconst
@@ -5216,8 +5306,8 @@ class Complex(Field):
         mim = m._cells.imag
         ore = o._cells.real
         oim = o._cells.imag
-        cells = ((~_float_eq(mre, ore)) & (~_float_eq(mim, oim)))
-        cells &= ((~_np.isnan(m)) | (~_np.isnan(o)))
+        cells = ((~_float_eq(mre, ore)) | (~_float_eq(mim, oim)))
+        cells &= ((~_np.isnan(m._cells)) & (~_np.isnan(o._cells)))
         return Matrix[bool, m.shape](cells)
     @classmethod
     def _mat_lt(cls, m, o):
