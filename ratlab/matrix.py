@@ -4124,7 +4124,7 @@ def _float_eq(x, y, ulps=50):
     eq[inexact] |= (dif <= ulps)[inexact]
     return eq
 
-def _float_eq1(x, y, ulps=50):
+def _float_eq1(a, b, ulps=50):
     x = _np.array([a], dtype=float)
     y = _np.array([b], dtype=float)
     return _float_eq(x, y)[0]
@@ -4303,7 +4303,7 @@ class Float(RealField):
         return bool
     @classmethod
     def eq(cls, a, b, ulps=15):
-        return _float_eq1(x, y)
+        return _float_eq1(a, b)
     @classmethod
     def ne(cls, a, b):
         if _math.isnan(a) or _math.isnan(b):

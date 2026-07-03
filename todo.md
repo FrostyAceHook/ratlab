@@ -12,6 +12,7 @@
 - shortened matrix print
 - short and long themselves used with `with` for dflting.
 - `ans` has attributes
+- import the `new_figure` api from asses.
 - make 'prog' nicely handle errors
 - make a good readme
 - make 'prog' parser good lmao
